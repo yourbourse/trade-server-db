@@ -22,14 +22,11 @@ namespace YB.TradeServer.Db.Migrator;
 
 public record CommandLineOptions
 {
-    [Option('p', "provider", Required = false, HelpText = "Database engine, supported values: 'clickhouse', 'postgres'. Optional when --export-config is supplied")]
+    [Option('p', "provider", Required = true, HelpText = "Database engine, supported values: 'clickhouse', 'postgres'")]
     public string? Provider { get; set; }
 
-    [Option('l', "connection-string", Required = false, HelpText = "The connection string of the database to migrate. Falls back to the TSDB_CONNECTION_STRING environment variable, then to --export-config")]
+    [Option('l', "connection-string", Required = false, HelpText = "The connection string of the database to migrate. Falls back to the TSDB_CONNECTION_STRING environment variable")]
     public string? ConnectionString { get; set; }
-
-    [Option('e', "export-config", Required = false, HelpText = "Path to the trade server export_config.json. Supplies the connection details and the exported table names")]
-    public string? ExportConfig { get; set; }
 
     [Option('s', "scripts", Required = false, HelpText = "Scripts (folders) to be processed. Defaults to a single folder named after the provider")]
     public IEnumerable<string>? ScriptFolders { get; set; }

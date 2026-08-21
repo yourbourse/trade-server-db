@@ -29,9 +29,6 @@ Neither provider uses Entity Framework. Migrations are plain SQL files applied b
 # ClickHouse
 ./migrate.sh --provider clickhouse \
              --connection-string "Host=ch.example.com;Port=8123;Database=trading;Username=default;Password=..."
-
-# or let the trade server's own configuration supply the connection and the table names
-./migrate.sh --export-config /opt/trade-server/config/export_config.json
 ```
 
 `migrate.sh` builds `src/Migrator` and runs it from the root of the repository, so the scripts in `psql/` and
@@ -42,9 +39,8 @@ Neither provider uses Entity Framework. Migrations are plain SQL files applied b
 
 | Option | Description |
 |---|---|
-| `-p, --provider` | `clickhouse` or `postgres`. Optional when `--export-config` is given |
-| `-l, --connection-string` | The database to migrate. Falls back to `$TSDB_CONNECTION_STRING`, then to `--export-config` |
-| `-e, --export-config` | Path to the trade server `export_config.json`. Supplies the connection details and the table names |
+| `-p, --provider` | `clickhouse` or `postgres`. Required |
+| `-l, --connection-string` | The database to migrate. Falls back to `$TSDB_CONNECTION_STRING` |
 | `-s, --scripts` | Script folders to apply. Defaults to a single folder named after the provider |
 | `-r, --scripts-root` | The folder the script folders are resolved against. Defaults to the current directory, then to the folder holding the binary |
 | `-c, --cluster` | ClickHouse only. Runs every statement `ON CLUSTER` and switches the engines to their `Replicated` variants |
@@ -63,13 +59,6 @@ writes to the console, the log file and `logs/migrator.log`.
 ```bash
 --users "Access=exporter;User=trade_exporter;Password=passw0rd" "Access=ro;User=trade_reader;Password=passw0rd"
 ```
-
-### Driving it from `export_config.json`
-
-Pointing `--export-config` at the file the trade server already uses keeps the schema and the exporter in step:
-the connection details, the trades table name (`table`) and the cursor table name (`cursor_table`) are all read
-from it, and one migration runs per pipeline. `--provider` narrows it to the pipelines of a single target, and
-`--connection-string` still wins if you need to migrate a different host than the one the server writes to.
 
 ## How the scripts are organised
 
@@ -100,8 +89,8 @@ Every script is preprocessed, replacing `##name##` with a value:
 | Variable | Value |
 |---|---|
 | `##database_name##` | The database from the connection string |
-| `##trades_table##` | `table` from the export configuration, otherwise `trades` |
-| `##cursor_table##` | `cursor_table` from the export configuration, otherwise `export_cursor` |
+| `##trades_table##` | `trades`, unless `--variables trades_table=...` says otherwise |
+| `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=...` says otherwise |
 | `##assembly_version##` | The version of the migrator that applied the script |
 | `##user_name##`, `##user_password##` | The `users/` phase only, one pass per `--users` entry |
 | `##cluster_name##`, `##cluster_name_suffix##` | ClickHouse only. Empty unless `--cluster` is given |
@@ -113,7 +102,7 @@ A script containing a `##name##` that is not in this list and was not passed wit
 before it reaches the database**, naming the placeholder — otherwise the `##` travels through to the server and
 comes back as a syntax error pointing at a character offset. If you want a literal table name, just write it;
 `##trades_table##` and `##cursor_table##` are templated only because the trade server's export configuration
-makes those two names configurable.
+makes those two names configurable — a deployment that renamed them passes the names with `--variables`.
 
 ### Statement separators
 

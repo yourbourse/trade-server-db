@@ -4,7 +4,6 @@
 #
 #   ./migrate.sh --provider clickhouse --connection-string "Host=localhost;Port=8123;Database=trade;Username=default;Password=..."
 #   ./migrate.sh --provider postgres   --connection-string "Host=localhost;Port=5432;Database=trade;Username=postgres;Password=..."
-#   ./migrate.sh --export-config /opt/trade-server/config/export_config.json
 #
 # Every argument is passed straight through to the Migrator, so `--help` lists the full set of options.
 #

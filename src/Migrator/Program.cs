@@ -55,9 +55,8 @@ if (arguments.Errors.Any())
 }
 
 Console.WriteLine("Migration arguments:" + Environment.NewLine +
-    $" --provider {arguments.Value.Provider ?? "N/A (taken from the export configuration)"}" + Environment.NewLine +
-    $" --connection-string {(string.IsNullOrEmpty(arguments.Value.ConnectionString) ? $"N/A (using {MigrationHandler.ConnectionStringEnvironmentVariable} or the export configuration)" : arguments.Value.ConnectionString.MaskSecrets("Password", "Pwd"))}" + Environment.NewLine +
-    $" --export-config {arguments.Value.ExportConfig ?? "N/A"}" + Environment.NewLine +
+    $" --provider {arguments.Value.Provider}" + Environment.NewLine +
+    $" --connection-string {(string.IsNullOrEmpty(arguments.Value.ConnectionString) ? $"N/A (using {MigrationHandler.ConnectionStringEnvironmentVariable})" : arguments.Value.ConnectionString.MaskSecrets("Password", "Pwd"))}" + Environment.NewLine +
     $" --scripts [{string.Join(", ", arguments.Value.ScriptFolders ?? [])}]" + Environment.NewLine +
     $" --scripts-root {arguments.Value.ScriptsRoot ?? "N/A (using the current directory)"}" + Environment.NewLine +
     $" --cluster {arguments.Value.Cluster ?? "N/A (a single instance will be used)"}" + Environment.NewLine +

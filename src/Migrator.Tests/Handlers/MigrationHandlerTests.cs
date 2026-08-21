@@ -16,7 +16,6 @@
 //  * permission is obtained from Your Bourse Limited.
 //  */
 
-using YB.TradeServer.Db.Migrator.Config;
 using YB.TradeServer.Db.Migrator.Execution;
 using YB.TradeServer.Db.Migrator.Extensions;
 using YB.TradeServer.Db.Migrator.Handlers;
@@ -132,39 +131,6 @@ public class MigrationHandlerTests
         Assert.Equal("trades_export", actual[0].Value);
         Assert.Equal("comment", actual[1].Key);
         Assert.Equal("a=b", actual[1].Value);
-    }
-
-    [Fact(DisplayName = "ExportConfiguration Should read the connection details and the table names")]
-    public void ExportConfiguration_Should_read_the_connection_details_and_the_table_names()
-    {
-        // arrange
-        var path = Path.Combine(AppContext.BaseDirectory, "TestData", "export_config.json");
-
-        // act
-        var actual = ExportConfiguration.Load(path);
-
-        // assert
-        var pipeline = Assert.Single(actual.Pipelines);
-        Assert.Equal("trade", pipeline.Entity);
-        Assert.Equal("postgresql", pipeline.Target);
-        Assert.Equal(DatabaseProvider.Postgres, MigrationHandler.ParseProvider(pipeline.Target));
-        Assert.Equal("db.example.com", pipeline.ExportTarget.Host);
-        Assert.Equal(5432, pipeline.ExportTarget.Port);
-        Assert.Equal("trading", pipeline.ExportTarget.Database);
-        Assert.Equal("exporter", pipeline.ExportTarget.User);
-        Assert.Equal("trades_export", pipeline.ExportTarget.Table);
-        Assert.Equal("trades_export_cursor", pipeline.ExportTarget.CursorTable);
-        Assert.Equal(1, pipeline.ExportTarget.SenderId);
-    }
-
-    [Fact(DisplayName = "ExportConfiguration Should fail when the file is missing")]
-    public void ExportConfiguration_Should_fail_when_the_file_is_missing()
-    {
-        // arrange
-        var path = Path.Combine(AppContext.BaseDirectory, "TestData", "does_not_exist.json");
-
-        // act, assert
-        Assert.Throws<FileNotFoundException>(() => ExportConfiguration.Load(path));
     }
 
     [Fact(DisplayName = "MaskSecrets Should hide the password and keep everything else readable")]

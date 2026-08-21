@@ -27,8 +27,7 @@ using YB.TradeServer.Db.Migrator.Extensions;
 namespace YB.TradeServer.Db.Migrator.Handlers;
 
 /// <summary>
-/// Turns the command line - optionally enriched with the trade server export_config.json - into one or more
-/// migration runs and reports the outcome of each of them.
+/// Turns the command line into a migration run and reports its outcome.
 /// </summary>
 public class MigrationHandler : IMigrationHandler
 {
@@ -36,9 +35,6 @@ public class MigrationHandler : IMigrationHandler
 
     private const string DefaultTradesTable = "trades";
     private const string DefaultCursorTable = "export_cursor";
-
-    private const ushort DefaultClickHousePort = 8123;
-    private const ushort DefaultPostgresPort = 5432;
 
     /// <summary>
     /// The variables that name a database object and therefore end up in DDL as text.
@@ -58,12 +54,10 @@ public class MigrationHandler : IMigrationHandler
 
     public void Handle(CommandLineOptions commandLineOptions)
     {
-        var targets = ResolveTargets(commandLineOptions);
+        var provider = ParseProvider(commandLineOptions.Provider
+            .ThrowWhenNullOrEmpty(nameof(commandLineOptions.Provider), "--provider is required"));
 
-        foreach (var target in targets)
-        {
-            Migrate(target, commandLineOptions);
-        }
+        Migrate(provider, ResolveConnectionString(commandLineOptions), commandLineOptions);
     }
 
     public static DatabaseProvider ParseProvider(string provider)
@@ -89,54 +83,8 @@ public class MigrationHandler : IMigrationHandler
         };
     }
 
-    private IList<MigrationTarget> ResolveTargets(CommandLineOptions options)
+    private static string ResolveConnectionString(CommandLineOptions options)
     {
-        var requestedProvider = string.IsNullOrWhiteSpace(options.Provider)
-            ? (DatabaseProvider?)null
-            : ParseProvider(options.Provider);
-
-        if (string.IsNullOrWhiteSpace(options.ExportConfig))
-        {
-            if (requestedProvider == null)
-            {
-                throw new ArgumentException("--provider is required when --export-config is not supplied", nameof(options.Provider));
-            }
-
-            var connectionString = ResolveConnectionString(options, null, requestedProvider.Value);
-
-            return [new(requestedProvider.Value, connectionString, DefaultTradesTable, DefaultCursorTable)];
-        }
-
-        var exportConfiguration = ExportConfiguration.Load(options.ExportConfig);
-
-        logger.LogInformation("Loaded {PipelineCount} pipeline(s) from {ExportConfigPath}", exportConfiguration.Pipelines.Count, options.ExportConfig);
-
-        var targets = exportConfiguration.Pipelines
-            .Select(pipeline => new
-            {
-                Pipeline = pipeline,
-                Provider = ParseProvider(pipeline.Target)
-            })
-            .Where(pipeline => requestedProvider == null || pipeline.Provider == requestedProvider)
-            .Select(pipeline => new MigrationTarget(
-                pipeline.Provider,
-                ResolveConnectionString(options, pipeline.Pipeline.ExportTarget, pipeline.Provider),
-                pipeline.Pipeline.ExportTarget.Table ?? DefaultTradesTable,
-                pipeline.Pipeline.ExportTarget.CursorTable ?? DefaultCursorTable))
-            .ToList();
-
-        if (targets.Count == 0)
-        {
-            throw new SchemaMigrationException($"No pipeline in {options.ExportConfig} targets '{options.Provider}'");
-        }
-
-        return targets;
-    }
-
-    private static string ResolveConnectionString(CommandLineOptions options, ExportTarget? exportTarget, DatabaseProvider provider)
-    {
-        // an explicitly supplied connection string always wins, so a migration can be pointed at a different
-        // host than the one the trade server writes to
         if (!string.IsNullOrWhiteSpace(options.ConnectionString))
         {
             return options.ConnectionString;
@@ -149,58 +97,9 @@ public class MigrationHandler : IMigrationHandler
             return fromEnvironment;
         }
 
-        if (exportTarget == null)
-        {
-            throw new ArgumentException(
-                $"A connection string is required. Supply --connection-string, set {ConnectionStringEnvironmentVariable}, or point --export-config at the trade server export configuration",
-                nameof(options.ConnectionString));
-        }
-
-        return BuildConnectionString(exportTarget, provider);
-    }
-
-    private static string BuildConnectionString(ExportTarget exportTarget, DatabaseProvider provider)
-    {
-        var host = exportTarget.Host.ThrowWhenNullOrEmpty(nameof(exportTarget.Host), "The export configuration does not specify a host");
-        var database = exportTarget.Database.ThrowWhenNullOrEmpty(nameof(exportTarget.Database), "The export configuration does not specify a database");
-
-        switch (provider)
-        {
-            case DatabaseProvider.ClickHouse:
-                var clickHouseBuilder = new ClickHouseConnectionStringBuilder
-                {
-                    Host = host,
-                    Port = (ushort)(exportTarget.Port ?? DefaultClickHousePort),
-                    Database = database
-                };
-
-                if (!string.IsNullOrEmpty(exportTarget.User))
-                {
-                    clickHouseBuilder.Username = exportTarget.User;
-                }
-
-                if (!string.IsNullOrEmpty(exportTarget.Password))
-                {
-                    clickHouseBuilder.Password = exportTarget.Password;
-                }
-
-                return clickHouseBuilder.ToString();
-
-            case DatabaseProvider.Postgres:
-                var postgresBuilder = new NpgsqlConnectionStringBuilder
-                {
-                    Host = host,
-                    Port = exportTarget.Port ?? DefaultPostgresPort,
-                    Database = database,
-                    Username = exportTarget.User,
-                    Password = exportTarget.Password
-                };
-
-                return postgresBuilder.ToString();
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(provider), provider, null);
-        }
+        throw new ArgumentException(
+            $"A connection string is required. Supply --connection-string or set {ConnectionStringEnvironmentVariable}",
+            nameof(options.ConnectionString));
     }
 
     private static string GetDatabaseName(DatabaseProvider provider, string connectionString)
@@ -213,38 +112,38 @@ public class MigrationHandler : IMigrationHandler
         };
     }
 
-    private void Migrate(MigrationTarget target, CommandLineOptions options)
+    private void Migrate(DatabaseProvider provider, string connectionString, CommandLineOptions options)
     {
-        var databaseName = GetDatabaseName(target.Provider, target.ConnectionString)
+        var databaseName = GetDatabaseName(provider, connectionString)
             .ThrowWhenNullOrEmpty("database", "The connection string does not specify a database name");
 
         // the journal table name is written into CREATE TABLE, INSERT and DELETE, none of which take a bound
         // parameter for an object name
         SqlSafety.ValidateIdentifier(options.JournalTable, "--journal-table");
 
-        var clusterName = target.Provider == DatabaseProvider.ClickHouse ? options.Cluster : null;
+        var clusterName = provider == DatabaseProvider.ClickHouse ? options.Cluster : null;
 
         var users = ParseUsers(options.Users);
-        var variables = BuildVariables(target, databaseName, clusterName, options);
+        var variables = BuildVariables(provider, databaseName, clusterName, options);
 
         var scriptFolders = (options.ScriptFolders?.Any() == true
                 ? options.ScriptFolders
-                : [GetDefaultScriptFolder(target.Provider)])
+                : [GetDefaultScriptFolder(provider)])
             .Select(scriptFolder => new ScriptConfig(true, scriptFolder))
             .ToList();
 
         logger.LogInformation("====================================");
         logger.LogInformation(
             "Migrating {Provider} database {DatabaseName}, trades table: {TradesTable}, cursor table: {CursorTable}, users: [{Users}]",
-            target.Provider,
+            provider,
             databaseName,
-            target.TradesTable,
-            target.CursorTable,
+            variables["trades_table"],
+            variables["cursor_table"],
             string.Join(", ", users.Select(u => $"{u.User}({u.Access})")));
 
         var migrationResults = dbUpRunner.Run(new(
-            target.Provider,
-            target.ConnectionString,
+            provider,
+            connectionString,
             databaseName,
             options.JournalTable,
             scriptFolders,
@@ -261,17 +160,17 @@ public class MigrationHandler : IMigrationHandler
         }
     }
 
-    private static Dictionary<string, string> BuildVariables(MigrationTarget target, string databaseName, string? clusterName, CommandLineOptions options)
+    private static Dictionary<string, string> BuildVariables(DatabaseProvider provider, string databaseName, string? clusterName, CommandLineOptions options)
     {
         var variables = new Dictionary<string, string>
         {
             ["assembly_version"] = typeof(MigrationHandler).Assembly.GetName().Version!.ToString(),
             ["database_name"] = databaseName,
-            ["trades_table"] = target.TradesTable,
-            ["cursor_table"] = target.CursorTable
+            ["trades_table"] = DefaultTradesTable,
+            ["cursor_table"] = DefaultCursorTable
         };
 
-        if (target.Provider == DatabaseProvider.ClickHouse)
+        if (provider == DatabaseProvider.ClickHouse)
         {
             var clustered = !string.IsNullOrEmpty(clusterName);
 
@@ -374,6 +273,4 @@ public class MigrationHandler : IMigrationHandler
             throw new SchemaMigrationException($"Unable to upgrade the database. An exception occured in script: `{migrationResult.ErrorScript?.Name}`", migrationResult.Error);
         }
     }
-
-    private record MigrationTarget(DatabaseProvider Provider, string ConnectionString, string TradesTable, string CursorTable);
 }

@@ -153,8 +153,8 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(PostgresTableExists(request.ConnectionString, "schema_versions"));
     }
 
-    [Fact(DisplayName = "Postgres migration Should honour the table names taken from the export configuration")]
-    public void Postgres_migration_Should_honour_the_table_names_taken_from_the_export_configuration()
+    [Fact(DisplayName = "Postgres migration Should honour the table names passed as variables")]
+    public void Postgres_migration_Should_honour_the_table_names_passed_as_variables()
     {
         // arrange
         var request = CreateRequest(DatabaseProvider.Postgres);
