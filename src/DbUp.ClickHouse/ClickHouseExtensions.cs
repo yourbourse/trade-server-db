@@ -206,7 +206,7 @@ public static class ClickHouseExtensions
         {
             null => false,
             DBNull => false,
-            _ => Convert.ToInt32(executeScalar) > 1
+            _ => Convert.ToInt32(executeScalar) > 0
         };
     }
 

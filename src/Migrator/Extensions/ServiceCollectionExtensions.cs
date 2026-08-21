@@ -32,7 +32,7 @@ public static class ServiceCollectionExtensions
 
         builder ??= new ConfigurationBuilder();
 
-        return builder.SetBasePath(Directory.GetCurrentDirectory())
+        return builder.SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile($"appsettings.{env}.json", true, true)
             .AddEnvironmentVariables();
     }

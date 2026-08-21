@@ -322,8 +322,8 @@ public class DbUpRunner : IDbUpRunner
         var filePath = scriptOrder.FilePath;
         var scriptFolder = ResolveScriptFolder(filePath, dbMigrationRequest);
 
-        // the name carries the sort order of the batch. If the same file name exists in two folders we want to
-        // run the one from the first folder first
+        // the name carries the folder and phase so scripts remain distinguishable in the journal and logs
+        // (overrides are already resolved earlier by DeduplicateFiles)
         var fileUniqueName = $"[{scriptFolder}{(string.IsNullOrEmpty(executionStep.ExecutionOrder.SubFolder) ? "" : $"/{executionStep.ExecutionOrder.SubFolder}")}] {Path.GetFileName(filePath)}";
         var (contents, md5Hash) = SubstituteTemplateVariables(filePath, templateVariables);
 
