@@ -1,0 +1,108 @@
+<div align="center">
+
+# Documentation
+
+**Everything about the schema, the migrator and the scripts it applies**
+
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![ClickHouse](https://img.shields.io/badge/ClickHouse-24.x%2B-FFCC01?logo=clickhouse&logoColor=black)](https://clickhouse.com/)
+[![DbUp](https://img.shields.io/badge/DbUp-6.0-2C3E50)](https://dbup.readthedocs.io/)
+![License](https://img.shields.io/badge/License-Proprietary-red.svg)
+
+[Getting Started](GETTING_STARTED.md) · [Quick Start](QUICKSTART.md) · [Configuration](CONFIGURATION.md) · [Schema](SCHEMA_REFERENCE.md) · [Architecture](ARCHITECTURE.md)
+
+</div>
+
+---
+
+## Start Here
+
+New to this repository? Read in this order:
+
+1. **[Getting Started](GETTING_STARTED.md)** — prerequisites, first migration against a throwaway database, and how to tell it worked
+2. **[Operations Guide](OPERATIONS_GUIDE.md)** — how to run it against a real export database, and what to do at every trade server upgrade
+3. **[Schema Reference](SCHEMA_REFERENCE.md)** — the tables the migrator creates and what each column means
+
+Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
+
+---
+
+## Setup & Configuration
+
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](GETTING_STARTED.md) | Step-by-step first run: prerequisites, containers, first migration, verification |
+| [Quick Start](QUICKSTART.md) | Minimal path for people who already know what a migrator does |
+| [Configuration](CONFIGURATION.md) | Every command line option, the environment variables, exit codes, and the local container setup |
+
+---
+
+## Usage Guides
+
+| Guide | Description |
+|-------|-------------|
+| [Operations Guide](OPERATIONS_GUIDE.md) | Running against a live export database, upgrade routine, ClickHouse clusters, CI/CD, and what the log tells you |
+| [Writing Migrations](WRITING_MIGRATIONS.md) | The five phases, incremental vs re-runnable scripts, naming, statement separators, and the rules that keep a script safe to re-run |
+| [Users & Permissions](USERS_AND_PERMISSIONS.md) | The `exporter` and `ro` roles, the grants each one gets on both engines, and password rotation |
+
+---
+
+## Reference
+
+| Reference | Description |
+|-----------|-------------|
+| [Schema Reference](SCHEMA_REFERENCE.md) | `trades`, `export_cursor` and `schema_versions` on both engines, column by column, with the type mapping |
+| [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
+| [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
+
+---
+
+## Architecture & Development
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](ARCHITECTURE.md) | Components, the execution pipeline end to end, journalling, and where the two providers differ |
+| [ClickHouse Provider](CLICKHOUSE_PROVIDER.md) | The custom DbUp provider: statement splitting, journal, cluster handling, and the driver quirks it works around |
+| [Development](DEVELOPMENT.md) | Building, the test suites, project layout, and how to add a script or a provider |
+| [Contributing](CONTRIBUTING.md) | Branch and commit conventions, the review checklist, and what a good migration PR looks like |
+| [Troubleshooting](TROUBLESHOOTING.md) | Errors you will actually hit, what causes them, and how to clear them |
+| [FAQ](FAQ.md) | Short answers to the questions that come up most |
+
+---
+
+## Quick Reference
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `./migrate.sh --provider postgres --connection-string "…"` | Apply the PostgreSQL schema |
+| `./migrate.sh --provider clickhouse --connection-string "…"` | Apply the ClickHouse schema |
+| `./migrate.sh … --dry-run` | Report what would be applied, touch nothing |
+| `./migrate.sh … --force` | Re-apply every re-runnable script even if unchanged |
+| `dotnet build TradeServerDb.slnx` | Build the solution |
+| `docker compose up -d` | Start local ClickHouse and PostgreSQL for testing |
+
+### Layout
+
+| Path | Purpose |
+|------|---------|
+| `psql/` | PostgreSQL scripts — root is incremental, `views/` `users/` `post/` are re-runnable |
+| `clickhouse/` | ClickHouse scripts, same layout |
+| `src/Migrator/` | The CLI: option parsing, target resolution, phase orchestration |
+| `src/DbUp.PSQL/` | DbUp provider for PostgreSQL |
+| `src/DbUp.ClickHouse/` | DbUp provider for ClickHouse |
+| `src/Migrator.Tests/` | Unit and integration tests |
+| `migrate.sh` | Build-and-run wrapper over the CLI |
+
+### Defaults
+
+| Thing | Default |
+|-------|---------|
+| Journal table | `schema_versions` |
+| Trades table | `trades` |
+| Cursor table | `export_cursor` |
+| Script folder | `psql` or `clickhouse`, after the provider |
+| Connection string | `$TSDB_CONNECTION_STRING` when `--connection-string` is absent |
+| Log file | `logs/migrator.log`, rolling daily, 10 files kept |

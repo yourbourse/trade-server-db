@@ -13,8 +13,8 @@ Two providers are supported:
 | PostgreSQL | [`psql/`](psql) | Npgsql, via DbUp | `schema_versions` |
 | ClickHouse | [`clickhouse/`](clickhouse) | `ClickHouse.Driver` (official, HTTP) | `schema_versions` |
 
-Neither provider uses Entity Framework. Migrations are plain SQL files applied by
-[DbUp](https://dbup.readthedocs.io/).
+Migrations are plain SQL files applied by [DbUp](https://dbup.readthedocs.io/) — no ORM and no generated DDL, so
+what you read in a script is what runs.
 
 > **There is no rollback.** The migrator only rolls forward. A mistake is corrected by adding a new script, not
 > by undoing an old one.
@@ -34,6 +34,45 @@ Neither provider uses Entity Framework. Migrations are plain SQL files applied b
 `migrate.sh` builds `src/Migrator` and runs it from the root of the repository, so the scripts in `psql/` and
 `clickhouse/` are picked up as they are on disk. Every argument is passed straight through, so
 `./migrate.sh --help` lists the full set of options.
+
+## Documentation
+
+The rest of this file is a summary. The full documentation lives in [`docs/`](docs/README.md).
+
+### Setup & configuration
+
+| Guide | Description |
+|---|---|
+| [Getting Started](docs/GETTING_STARTED.md) | Prerequisites, first migration against a throwaway database, and how to tell it worked |
+| [Quick Start](docs/QUICKSTART.md) | Minimal path for people who already know what a migrator does |
+| [Configuration](docs/CONFIGURATION.md) | Every option, the environment variables, logging, and exit codes |
+
+### Usage
+
+| Guide | Description |
+|---|---|
+| [Operations Guide](docs/OPERATIONS_GUIDE.md) | Live databases, the upgrade routine, ClickHouse clusters, pipelines, recovery |
+| [Writing Migrations](docs/WRITING_MIGRATIONS.md) | Phases, incremental vs re-runnable, separators, and the rules that keep a script re-runnable |
+| [Users & Permissions](docs/USERS_AND_PERMISSIONS.md) | The `exporter` and `ro` roles, their grants on both engines, and password rotation |
+
+### Reference
+
+| Reference | Description |
+|---|---|
+| [Schema Reference](docs/SCHEMA_REFERENCE.md) | `trades`, `export_cursor` and `schema_versions`, column by column, with the type mapping |
+| [Template Variables](docs/TEMPLATE_VARIABLES.md) | Every `##variable##`, where its value comes from, and how it is validated |
+| [Security](docs/SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model |
+
+### Architecture & development
+
+| Document | Description |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | Components, the execution pipeline, journalling, and where the providers differ |
+| [ClickHouse Provider](docs/CLICKHOUSE_PROVIDER.md) | The custom DbUp provider and the ClickHouse behaviour behind it |
+| [Development](docs/DEVELOPMENT.md) | Building, the test suites, project layout, and how to extend the migrator |
+| [Contributing](docs/CONTRIBUTING.md) | Branch and commit conventions, the review checklist, and what a good migration PR contains |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Errors you will actually hit, and what clears them |
+| [FAQ](docs/FAQ.md) | Short answers to the questions that come up most |
 
 ## Command line
 
@@ -215,6 +254,7 @@ src/DbUp.ClickHouse/   DbUp provider for ClickHouse (connection manager, journal
 src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI
 src/Migrator.Tests/    Unit and integration tests
+docs/                  Full documentation, indexed in docs/README.md
 migrate.sh             Wrapper over the CLI
 docker-compose.yml     ClickHouse and PostgreSQL for the integration tests
 ```
