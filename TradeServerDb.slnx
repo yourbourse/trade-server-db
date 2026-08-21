@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/misc/">
+    <File Path=".editorconfig" />
+    <File Path=".github/workflows/ci.yaml" />
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="NuGet.config" />
+    <File Path="README.md" />
+    <File Path="docker-compose.yml" />
+    <File Path="global.json" />
+    <File Path="migrate.sh" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/DbUp.ClickHouse/DbUp.ClickHouse.csproj" />
+    <Project Path="src/DbUp.PSQL/DbUp.PSQL.csproj" />
+    <Project Path="src/Migrator/Migrator.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="src/Migrator.Tests/Migrator.Tests.csproj" />
+  </Folder>
+</Solution>

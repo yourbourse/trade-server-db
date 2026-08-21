@@ -1,0 +1,14 @@
+<Project>
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>14</LangVersion>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <Company>Your Bourse Limited</Company>
+        <Product>Trade Server DB Migrator</Product>
+        <Version>1.0.0</Version>
+    </PropertyGroup>
+
+</Project>
