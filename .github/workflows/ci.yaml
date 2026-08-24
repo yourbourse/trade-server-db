@@ -11,7 +11,7 @@ jobs:
 
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:25.3
+        image: clickhouse/clickhouse-server:26.7
         env:
           CLICKHOUSE_USER: default
           CLICKHOUSE_PASSWORD: passw0rd
@@ -25,7 +25,7 @@ jobs:
           --health-retries 20
 
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: passw0rd
@@ -39,10 +39,10 @@ jobs:
           --health-retries 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: Publish test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-reports
           path: test-reports/

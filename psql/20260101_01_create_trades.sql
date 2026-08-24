@@ -48,8 +48,11 @@ CREATE TABLE IF NOT EXISTS ##trades_table##
     notional_value_in_usd               NUMERIC          NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_##trades_table##_sender_trade
+-- what the index covers comes before the table name: PostgreSQL truncates an identifier to 63 bytes, so a
+-- configured table name long enough to reach the limit would otherwise leave both indexes with the same
+-- truncated name, and the second CREATE ... IF NOT EXISTS would quietly do nothing.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sender_trade_##trades_table##
     ON ##trades_table## (sender_id, trade_id);
 
-CREATE INDEX IF NOT EXISTS idx_##trades_table##_time_created
+CREATE INDEX IF NOT EXISTS idx_time_created_##trades_table##
     ON ##trades_table## (time_created);

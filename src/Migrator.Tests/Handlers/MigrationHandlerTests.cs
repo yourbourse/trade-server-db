@@ -96,6 +96,49 @@ public class MigrationHandlerTests
         Assert.Equal("a=b=c", actual[0].Password);
     }
 
+    [Fact(DisplayName = "ParseUsers Should keep a password containing a semicolon intact")]
+    public void ParseUsers_Should_keep_a_password_containing_a_semicolon_intact()
+    {
+        // arrange, the semicolon is the separator of the definition itself, so the password has to survive it
+        var users = new[] { @"Access=exporter;User=trade_exporter;Password=p'a\ss'; DROP TABLE trades; --" };
+
+        // act
+        var actual = MigrationHandler.ParseUsers(users);
+
+        // assert
+        Assert.Equal("exporter", actual[0].Access);
+        Assert.Equal("trade_exporter", actual[0].User);
+        Assert.Equal(@"p'a\ss'; DROP TABLE trades; --", actual[0].Password);
+    }
+
+    [Fact(DisplayName = "ParseUsers Should keep a trailing semicolon in the password")]
+    public void ParseUsers_Should_keep_a_trailing_semicolon_in_the_password()
+    {
+        // arrange
+        var users = new[] { "Access=ro;User=trade_reader;Password=passw0rd;" };
+
+        // act
+        var actual = MigrationHandler.ParseUsers(users);
+
+        // assert
+        Assert.Equal("passw0rd;", actual[0].Password);
+    }
+
+    [Fact(DisplayName = "ParseUsers Should read the keys in any order")]
+    public void ParseUsers_Should_read_the_keys_in_any_order()
+    {
+        // arrange
+        var users = new[] { "Password=pa;ss;User=trade_reader;Access=ro" };
+
+        // act
+        var actual = MigrationHandler.ParseUsers(users);
+
+        // assert
+        Assert.Equal("ro", actual[0].Access);
+        Assert.Equal("trade_reader", actual[0].User);
+        Assert.Equal("pa;ss", actual[0].Password);
+    }
+
     [Fact(DisplayName = "ParseUsers Should reject an incomplete user definition")]
     public void ParseUsers_Should_reject_an_incomplete_user_definition()
     {
@@ -144,6 +187,32 @@ public class MigrationHandlerTests
 
         // assert
         Assert.Equal("Host=localhost;Port=5432;Database=trade;Username=exporter;Password=*******", actual);
+    }
+
+    [Fact(DisplayName = "MaskSecrets Should hide a password that carries a semicolon")]
+    public void MaskSecrets_Should_hide_a_password_that_carries_a_semicolon()
+    {
+        // arrange, the trailing segment is part of the password, not a key of its own
+        const string userDefinition = "Access=exporter;User=trade_exporter;Password=pa;ss";
+
+        // act
+        var actual = userDefinition.MaskSecrets("Password");
+
+        // assert
+        Assert.Equal("Access=exporter;User=trade_exporter;Password=*******;*******", actual);
+    }
+
+    [Fact(DisplayName = "MaskSecrets Should leave a segment that follows a non sensitive key alone")]
+    public void MaskSecrets_Should_leave_a_segment_that_follows_a_non_sensitive_key_alone()
+    {
+        // arrange
+        const string connectionString = "Host=localhost;Pooling=true;Timeout=30";
+
+        // act
+        var actual = connectionString.MaskSecrets("Password");
+
+        // assert
+        Assert.Equal(connectionString, actual);
     }
 
     [Fact(DisplayName = "GetHash Should be stable for the same content and differ for changed content")]

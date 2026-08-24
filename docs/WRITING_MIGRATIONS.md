@@ -77,11 +77,14 @@ changing — someone dropped a view by hand.
 
 ## Statement separators
 
-A line of four or more dashes splits a script into statements:
+A whole line of four or more dashes splits a script into statements:
 
 ```sql
 ----break----
 ```
+
+The separator has to be a line of its own — four dashes inside a statement, as in `SELECT 'a----b'`, are left
+alone.
 
 The rules differ by engine:
 
@@ -140,8 +143,13 @@ verbatim without validation, so treat that flag as trusted operator input.
 
 ## Writing for both engines
 
-Most changes apply to both providers, and the two folders are kept deliberately parallel. Mirror the change,
-with the same file name in both folders, and translate the types:
+> **Important:** `clickhouse/` does **not** create the trades and cursor tables — a ClickHouse deployment
+> provisions those itself, and this repository only grants on them and keeps the journal. So a change to the
+> table *definitions* is a PostgreSQL-only migration here; its ClickHouse counterpart belongs in the deployment
+> that owns those tables, and in the test-only definitions under `src/Migrator.Tests/TestScripts/clickhouse/` so
+> the integration tests keep matching reality. Changes to `users/`, `views/` and `post/` still apply to both.
+
+Where a change does span both folders, keep them parallel — same file name in each — and translate the types:
 
 | PostgreSQL | ClickHouse |
 |------------|------------|
@@ -176,7 +184,9 @@ Before opening a PR with a new script:
 - [ ] `##trades_table##` / `##cursor_table##` rather than hard-coded names
 - [ ] `IF NOT EXISTS` / `CREATE OR REPLACE` wherever the engine allows it
 - [ ] ClickHouse: a `----break----` between every statement, and `##cluster_name_suffix##` on every DDL statement
-- [ ] Mirrored in the other provider's folder, or a comment explaining why not
+- [ ] Mirrored in the other provider's folder, or a comment explaining why not — remembering that table
+      definitions are PostgreSQL-only here, with the ClickHouse counterparts kept under
+      `src/Migrator.Tests/TestScripts/clickhouse/`
 - [ ] `--dry-run` lists it, and only it
 - [ ] Applied twice: the second run reports `Executed scripts: 0`
 - [ ] Integration tests pass against both engines

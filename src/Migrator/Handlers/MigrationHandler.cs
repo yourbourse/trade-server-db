@@ -16,6 +16,7 @@
 //  * permission is obtained from Your Bourse Limited.
 //  */
 
+using System.Text.RegularExpressions;
 using ClickHouse.Driver.ADO;
 using DbUp.Engine;
 using Microsoft.Extensions.Logging;
@@ -40,6 +41,16 @@ public class MigrationHandler : IMigrationHandler
     /// The variables that name a database object and therefore end up in DDL as text.
     /// </summary>
     private static readonly string[] identifierVariables = ["database_name", "trades_table", "cursor_table", "cluster_name"];
+
+    /// <summary>
+    /// Splits a user definition only at the semicolons that introduce one of its keys.
+    /// </summary>
+    /// <remarks>
+    /// A password is free-form and may itself contain a semicolon, so splitting on every semicolon would
+    /// silently truncate it: <c>Password=pa;ss</c> has to store <c>pa;ss</c>, not <c>pa</c>. The one sequence a
+    /// password still cannot contain is a semicolon immediately followed by one of the keys.
+    /// </remarks>
+    private static readonly Regex userDefinitionSeparator = new(@";(?=\s*(?:Access|User|Password)\s*=)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IDbUpRunner dbUpRunner;
     private readonly ILogger<MigrationHandler> logger;
@@ -216,7 +227,7 @@ public class MigrationHandler : IMigrationHandler
 
         foreach (var user in users)
         {
-            var userRecord = ParseKeyValuePairs(user.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            var userRecord = ParseKeyValuePairs(userDefinitionSeparator.Split(user))
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 
             if (!userRecord.TryGetValue("Access", out var access) ||

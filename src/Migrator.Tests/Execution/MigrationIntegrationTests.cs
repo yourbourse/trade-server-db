@@ -204,6 +204,73 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.Equal(1, Convert.ToInt32(command.ExecuteScalar()));
     }
 
+    [Fact(DisplayName = "Postgres migration Should drop write access when a user is re-provisioned as read only")]
+    public void Postgres_migration_Should_drop_write_access_when_a_user_is_re_provisioned_as_read_only()
+    {
+        // arrange, the same account is first an exporter and then a reader
+        var userName = $"demoted_{DateTime.UtcNow.Ticks}";
+
+        var request = CreateRequest(DatabaseProvider.Postgres) with
+        {
+            Users = [new() { Access = "exporter", User = userName, Password = "passw0rd" }]
+        };
+
+        var runner = CreateRunner();
+
+        AssertSuccessful(runner.Run(request));
+
+        // act
+        var readOnlyRun = runner.Run(request with
+        {
+            Users = [new() { Access = "ro", User = userName, Password = "passw0rd" }]
+        });
+
+        // assert
+        AssertSuccessful(readOnlyRun);
+
+        Assert.True(PostgresHasPrivilege(request.ConnectionString, userName, "trades", "SELECT"));
+        Assert.False(PostgresHasPrivilege(request.ConnectionString, userName, "trades", "INSERT"));
+        Assert.False(PostgresHasPrivilege(request.ConnectionString, userName, "export_cursor", "UPDATE"));
+    }
+
+    [Fact(DisplayName = "Postgres migration Should keep the journal entry of a script whose name is a prefix of another")]
+    public void Postgres_migration_Should_keep_the_journal_entry_of_a_script_whose_name_is_a_prefix_of_another()
+    {
+        // arrange, "reader" is a prefix of "reader2", and both are journalled by the same users script
+        var reader = $"reader_{DateTime.UtcNow.Ticks}";
+        var readerTwo = $"{reader}2";
+
+        var request = CreateRequest(DatabaseProvider.Postgres) with
+        {
+            Users =
+            [
+                new() { Access = "ro", User = reader, Password = "passw0rd" },
+                new() { Access = "ro", User = readerTwo, Password = "passw0rd" }
+            ]
+        };
+
+        var runner = CreateRunner();
+
+        AssertSuccessful(runner.Run(request));
+
+        // act, rotating the password of the shorter name rewrites only its own journal entry
+        var rotated = runner.Run(request with
+        {
+            Users =
+            [
+                new() { Access = "ro", User = reader, Password = "rotated" },
+                new() { Access = "ro", User = readerTwo, Password = "passw0rd" }
+            ]
+        });
+
+        // assert
+        AssertSuccessful(rotated);
+
+        var applied = CountAppliedScripts(rotated);
+
+        Assert.Equal(1, applied);
+    }
+
     [Theory(DisplayName = "Migration Should survive a password that would otherwise break out of the literal")]
     [InlineData(DatabaseProvider.Postgres)]
     [InlineData(DatabaseProvider.ClickHouse)]
@@ -311,6 +378,21 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         return new(NullLogger<DbUpRunner>.Instance, new TestDbUpLogProvider(output));
     }
 
+    /// <summary>
+    /// The script folders a migration run is given.
+    /// </summary>
+    /// <remarks>
+    /// The shipped clickhouse folder no longer creates the trades and cursor tables - a ClickHouse deployment
+    /// provisions those itself and this repository only grants on them by name - so the ClickHouse tests add the
+    /// folder holding the table definitions they need to have something to migrate and to grant against.
+    /// </remarks>
+    private static IList<ScriptConfig> GetScriptFolders(DatabaseProvider provider)
+    {
+        return provider == DatabaseProvider.ClickHouse
+            ? [new(true, Path.Combine("TestScripts", "clickhouse")), new(true, "clickhouse")]
+            : [new(true, "psql")];
+    }
+
     private DbMigratorRequest CreateRequest(DatabaseProvider provider)
     {
         var configuredConnectionString = provider == DatabaseProvider.ClickHouse
@@ -329,7 +411,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
             connectionString,
             databaseName,
             "schema_versions",
-            [new(true, provider == DatabaseProvider.ClickHouse ? "clickhouse" : "psql")],
+            GetScriptFolders(provider),
             configBuilder.RepositoryRoot,
             new Dictionary<string, string>
             {
@@ -398,6 +480,20 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         command.Parameters.Add(new NpgsqlParameter("name", tableName));
 
         return Convert.ToInt32(command.ExecuteScalar()) == 1;
+    }
+
+    private static bool PostgresHasPrivilege(string connectionString, string userName, string tableName, string privilege)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT has_table_privilege(@user, @table, @privilege)";
+        command.Parameters.Add(new NpgsqlParameter("user", userName));
+        command.Parameters.Add(new NpgsqlParameter("table", tableName));
+        command.Parameters.Add(new NpgsqlParameter("privilege", privilege));
+
+        return Convert.ToBoolean(command.ExecuteScalar());
     }
 
     private static int CountAppliedScripts(IEnumerable<(string SubFolder, DatabaseUpgradeResult Result)> results)

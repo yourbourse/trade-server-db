@@ -31,6 +31,11 @@ Three properties of this tool shape every procedure below:
 
 The order matters: schema first, users second, and the export pipeline only after both.
 
+> **Important:** On **ClickHouse**, `trades` and `export_cursor` are not created by the migrator — the
+> deployment provisions them. Create them before starting the export; the migration itself succeeds without
+> them, because ClickHouse grants on a table by name whether or not it exists. On PostgreSQL the migrator
+> creates both. See [Schema Reference](SCHEMA_REFERENCE.md#overview).
+
 **1. Confirm the target.** The connection string must name the database. The account needs DDL rights, and
 `CREATEDB` (PostgreSQL) or the equivalent ClickHouse grant if the database does not exist yet.
 
@@ -53,7 +58,7 @@ does not exist yet, and a dry run is not allowed to create it.
 ./migrate.sh --provider postgres --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
 ```
 
-**4. Verify.** `trades`, `export_cursor` and `schema_versions` exist; both roles exist; a second run reports
+**4. Verify.** `schema_versions` exists, both roles exist, and a second run reports
 `Executed scripts: 0`.
 
 **5. Hand the exporter credentials to the trade server** and start the export.

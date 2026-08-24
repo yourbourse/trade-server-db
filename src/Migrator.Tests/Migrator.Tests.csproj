@@ -30,10 +30,14 @@
     </ItemGroup>
 
     <ItemGroup>
-        <None Update="appsettings.development.json">
+        <None Update="appsettings.integration.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
-        <None Update="appsettings.integration.json">
+        <!--
+            The ClickHouse trades and cursor tables are not shipped as migrations, so the definitions the
+            integration tests migrate against live here and travel with the test binaries.
+        -->
+        <None Update="TestScripts\**\*.sql">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
     </ItemGroup>

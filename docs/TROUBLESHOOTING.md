@@ -87,8 +87,9 @@ are ignored.
 
 ### `Unable to parse the user definition '…'. Expected format: Access=…;User=…;Password=…`
 
-All three keys are required, semicolon-separated. The password is masked in the error. A password containing `=`
-is fine — only the first `=` of each pair splits key from value.
+All three keys are required. The password is masked in the error. A password may contain `=` and `;` - the entry
+is split only at the semicolons that introduce `Access=`, `User=` or `Password=`, and only the first `=` of a
+pair separates key from value.
 
 ---
 
@@ -175,10 +176,12 @@ for that phase — there is no user to write. Pass both:
 ./migrate.sh --provider postgres --connection-string "..." --force --users "Access=exporter;User=trade_exporter;Password=..."
 ```
 
-### A `users/` script ran but the user does not exist
+### `No script implements the access level requested by: …`
 
-The `Access` value did not match any file, so nothing was applied — silently, by design. Check the migration log
-line listing the users the run understood, and that the file name matches the access level exactly.
+The `Access` value of a `--users` entry has to match the name of a file in the users folder, so `Access=exporter`
+runs `users/exporter.sql`. The message lists the access levels that do exist; the usual causes are a typo, a
+capitalisation difference (the match is case-sensitive), or a `--scripts` folder set that does not carry that
+role.
 
 ---
 
@@ -300,7 +303,7 @@ docker compose up -d
 ASPNETCORE_ENVIRONMENT=integration dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
 ```
 
-Without `ASPNETCORE_ENVIRONMENT=integration` the tests read `appsettings.development.json` and find no server.
+Without `ASPNETCORE_ENVIRONMENT=integration` no settings file is loaded at all, so the tests find no server.
 
 ### `Unable to locate the repository root`
 

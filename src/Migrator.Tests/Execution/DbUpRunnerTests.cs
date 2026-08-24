@@ -17,6 +17,7 @@
 //  */
 
 using System.Runtime.InteropServices;
+using YB.TradeServer.Db.Migrator.Config;
 using YB.TradeServer.Db.Migrator.Execution;
 
 namespace YB.TradeServer.Db.Migrator.Tests.Execution;
@@ -179,6 +180,78 @@ public class DbUpRunnerTests
 
         // assert
         Assert.Empty(actual);
+    }
+
+    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should pass when every access level has a script")]
+    public void ValidateRequestedUsersHaveScripts_Should_pass_when_every_access_level_has_a_script()
+    {
+        // arrange
+        var steps = new[] { CreateUsersStep(@"psql/users\exporter.sql", @"psql/users\ro.sql") };
+
+        var users = new List<DatabaseUser>
+        {
+            new() { Access = "exporter", User = "trade_exporter", Password = "passw0rd" },
+            new() { Access = "ro", User = "trade_reader", Password = "passw0rd" }
+        };
+
+        // act, assert
+        DbUpRunner.ValidateRequestedUsersHaveScripts(steps, users);
+    }
+
+    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should reject an access level no script implements")]
+    public void ValidateRequestedUsersHaveScripts_Should_reject_an_access_level_no_script_implements()
+    {
+        // arrange
+        var steps = new[] { CreateUsersStep(@"psql/users\exporter.sql", @"psql/users\ro.sql") };
+
+        var users = new List<DatabaseUser>
+        {
+            new() { Access = "readonly", User = "trade_reader", Password = "passw0rd" }
+        };
+
+        // act
+        var exception = Assert.Throws<SchemaMigrationException>(() => DbUpRunner.ValidateRequestedUsersHaveScripts(steps, users));
+
+        // assert
+        Assert.Contains("trade_reader (Access=readonly)", exception.Message);
+        Assert.Contains("exporter, ro", exception.Message);
+    }
+
+    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should report an empty users folder")]
+    public void ValidateRequestedUsersHaveScripts_Should_report_an_empty_users_folder()
+    {
+        // arrange
+        var steps = new[] { CreateUsersStep() };
+
+        var users = new List<DatabaseUser>
+        {
+            new() { Access = "exporter", User = "trade_exporter", Password = "passw0rd" }
+        };
+
+        // act
+        var exception = Assert.Throws<SchemaMigrationException>(() => DbUpRunner.ValidateRequestedUsersHaveScripts(steps, users));
+
+        // assert
+        Assert.Contains("none", exception.Message);
+    }
+
+    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should do nothing when no user was requested")]
+    public void ValidateRequestedUsersHaveScripts_Should_do_nothing_when_no_user_was_requested()
+    {
+        // arrange
+        var steps = new[] { CreateUsersStep() };
+
+        // act, assert
+        DbUpRunner.ValidateRequestedUsersHaveScripts(steps, []);
+    }
+
+    private static ExecutionStep CreateUsersStep(params string[] relativePaths)
+    {
+        var files = relativePaths
+            .Select(path => new FileOrder(GetAbsolutePath(path), 1))
+            .ToList();
+
+        return new(new() { OrderId = 4, SubFolder = "users", ReRunnable = true }, files);
     }
 
     private static string GetAbsolutePath(string relativePath)

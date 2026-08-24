@@ -35,9 +35,9 @@ the **file name** of the script to run:
 
 | Entry key | Meaning | Validation |
 |-----------|---------|------------|
-| `Access` | Picks `users/<Access>.sql` | Must match a file, or nothing is applied |
+| `Access` | Picks `users/<Access>.sql` | Must match a file, or the run fails |
 | `User` | The role/user name | Must be a plain identifier |
-| `Password` | The password | Escaped for the dialect, may contain almost anything |
+| `Password` | The password | Escaped for the dialect, may contain almost anything — including `;` and `=` |
 
 The mechanics:
 
@@ -45,13 +45,26 @@ The mechanics:
 - `##user_name##` and `##user_password##` are substituted per entry.
 - The journal entry carries the user name, so each user gets its own row:
   `[psql/users] exporter.sql for trade_exporter::7f3c…`
-- An `Access` value with no matching file applies nothing — no error. Check the log line listing the users the
-  run understood if a user you expected is missing.
+- An `Access` value that matches no file **fails the run** before anything is applied, naming the account and
+  listing the access levels that do exist.
 - Omitting `--users` skips the phase entirely. It never revokes or drops anything.
 
 > **Warning:** All three keys are required. A malformed entry fails the run with the expected format, with the
-> password masked in the error. A password containing `=` is fine — only the first `=` of each pair splits key
+> password masked in the error. A password containing `=` or `;` is fine — the entry is split only at the
+> semicolons that introduce `Access=`, `User=` or `Password=`, and only the first `=` of a pair separates key
 > from value.
+
+### Re-provisioning changes access
+
+The scripts converge on the access level you ask for, rather than merely adding to it. Running an account that
+previously held `Access=exporter` with `Access=ro` **revokes its write access**: PostgreSQL revokes all
+privileges on both tables before granting `SELECT` back, and ClickHouse revokes the exporter role before
+granting the read-only one. The reverse direction needs no special handling — the exporter grants are a superset
+of the read-only ones.
+
+> **Note:** ClickHouse refuses to revoke a role that does not exist, so `clickhouse/users/ro.sql` creates the
+> exporter role if missing purely so it can revoke it. On a deployment that never provisions an exporter this
+> leaves an empty, unassigned role behind.
 
 ---
 
@@ -97,7 +110,9 @@ also rotates the password.
 ## ClickHouse
 
 ClickHouse separates roles from users, so the script creates a role named after the database, grants on it, then
-creates the user and assigns the role:
+creates the user and assigns the role. The tables themselves are **not** created here — a ClickHouse deployment
+provisions `trades` and `export_cursor` itself, and ClickHouse happily grants on a table by name before it
+exists:
 
 ```sql
 CREATE ROLE IF NOT EXISTS role_##database_name##_exporter ##cluster_name_suffix##;

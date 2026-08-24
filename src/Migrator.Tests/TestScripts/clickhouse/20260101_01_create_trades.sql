@@ -2,6 +2,11 @@
 
 -- Trades exported by the trade server, following the column list and the types of the Export Setup guide.
 --
+-- THIS SCRIPT IS NOT PART OF THE SHIPPED MIGRATION. ClickHouse trades and cursor tables are not provisioned by
+-- this repository - the table lives wherever the deployment puts it, and clickhouse/users/ only grants on it by
+-- name. The script is kept here so the ClickHouse integration tests have a schema to migrate against, and it is
+-- applied by passing this folder to --scripts.
+--
 -- The PostgreSQL types map onto ClickHouse as: BIGINT -> Int64, SMALLINT -> Int16, NUMERIC -> Decimal(38, 18),
 -- VARCHAR -> String, TIMESTAMP WITH TIME ZONE -> DateTime64(6, 'UTC').
 --
@@ -58,6 +63,9 @@ CREATE TABLE IF NOT EXISTS ##trades_table## ##cluster_name_suffix##
 )
 ENGINE = ##replacing_merge_tree_engine##
 PARTITION BY toYYYYMM(time_created)
-PRIMARY KEY (sender_id, trade_id)
-ORDER BY (sender_id, trade_id)
+-- the primary key is the sparse index ClickHouse holds in memory, so it stays at the low cardinality column;
+-- the sorting key carries trade_id as well because ReplacingMergeTree deduplicates on it, and dropping it
+-- would collapse two different trades that happen to share a sender and a timestamp
+PRIMARY KEY (sender_id)
+ORDER BY (sender_id, trade_id, time_created)
 SETTINGS index_granularity = 8192;

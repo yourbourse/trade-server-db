@@ -64,21 +64,27 @@ public static class StringExtensions
 
         var parts = value.Split(';', StringSplitOptions.RemoveEmptyEntries);
 
-        var masked = parts.Select(part =>
+        var masked = new List<string>(parts.Length);
+        var insideSensitiveValue = false;
+
+        foreach (var part in parts)
         {
             var separatorIndex = part.IndexOf('=');
 
             if (separatorIndex < 0)
             {
-                return part;
+                // a segment with no key of its own continues the previous value - a password carrying a
+                // semicolon - so it is masked along with it rather than printed in the clear
+                masked.Add(insideSensitiveValue ? "*******" : part);
+                continue;
             }
 
             var key = part[..separatorIndex].Trim();
 
-            return sensitiveKeys.Contains(key, StringComparer.OrdinalIgnoreCase)
-                ? $"{key}=*******"
-                : part;
-        });
+            insideSensitiveValue = sensitiveKeys.Contains(key, StringComparer.OrdinalIgnoreCase);
+
+            masked.Add(insideSensitiveValue ? $"{key}=*******" : part);
+        }
 
         return string.Join(";", masked);
     }

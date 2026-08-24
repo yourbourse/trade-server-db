@@ -6,7 +6,7 @@
 # The ports are deliberately non-default so the containers do not collide with a locally installed server.
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:25.3
+    image: clickhouse/clickhouse-server:26.7
     restart: unless-stopped
     environment:
       CLICKHOUSE_USER: default
@@ -26,7 +26,7 @@ services:
       retries: 20
 
   postgres:
-    image: postgres:17
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres

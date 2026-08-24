@@ -23,8 +23,22 @@ Three tables, in the database named by the connection string:
 The first two names are configurable — they mirror the trade server's export configuration and are templated as
 `##trades_table##` and `##cursor_table##`. The journal name comes from `--journal-table`.
 
-Both providers carry the same logical schema, matching the *Export Setup* guide. Where the engines differ, the
-difference is called out below.
+> **Important:** **Which of these the migrator creates depends on the engine.**
+>
+> | | PostgreSQL | ClickHouse |
+> |---|---|---|
+> | `trades`, `export_cursor` | created by the migrator | **not created** — provisioned by the deployment |
+> | `schema_versions` | created by the migrator | created by the migrator |
+> | Users and grants | applied by the migrator | applied by the migrator |
+>
+> On ClickHouse this repository grants on the trades and cursor tables **by name** without owning their
+> definitions, which is why a grant succeeds even before the tables exist. The definitions below document what
+> the migrator expects to find; the copies the integration tests migrate against live in
+> [`src/Migrator.Tests/TestScripts/clickhouse/`](../src/Migrator.Tests/TestScripts/clickhouse) and are not part
+> of a shipped migration.
+
+Both engines carry the same logical schema, matching the *Export Setup* guide. Where they differ, the difference
+is called out below.
 
 ---
 
@@ -82,12 +96,17 @@ Every column is `NOT NULL`.
 
 | Index | Definition | Purpose |
 |-------|------------|---------|
-| `idx_<trades_table>_sender_trade` | `UNIQUE (sender_id, trade_id)` | Deduplicates at-least-once delivery |
-| `idx_<trades_table>_time_created` | `(time_created)` | Time-range queries |
+| `idx_sender_trade_<trades_table>` | `UNIQUE (sender_id, trade_id)` | Deduplicates at-least-once delivery |
+| `idx_time_created_<trades_table>` | `(time_created)` | Time-range queries |
+
+What the index covers comes **before** the table name, because PostgreSQL truncates identifiers to 63 bytes: a
+long configured table name would otherwise leave both indexes with the same truncated name, and the second
+`CREATE INDEX IF NOT EXISTS` would quietly do nothing.
 
 ### ClickHouse
 
-Same columns and order, with two omissions and a few engine-specific choices:
+Not created by the migrator — the deployment provisions it. What the migrator expects, and what the integration
+tests create, is the same column list with two omissions and a few engine-specific choices:
 
 | Difference | Detail |
 |------------|--------|
@@ -99,13 +118,22 @@ Same columns and order, with two omissions and a few engine-specific choices:
 ```sql
 ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --cluster
 PARTITION BY toYYYYMM(time_created)
-PRIMARY KEY (sender_id, trade_id)
-ORDER BY (sender_id, trade_id)
+PRIMARY KEY (sender_id)
+ORDER BY (sender_id, trade_id, time_created)
 SETTINGS index_granularity = 8192
 ```
 
 Monthly partitions by `time_created` keep dropping old data cheap and let time-bounded queries skip whole
 partitions.
+
+The primary key and the sorting key are deliberately different lengths:
+
+| Key | Contents | Why |
+|-----|----------|-----|
+| `PRIMARY KEY` | `(sender_id)` | This is the sparse index ClickHouse loads into memory. Keeping it to the low-cardinality column avoids holding a mark per trade id |
+| `ORDER BY` | `(sender_id, trade_id, time_created)` | `ReplacingMergeTree` deduplicates on the **sorting** key, so `trade_id` has to stay in it — without it, two different trades sharing a sender and a timestamp would collapse into one |
+
+The primary key must be a prefix of the sorting key, which is what makes this split legal.
 
 ---
 
@@ -128,6 +156,8 @@ The cursor row and the batch of trades are written **in the same transaction**, 
 trustworthy: it can never claim more than was actually stored.
 
 ### ClickHouse
+
+Not created by the migrator — as with `trades`, the deployment provisions it and the migrator only grants on it.
 
 | Column | Type |
 |--------|------|
@@ -239,11 +269,18 @@ from the guide before this repository existed. It adopts what is already there r
 means it will **not** correct a table whose columns differ from the script. Compare the schema by hand when
 adopting a database you did not create.
 
+### The ClickHouse tables have to exist before the export runs
+
+Because the migrator does not create them, provisioning a ClickHouse target is two steps: create `trades` and
+`export_cursor` from the definitions above, then run the migrator to apply the journal, the users and the
+`post/` phase. The grants themselves succeed either way — ClickHouse accepts a `GRANT` naming a table that does
+not exist yet — so a missing table shows up as a failing export, not a failing migration.
+
 ### Renamed tables
 
 If the trade server's export configuration uses non-default table names, every run must pass the same
 `--variables trades_table=… cursor_table=…`. Nothing records the names on the database side, so a run without
-them creates a second, empty set of tables under the default names.
+them grants on — and on PostgreSQL creates — a second set of tables under the default names.
 
 ---
 

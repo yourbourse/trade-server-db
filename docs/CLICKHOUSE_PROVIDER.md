@@ -40,13 +40,16 @@ DeployChanges.To.ClickHouseDatabase(connectionString, databaseName, journalTable
 become three requests, so the connection manager overrides `SplitScriptIntoCommands`:
 
 ```csharp
-Regex.Split(scriptContents, "----.*", RegexOptions.IgnoreCase | RegexOptions.Multiline)
+Regex.Split(scriptContents, @"^[ \t]*----.*$", RegexOptions.IgnoreCase | RegexOptions.Multiline)
     .Select(x => x.Trim())
     .Where(ContainsExecutableStatement)
 ```
 
-Any line of four or more dashes is a separator, so `----break----`, `----` and `---- anything ----` all work.
-The convention in this repository is `----break----`.
+Any **whole line** of four or more dashes is a separator, so `----break----`, `----` and `---- anything ----`
+all work. The convention in this repository is `----break----`.
+
+The pattern is anchored to the line on purpose: four dashes inside a statement — `SELECT 'a----b'`, or a comment
+drawing a rule across the file — must not split the command in two.
 
 ### Comment-only chunks are dropped
 

@@ -44,9 +44,13 @@ public class ConfigBuilder
     public string? PostgresConnectionString { get; }
 
     /// <summary>
-    /// The folder holding the clickhouse and psql script folders. The SQL is not copied into the test output,
-    /// so the integration tests point the migrator at the working copy instead.
+    /// The folder the script folders are resolved against: the first directory above the test binaries holding
+    /// both a clickhouse and a psql folder.
     /// </summary>
+    /// <remarks>
+    /// In a normal test run that is the build output itself, because the Migrator project copies its SQL next to
+    /// the binaries - so the tests exercise the same copy a published migrator would carry.
+    /// </remarks>
     public string RepositoryRoot { get; }
 
     private static string FindRepositoryRoot()

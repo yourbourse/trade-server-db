@@ -13,8 +13,8 @@
 ## Overview
 
 The migrator is configured entirely from the command line plus one environment variable. There is no
-configuration file to deploy: `appsettings.development.json` exists only for local development, and the
-integration tests read their own `appsettings.integration.json`.
+configuration file to deploy - the integration tests read their own `appsettings.integration.json`, and nothing
+else is loaded unless you add it.
 
 ```bash
 ./migrate.sh --provider <clickhouse|postgres> --connection-string "<connection string>" [options]
@@ -154,9 +154,12 @@ Semicolon-separated key/value entries. `Access` selects the script in `users/` b
 | `User` | The role/user name. Validated as an identifier |
 | `Password` | The password. Escaped for the target dialect, never bound |
 
-All three keys are required; anything missing fails with the expected format (password masked). `Password` may
-contain `=` — only the first `=` in each pair splits key from value. An `Access` value with no matching file
-applies nothing.
+All three keys are required; anything missing fails with the expected format (password masked). An `Access`
+value that matches no script **fails the run**, listing the access levels that do exist.
+
+The password is free-form: it may contain `=` (only the first `=` of each pair splits key from value) and it may
+contain `;`, because the entry is split only at the semicolons that introduce one of the three keys. The one
+sequence a password cannot contain is a semicolon immediately followed by `Access=`, `User=` or `Password=`.
 
 Full detail: [Users & Permissions](USERS_AND_PERMISSIONS.md).
 
@@ -242,8 +245,8 @@ installation:
 
 | Service | Image | Ports | Credentials |
 |---------|-------|-------|-------------|
-| `clickhouse` | `clickhouse/clickhouse-server:25.3` | `18223:8123`, `19223:9000` | `default` / `passw0rd` |
-| `postgres` | `postgres:17` | `15432:5432` | `postgres` / `passw0rd` |
+| `clickhouse` | `clickhouse/clickhouse-server:26.7` | `18223:8123`, `19223:9000` | `default` / `passw0rd` |
+| `postgres` | `postgres:18` | `15432:5432` | `postgres` / `passw0rd` |
 
 ```bash
 docker compose up -d

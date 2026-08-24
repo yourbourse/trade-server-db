@@ -19,6 +19,13 @@ GRANT CONNECT ON DATABASE ##database_name## TO ##user_name##;
 
 GRANT USAGE ON SCHEMA public TO ##user_name##;
 
+-- the script has to converge on read-only access, so anything the account may already hold - INSERT and UPDATE
+-- from a previous run with Access=exporter, say - is dropped before SELECT is granted back. Revoking a
+-- privilege that was never granted is a no-op, so this is safe on a fresh role.
+REVOKE ALL PRIVILEGES ON TABLE ##trades_table## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##cursor_table## FROM ##user_name##;
+
 GRANT SELECT ON TABLE ##trades_table## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##cursor_table## TO ##user_name##;

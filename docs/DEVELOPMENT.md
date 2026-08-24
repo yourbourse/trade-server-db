@@ -26,8 +26,8 @@ git clone https://github.com/yourbourse/trade-server-db.git
 dotnet build TradeServerDb.slnx
 ```
 
-> **Note:** The solution is `TradeServerDb.slnx`, the XML-based format. A generated `TradeServerDb.sln` may exist
-> locally for older tooling; the `.slnx` is the one that is committed and the one CI builds.
+> **Note:** The solution is `TradeServerDb.slnx`, the XML-based format - the only one committed and the one CI
+> builds. If your tooling generates a `TradeServerDb.sln` beside it, keep it out of commits.
 
 ---
 
@@ -65,8 +65,9 @@ Two suites in one project, separated by the `Category` trait.
 
 ### Unit tests
 
-No database required. 49 tests covering the pure logic: file deduplication, unresolved-variable detection,
-statement splitting, identifier validation, literal escaping, option parsing, secret masking and hashing.
+No database required. 60 tests covering the pure logic: file deduplication, unresolved-variable detection,
+statement splitting, identifier validation, literal escaping, option and user-definition parsing, access-level
+validation, secret masking and hashing.
 
 ```bash
 dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category!=Integration"
@@ -101,12 +102,15 @@ what a previous run left behind; the database is dropped again on the way out. W
 - A user name that is not a plain identifier is refused.
 - Table names passed as variables are honoured.
 - A dry run reports pending scripts without touching the database.
+- Re-provisioning an exporter account with `Access=ro` leaves it read-only — the write grants are revoked.
+- Rotating a user whose name is a prefix of another user's (`reader` and `reader2`) rewrites only its own journal
+  entry.
 
 Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
 overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`.
 
-> **Warning:** `ASPNETCORE_ENVIRONMENT=integration` selects that settings file. Without it the tests read
-> `appsettings.development.json` and will not find a server.
+> **Warning:** `ASPNETCORE_ENVIRONMENT=integration` selects that settings file. Without it no settings file is
+> loaded at all and the tests find no server.
 
 ---
 
@@ -114,14 +118,15 @@ overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`
 
 ```
 trade-server-db/
-├── clickhouse/                         ClickHouse scripts
-│   ├── 20260101_01_create_trades.sql       incremental (folder root)
-│   ├── 20260101_02_create_export_cursor.sql
+├── clickhouse/                         ClickHouse scripts - no table creation, see the note below
 │   ├── post/run_on_every_build.sql         re-runnable
 │   ├── users/exporter.sql                  re-runnable, one pass per --users entry
 │   ├── users/ro.sql
 │   └── views/                              (empty placeholder)
-├── psql/                               PostgreSQL scripts, same layout
+├── psql/                               PostgreSQL scripts
+│   ├── 20260101_01_create_trades.sql       incremental (folder root)
+│   ├── 20260101_02_create_export_cursor.sql
+│   ├── post/ users/ views/                 re-runnable, same phases as clickhouse/
 ├── src/
 │   ├── Migrator/                       The CLI
 │   │   ├── Program.cs                      options, Serilog, host, DI, exit code
@@ -140,11 +145,17 @@ trade-server-db/
 │   ├── DbUp.PSQL/                      DbUp provider for PostgreSQL
 │   ├── DbUp.ClickHouse/                DbUp provider for ClickHouse
 │   └── Migrator.Tests/                 Unit + integration tests
+│       └── TestScripts/clickhouse/         trades + cursor definitions, test-only (see below)
 ├── .github/workflows/ci.yaml           build, unit tests, integration tests
 ├── docker-compose.yml                  ClickHouse + PostgreSQL for testing
 ├── migrate.sh                          build-and-run wrapper
 └── docs/                               this documentation
 ```
+
+> **Note:** `clickhouse/` deliberately has no table-creation scripts. A ClickHouse deployment provisions `trades`
+> and `export_cursor` itself; this repository only journals, grants and runs the `post/` phase against them. The
+> definitions the ClickHouse integration tests migrate against live in `src/Migrator.Tests/TestScripts/clickhouse/`
+> and are passed to the runner as an extra `--scripts` folder, so they never ship as a migration.
 
 ---
 
@@ -234,7 +245,7 @@ Beyond formatting, the house style in this repository:
 | Integration tests | `dotnet test … --filter "Category=Integration"` with `ASPNETCORE_ENVIRONMENT=integration` |
 | Reports | JUnit XML uploaded as the `test-reports` artefact, always |
 
-Service containers: `clickhouse/clickhouse-server:25.3` on `18223` and `postgres:17` on `15432` — the same ports
+Service containers: `clickhouse/clickhouse-server:26.7` on `18223` and `postgres:18` on `15432` — the same ports
 as `docker-compose.yml`, so the integration tests need no separate configuration locally or in CI.
 
 ---

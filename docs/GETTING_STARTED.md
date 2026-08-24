@@ -17,7 +17,7 @@
 | **.NET SDK** | 10.0.301+ (pinned in `global.json`) | `dotnet --version` |
 | **Git** | any | `git --version` |
 | **Bash** | any — Git Bash and WSL both work on Windows | `bash --version` |
-| **PostgreSQL** | 13+ recommended | `psql --version` |
+| **PostgreSQL** | 14+ | `psql --version` |
 | **ClickHouse** | **24.x or newer** | `SELECT version()` |
 | **Docker** | optional, for the local test databases | `docker --version` |
 
@@ -119,6 +119,11 @@ Now the same against ClickHouse:
 ./migrate.sh --provider clickhouse --connection-string "Host=localhost;Port=18223;Database=trade_demo;Username=default;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd"
 ```
 
+> **Important:** On ClickHouse the migrator does **not** create `trades` and `export_cursor` — a ClickHouse
+> deployment provisions those itself, and this repository only creates the journal, the users and their grants.
+> The grants succeed whether or not the tables exist yet. See
+> [Schema Reference](SCHEMA_REFERENCE.md#overview) for the definitions the migrator expects to find.
+
 ---
 
 ## Step 5: Verify
@@ -133,7 +138,7 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
 ```sql
--- ClickHouse: expects trades, export_cursor, schema_versions
+-- ClickHouse: expects schema_versions, plus whatever the deployment provisioned
 SHOW TABLES FROM trade_demo;
 ```
 

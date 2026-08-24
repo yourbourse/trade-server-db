@@ -27,6 +27,7 @@ using DbUp.PSQL;
 using Microsoft.Extensions.Logging;
 using YB.DbUp.ClickHouse;
 using YB.DbUp.PSQL;
+using YB.TradeServer.Db.Migrator.Config;
 using YB.TradeServer.Db.Migrator.Extensions;
 using YB.TradeServer.Db.Migrator.Logging;
 
@@ -46,6 +47,8 @@ public class DbUpRunner : IDbUpRunner
     /// </summary>
     private static readonly TimeSpan executionTimeout = TimeSpan.FromDays(1);
 
+    private const string UsersSubFolder = "users";
+
     private static readonly Regex unresolvedVariablePattern = new(@"##[A-Za-z0-9_]+##", RegexOptions.Compiled);
 
     private static readonly List<ExecutionOrder> scriptExecutionOrder =
@@ -53,7 +56,7 @@ public class DbUpRunner : IDbUpRunner
         new() { OrderId = 1, SubFolder = "pre", ReRunnable = true, FileContentResolver = DefaultFileTransformation },
         new() { OrderId = 2, SubFolder = null, ReRunnable = false, FileContentResolver = DefaultFileTransformation },
         new() { OrderId = 3, SubFolder = "views", ReRunnable = true, FileContentResolver = DefaultFileTransformation },
-        new() { OrderId = 4, SubFolder = "users", ReRunnable = true, FileContentResolver = UserFileTransformationResolver },
+        new() { OrderId = 4, SubFolder = UsersSubFolder, ReRunnable = true, FileContentResolver = UserFileTransformationResolver },
         new() { OrderId = 5, SubFolder = "post", ReRunnable = true, FileContentResolver = DefaultFileTransformation }
     ];
 
@@ -116,6 +119,8 @@ public class DbUpRunner : IDbUpRunner
             filesToExecute.Add(new(executionOrder, deduplicatedFileOrders));
         }
 
+        ValidateRequestedUsersHaveScripts(filesToExecute, dbMigrationRequest.Users);
+
         var executionResults = new List<(string, DatabaseUpgradeResult)>();
 
         if (dbMigrationRequest.DryRun)
@@ -154,6 +159,43 @@ public class DbUpRunner : IDbUpRunner
         }
 
         return executionResults;
+    }
+
+    /// <summary>
+    /// Fails the run when a --users entry names an access level that no script implements.
+    /// </summary>
+    /// <remarks>
+    /// The access level selects the file in users/ by name, so a typo - or a script folder that does not carry
+    /// that role - would otherwise apply nothing at all and still report success, leaving the account missing
+    /// and the operator none the wiser.
+    /// </remarks>
+    public static void ValidateRequestedUsersHaveScripts(IEnumerable<ExecutionStep> executionSteps, IList<DatabaseUser> users)
+    {
+        if (users.Count == 0)
+        {
+            return;
+        }
+
+        var availableAccessLevels = executionSteps
+            .Where(step => step.ExecutionOrder.SubFolder == UsersSubFolder)
+            .SelectMany(step => step.Files)
+            .Select(file => Path.GetFileNameWithoutExtension(file.FilePath))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var unmatched = users
+            .Where(user => !availableAccessLevels.Contains(user.Access))
+            .Select(user => $"{user.User} (Access={user.Access})")
+            .ToList();
+
+        if (unmatched.Count == 0)
+        {
+            return;
+        }
+
+        throw new SchemaMigrationException(
+            $"No script implements the access level requested by: {string.Join(", ", unmatched)}. " +
+            $"Available access levels: {(availableAccessLevels.Count == 0 ? "none - the users folder is empty or missing" : string.Join(", ", availableAccessLevels.Order()))}. " +
+            $"The Access value has to match the name of a file in the {UsersSubFolder} folder, so Access=exporter runs {UsersSubFolder}/exporter.sql.");
     }
 
     /// <summary>
@@ -353,8 +395,8 @@ public class DbUpRunner : IDbUpRunner
 
         foreach (var user in usersWithAccessLevel)
         {
-            // the name carries the sort order of the batch. If the same file name exists in two folders we want
-            // to run the one from the first folder first
+            // the name carries the folder and phase so scripts remain distinguishable in the journal and logs
+            // (overrides are already resolved earlier by DeduplicateFiles)
             var fileUniqueName = $"[{scriptFolder}/{executionStep.ExecutionOrder.SubFolder}] {Path.GetFileName(filePath)}";
             fileUniqueName = $"{fileUniqueName} for {user.User}";
 

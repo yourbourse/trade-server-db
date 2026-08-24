@@ -5,7 +5,7 @@
 **Everything about the schema, the migrator and the scripts it applies**
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![ClickHouse](https://img.shields.io/badge/ClickHouse-24.x%2B-FFCC01?logo=clickhouse&logoColor=black)](https://clickhouse.com/)
 [![DbUp](https://img.shields.io/badge/DbUp-6.0-2C3E50)](https://dbup.readthedocs.io/)
 ![License](https://img.shields.io/badge/License-Proprietary-red.svg)
@@ -88,8 +88,8 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 | Path | Purpose |
 |------|---------|
-| `psql/` | PostgreSQL scripts — root is incremental, `views/` `users/` `post/` are re-runnable |
-| `clickhouse/` | ClickHouse scripts, same layout |
+| `psql/` | PostgreSQL scripts - root is incremental, `views/` `users/` `post/` are re-runnable |
+| `clickhouse/` | ClickHouse scripts - `views/` `users/` `post/` only, no table creation |
 | `src/Migrator/` | The CLI: option parsing, target resolution, phase orchestration |
 | `src/DbUp.PSQL/` | DbUp provider for PostgreSQL |
 | `src/DbUp.ClickHouse/` | DbUp provider for ClickHouse |

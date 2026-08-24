@@ -24,13 +24,6 @@
         <ProjectReference Include="..\DbUp.PSQL\DbUp.PSQL.csproj" />
     </ItemGroup>
 
-    <ItemGroup>
-        <Content Include="appsettings.development.json">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-            <CopyToPublishDirectory>Never</CopyToPublishDirectory>
-        </Content>
-    </ItemGroup>
-
     <!--
         The SQL lives at the root of the repository so it can be browsed and reviewed without digging through
         src/. Linking it into the build output keeps a published Migrator self-contained, while the runner still

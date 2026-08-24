@@ -96,12 +96,24 @@ Pass them on every run:
 --variables trades_table=trades_export cursor_table=trades_export_cursor
 ```
 
-Nothing records the names on the database side, so a run without them creates a second, empty set of tables under
-the default names.
+Nothing records the names on the database side, so a run without them grants on — and on PostgreSQL creates — a
+second set of tables under the default names.
+
+### Does the migrator create the ClickHouse tables?
+
+**No.** On ClickHouse it creates the journal, the users and their grants, and runs the `post/` phase; `trades`
+and `export_cursor` are provisioned by the deployment that owns them. ClickHouse accepts a `GRANT` naming a table
+that does not exist yet, so the users phase succeeds either way — a missing table surfaces as a failing export,
+not a failing migration.
+
+On PostgreSQL the migrator does create both tables. The definitions the ClickHouse side expects are documented in
+[Schema Reference](SCHEMA_REFERENCE.md), and the copies the integration tests use live in
+`src/Migrator.Tests/TestScripts/clickhouse/`.
 
 ### Why does the ClickHouse `trades` table have no `id` column?
 
-ClickHouse does not generate row ids, and the sorting key `(sender_id, trade_id)` already identifies a row. The
+ClickHouse does not generate row ids, and the sorting key `(sender_id, trade_id, time_created)` already identifies
+a row. The
 guide's identity column has no equivalent, so it is left out rather than faked.
 
 ### How are duplicate trades handled?
@@ -110,7 +122,7 @@ Export delivery is at-least-once, so the same trade can arrive twice after a res
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
-| Mechanism | `UNIQUE (sender_id, trade_id)` | `ReplacingMergeTree` sorted by `(sender_id, trade_id)` |
+| Mechanism | `UNIQUE (sender_id, trade_id)` | `ReplacingMergeTree` sorted by `(sender_id, trade_id, time_created)` |
 | When | immediately — the second insert is rejected | when parts merge |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
 
@@ -228,8 +240,8 @@ Yes — one new `DbUp.<Engine>` project plus a handful of switch statements. The
 
 ### Which ClickHouse and PostgreSQL versions are supported?
 
-ClickHouse **24.x or newer** (the driver sends settings older servers reject). PostgreSQL is tested against 17,
-and the scripts use nothing newer than `GENERATED ALWAYS AS IDENTITY`, so 13+ is fine.
+ClickHouse **24.x or newer** (the driver sends settings older servers reject). PostgreSQL **14+**. CI and the
+compose file run the newest stable releases of both — ClickHouse 26.7 and PostgreSQL 18.
 
 ### Why is the SQL at the repository root instead of under `src/`?
 

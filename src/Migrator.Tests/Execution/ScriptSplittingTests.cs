@@ -93,6 +93,42 @@ public class ScriptSplittingTests
         Assert.Contains("CREATE TABLE a", statement);
     }
 
+    [Fact(DisplayName = "SplitScriptIntoCommands Should not split a ClickHouse statement carrying four dashes")]
+    public void SplitScriptIntoCommands_Should_not_split_a_ClickHouse_statement_carrying_four_dashes()
+    {
+        // arrange, the dashes sit inside a literal, not on a line of their own
+        const string script = """
+                              ----break----
+
+                              INSERT INTO a (note) VALUES ('a----b');
+                              """;
+
+        var connectionManager = new ClickHouseConnectionManager("Host=localhost");
+
+        // act
+        var statements = connectionManager.SplitScriptIntoCommands(script).ToList();
+
+        // assert
+        var statement = Assert.Single(statements);
+        Assert.Contains("'a----b'", statement);
+    }
+
+    [Fact(DisplayName = "SplitScriptIntoCommands Should not split a PostgreSQL statement carrying four dashes")]
+    public void SplitScriptIntoCommands_Should_not_split_a_PostgreSQL_statement_carrying_four_dashes()
+    {
+        // arrange
+        const string script = "SELECT 'a----b';";
+
+        var connectionManager = new PostgresConnectionManager("Host=localhost");
+
+        // act
+        var statements = connectionManager.SplitScriptIntoCommands(script).ToList();
+
+        // assert
+        var statement = Assert.Single(statements);
+        Assert.Equal("SELECT 'a----b';", statement);
+    }
+
     [Fact(DisplayName = "SplitScriptIntoCommands Should send a PostgreSQL script without a break as one command")]
     public void SplitScriptIntoCommands_Should_send_a_PostgreSQL_script_without_a_break_as_one_command()
     {

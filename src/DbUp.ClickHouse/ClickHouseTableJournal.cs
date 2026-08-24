@@ -62,7 +62,8 @@ public class ClickHouseTableJournal : TableJournal
 
         if (script.Name.Contains("::"))
         {
-            var previousScripts = script.Name[..script.Name.IndexOf("::", StringComparison.Ordinal)];
+            // the delimiter is part of the prefix so "… for reader::" cannot also match "… for reader2::"
+            var previousScripts = script.Name[..(script.Name.IndexOf("::", StringComparison.Ordinal) + 2)];
 
             using (var command = GetDeleteScriptCommand(dbCommandFactory, previousScripts))
             {

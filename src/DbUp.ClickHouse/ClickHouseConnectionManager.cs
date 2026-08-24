@@ -28,6 +28,12 @@ namespace YB.DbUp.ClickHouse;
 public class ClickHouseConnectionManager : DatabaseConnectionManager
 {
     /// <summary>
+    /// A separator is a whole line of four or more dashes. Anchoring it to the line keeps four dashes inside a
+    /// statement - <c>SELECT 'a----b'</c>, or a comment drawing a rule - from splitting the command in two.
+    /// </summary>
+    private const string SeparatorPattern = @"^[ \t]*----.*$";
+
+    /// <summary>
     /// Creates a new ClickHouse database connection.
     /// </summary>
     /// <param name="connectionString">The ClickHouse connection string.</param>
@@ -50,7 +56,7 @@ public class ClickHouseConnectionManager : DatabaseConnectionManager
         //----break here----
         //----another break----
         var scriptStatements =
-            Regex.Split(scriptContents, "----.*", RegexOptions.IgnoreCase | RegexOptions.Multiline)
+            Regex.Split(scriptContents, SeparatorPattern, RegexOptions.IgnoreCase | RegexOptions.Multiline)
                 .Select(x => x.Trim())
                 .Where(ContainsExecutableStatement)
                 .ToArray();

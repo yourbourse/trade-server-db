@@ -24,12 +24,20 @@ what you read in a script is what runs.
 ```bash
 # PostgreSQL
 ./migrate.sh --provider postgres \
-             --connection-string "Host=db.example.com;Port=5432;Database=trading;Username=postgres;Password=..."
+             --connection-string "Host=db.example.com;Port=5432;Database=trading;Username=postgres;Password=..." \
+             --users "Access=exporter;User=trade_exporter;Password=..." \
+                     "Access=ro;User=trade_reader;Password=..."
 
 # ClickHouse
 ./migrate.sh --provider clickhouse \
-             --connection-string "Host=ch.example.com;Port=8123;Database=trading;Username=default;Password=..."
+             --connection-string "Host=ch.example.com;Port=8123;Database=trading;Username=default;Password=..." \
+             --users "Access=exporter;User=trade_exporter;Password=..." \
+                     "Access=ro;User=trade_reader;Password=..."
 ```
+
+`--users` provisions the accounts the export pipeline needs — `exporter` for the trade server, `ro` for
+reporting. It takes a list, so several values follow one flag. Omit it and the schema is still created, but no
+account is granted access to it; see [Users & Permissions](docs/USERS_AND_PERMISSIONS.md).
 
 `migrate.sh` builds `src/Migrator` and runs it from the root of the repository, so the scripts in `psql/` and
 `clickhouse/` are picked up as they are on disk. Every argument is passed straight through, so
@@ -199,13 +207,26 @@ deployed database will silently differ from the file. Add a new one.
 
 ## Schema
 
-Both providers carry the same two tables, matching the *Export Setup* guide.
+Both engines carry the same two tables, matching the *Export Setup* guide — but only PostgreSQL has them created
+here:
+
+| | PostgreSQL | ClickHouse |
+|---|---|---|
+| `trades`, `export_cursor` | created by the migrator | **provisioned by the deployment**, not by this repository |
+| `schema_versions`, users and grants | created by the migrator | created by the migrator |
+
+ClickHouse grants reference the two tables by name, which succeeds whether or not they exist yet. The
+definitions the migrator expects — and the copies the ClickHouse integration tests migrate against, under
+`src/Migrator.Tests/TestScripts/clickhouse/` — are documented in
+[Schema Reference](docs/SCHEMA_REFERENCE.md).
 
 `trades` is append-only. Delivery is at-least-once, so the same trade can arrive twice after a restart:
 
 * **PostgreSQL** deduplicates with a unique index on `(sender_id, trade_id)`; the second insert is rejected.
-* **ClickHouse** has no unique index, so the table is a `ReplacingMergeTree` sorted by `(sender_id, trade_id)`.
-  Duplicates collapse when the parts merge — query with `FINAL` when they must not be visible before that.
+* **ClickHouse** has no unique index, so the table is a `ReplacingMergeTree` whose sorting key
+  `(sender_id, trade_id, time_created)` is what collapses duplicates when the parts merge — query with `FINAL`
+  when they must not be visible before that. The primary key stays at `(sender_id)`, since that is the sparse
+  index held in memory.
 
 The ClickHouse columns follow the guide's types: `BIGINT` → `Int64`, `SMALLINT` → `Int16`, `NUMERIC` →
 `Decimal(38, 18)`, `VARCHAR` → `String`, `TIMESTAMP WITH TIME ZONE` → `DateTime64(6, 'UTC')`. The guide's
@@ -248,8 +269,8 @@ second run applies nothing. Connection strings come from
 ## Layout
 
 ```
-clickhouse/            ClickHouse scripts: root = incremental, views/ users/ post/ = re-runnable
-psql/                  PostgreSQL scripts, same layout
+psql/                  PostgreSQL scripts: root = incremental, views/ users/ post/ = re-runnable
+clickhouse/            ClickHouse scripts: views/ users/ post/ only - no table creation, see Schema
 src/DbUp.ClickHouse/   DbUp provider for ClickHouse (connection manager, journal, executor)
 src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI
