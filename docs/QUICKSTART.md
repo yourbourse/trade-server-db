@@ -12,6 +12,12 @@
 
 ## Two commands
 
+First: **.NET SDK 10.0.301+** (`dotnet --list-sdks`), because the wrapper compiles before it migrates. Not
+installed? [Install the .NET SDK](GETTING_STARTED.md#install-the-net-sdk).
+
+On Windows, run these from **Git Bash** — it runs the wrapper unchanged. WSL works too but needs its own Linux
+SDK; PowerShell cannot run the wrapper at all. [Running on Windows](GETTING_STARTED.md#running-on-windows).
+
 ```bash
 ./migrate.sh --provider postgres --connection-string "Host=db;Port=5432;Database=trading;Username=postgres;Password=..." --dry-run
 ```

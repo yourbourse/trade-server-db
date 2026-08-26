@@ -61,6 +61,21 @@ account, which deliberately has no DDL rights.
 `--connection-string`, or `$TSDB_CONNECTION_STRING` when you would rather keep it out of your shell history and
 the process list. The flag wins if both are present.
 
+### Can I run `migrate.sh` on Windows?
+
+Yes — from **Git Bash**, which comes with Git for Windows and runs it unchanged with no setup. WSL runs it too,
+but WSL is a separate machine and needs its own **Linux** .NET SDK; the SDK you installed on Windows is invisible
+to it. PowerShell and `cmd` have no bash, so there the wrapper is out and you call
+`dotnet src\Migrator\bin\Release\net10.0\Migrator.dll` directly with the identical options — quoting the
+connection string, because PowerShell splits arguments on `;`. See
+[Running on Windows](GETTING_STARTED.md#running-on-windows).
+
+### Do I need to install the .NET SDK, or is the runtime enough?
+
+The SDK. `migrate.sh` compiles `src/Migrator` before every run, and compiling needs an SDK. The runtime alone is
+enough only for a `dotnet publish` output shipped to the target host — see
+[Deploying a self-contained copy](OPERATIONS_GUIDE.md#deploying-a-self-contained-copy).
+
 ### Can I run it from a deployment pipeline?
 
 Yes; it is built for that. It never prompts, exits non-zero on the first failure, and applies nothing when
@@ -87,26 +102,41 @@ anything. The migrator logs a warning and reports everything as pending rather t
 
 ## Schema
 
-### Can I rename the `trades` and `export_cursor` tables?
+### Which tables does the migrator own?
 
-Yes — they are configurable in the trade server's export configuration, and the scripts template both names.
-Pass them on every run:
+Five that the trade server writes to — `trades`, `daily_statements_export`,
+`daily_statements_order_snapshots`, `daily_statements_position_snapshots` and `export_cursor` — plus its own
+`schema_versions` journal. Each exported table matches one export pipeline in the trade server's
+`export_config.json`, and all of them share the one cursor table. Column by column:
+[Schema Reference](SCHEMA_REFERENCE.md).
+
+### Can I rename the exported tables?
+
+Yes — every one of them is configurable in the trade server's export configuration, and the scripts template all
+five names. Pass the ones you renamed on every run:
 
 ```bash
---variables trades_table=trades_export cursor_table=trades_export_cursor
+--variables trades_table=trades_export cursor_table=trades_export_cursor daily_statements_table=statements_export
 ```
 
 Nothing records the names on the database side, so a run without them grants on — and on PostgreSQL creates — a
 second set of tables under the default names.
 
+### What is the relationship between a statement and its snapshots?
+
+They share `time_statement`, the scheduled end-of-day timestamp. One statement run writes one row per account to
+`daily_statements_export`, one row per **working** order to `daily_statements_order_snapshots` and one row per
+open position to `daily_statements_position_snapshots`, all stamped with the same value. There are no foreign
+keys — join on `(sender_id, time_statement, trading_account_id)`.
+
 ### Does the migrator create the ClickHouse tables?
 
-**No.** On ClickHouse it creates the journal, the users and their grants, and runs the `post/` phase; `trades`
-and `export_cursor` are provisioned by the deployment that owns them. ClickHouse accepts a `GRANT` naming a table
-that does not exist yet, so the users phase succeeds either way — a missing table surfaces as a failing export,
-not a failing migration.
+**No.** On ClickHouse it creates the journal, the users and their grants, and runs the `post/` phase; the five
+tables the trade server writes to are provisioned by the deployment that owns them. ClickHouse accepts a `GRANT`
+naming a table that does not exist yet, so the users phase succeeds either way — a missing table surfaces as a
+failing export, not a failing migration.
 
-On PostgreSQL the migrator does create both tables. The definitions the ClickHouse side expects are documented in
+On PostgreSQL the migrator does create them all. The definitions the ClickHouse side expects are documented in
 [Schema Reference](SCHEMA_REFERENCE.md), and the copies the integration tests use live in
 `src/Migrator.Tests/TestScripts/clickhouse/`.
 
@@ -116,13 +146,15 @@ ClickHouse does not generate row ids, and the sorting key `(sender_id, trade_id,
 a row. The
 guide's identity column has no equivalent, so it is left out rather than faked.
 
-### How are duplicate trades handled?
+### How are duplicate records handled?
 
-Export delivery is at-least-once, so the same trade can arrive twice after a restart:
+Export delivery is at-least-once, so the same record can arrive twice after a restart. Each table has its own
+deduplication key — `(sender_id, trade_id)` on trades, `(sender_id, time_statement, trading_account_id)` on
+statements, and the same pair plus `order_id` or `position_id` on the snapshots:
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
-| Mechanism | `UNIQUE (sender_id, trade_id)` | `ReplacingMergeTree` sorted by `(sender_id, trade_id, time_created)` |
+| Mechanism | a `UNIQUE` index on the key | `ReplacingMergeTree` sorted by the key |
 | When | immediately — the second insert is rejected | when parts merge |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
 
@@ -130,7 +162,9 @@ Export delivery is at-least-once, so the same trade can arrive twice after a res
 
 `Decimal` cannot represent `NaN`, and non-trading records (Balance, Credit, Fee) may carry `NaN` in fields that do
 not apply to them. Either have the exporter write `0`, or switch those columns to `Float64` and accept the loss of
-exactness for monetary values.
+exactness for monetary values. The snapshot columns the guide marks nullable — `avg_fill_price`, `stop_price`,
+`limit_price`, `stop_loss`, `take_profit` — are the exception: there `NaN` means *not set*, so the exporter writes
+`NULL` into a `Nullable` column instead.
 
 ### Can I point the migrator at a database that was set up by hand?
 

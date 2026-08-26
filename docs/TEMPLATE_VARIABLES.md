@@ -19,10 +19,10 @@ replacement — there is no expression syntax, no conditionals, no nesting.
 The order in which values are decided:
 
 ```
-1. derived values      database_name, trades_table, cursor_table, assembly_version, cluster/engine variables
+1. derived values      database_name, the table names, assembly_version, cluster/engine variables
 2. --variables         key=value pairs, applied last — they override anything above
 3. users phase         user_name and user_password, added per --users entry
-4. validation          the four identifier variables are checked, after the overrides
+4. validation          the identifier variables are checked, after the overrides
 5. substitution        ##name## → value, then any leftover ##...## fails the run
 ```
 
@@ -34,12 +34,16 @@ The order in which values are decided:
 |----------|-------|---------|
 | `##database_name##` | The database from the connection string | `trading` |
 | `##trades_table##` | `trades`, unless `--variables trades_table=…` overrides it | `trades` |
+| `##daily_statements_table##` | `daily_statements_export`, unless overridden | `daily_statements_export` |
+| `##order_snapshots_table##` | `daily_statements_order_snapshots`, unless overridden | `daily_statements_order_snapshots` |
+| `##position_snapshots_table##` | `daily_statements_position_snapshots`, unless overridden | `daily_statements_position_snapshots` |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=…` overrides it | `export_cursor` |
 | `##assembly_version##` | Version of the migrator binary applying the script | `1.0.0.0` |
 
-`##trades_table##` and `##cursor_table##` are templated because the trade server's export configuration makes
-those two names configurable — a deployment that renamed them passes the names on the command line and the
-scripts follow. Use them instead of hard-coded names in any script that touches those tables.
+The five table names are templated because the trade server's export configuration makes them configurable —
+each export pipeline names its own target table, and a deployment that renamed one passes the name on the command
+line so the scripts follow. Use the variables instead of hard-coded names in any script that touches those
+tables.
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "..." --variables trades_table=trades_export cursor_table=trades_export_cursor
@@ -121,13 +125,16 @@ the *variable*, not the database the migrator connects to — that always comes 
 
 ## Validation
 
-Four variables name a database object and therefore end up in DDL as text. They are validated **after**
+Some variables name a database object and therefore end up in DDL as text. They are validated **after**
 `--variables` has had its say, so an override that is not an identifier still fails:
 
 | Variable | Rule |
 |----------|------|
 | `##database_name##` | `^[A-Za-z_][A-Za-z0-9_]{0,62}$` |
 | `##trades_table##` | same |
+| `##daily_statements_table##` | same |
+| `##order_snapshots_table##` | same |
+| `##position_snapshots_table##` | same |
 | `##cursor_table##` | same |
 | `##cluster_name##` | same, when not empty |
 | `##user_name##` | same |
@@ -144,7 +151,8 @@ A script containing a `##placeholder##` that is not defined is **rejected before
 
 ```
 20260315_01_add_index.sql uses ##index_name##, which the migrator does not know about.
-Known variables: ##assembly_version##, ##cursor_table##, ##database_name##, ##trades_table##.
+Known variables: assembly_version, cursor_table, daily_statements_table, database_name, order_snapshots_table,
+position_snapshots_table, trades_table.
 Pass any other value with --variables name=value.
 ```
 

@@ -1,7 +1,8 @@
 -- The role the trade server authenticates as.
 --
--- Per the Export Setup guide the exporter needs INSERT and SELECT on the trades table, and INSERT, SELECT and
--- UPDATE on the cursor table. Nothing else - the export never updates or deletes a trade.
+-- Per the Export Setup guide the exporter needs INSERT and SELECT on every exported table, and INSERT, SELECT
+-- and UPDATE on the cursor table - the cursor row is the only thing the export ever rewrites. Nothing else: an
+-- exported record is never updated or deleted.
 --
 -- Applied once per --users entry with Access=exporter, for example:
 --   --users "Access=exporter;User=trade_exporter;Password=passw0rd"
@@ -23,5 +24,11 @@ GRANT CONNECT ON DATABASE ##database_name## TO ##user_name##;
 GRANT USAGE ON SCHEMA public TO ##user_name##;
 
 GRANT INSERT, SELECT ON TABLE ##trades_table## TO ##user_name##;
+
+GRANT INSERT, SELECT ON TABLE ##daily_statements_table## TO ##user_name##;
+
+GRANT INSERT, SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
+
+GRANT INSERT, SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
 
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;

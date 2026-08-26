@@ -117,8 +117,8 @@ ENGINE = ##replacing_merge_tree_engine##;
 
 ## Using template variables
 
-Write `##trades_table##`, never `trades`. The two table names are configurable in the trade server's export
-configuration, so a deployment that renamed them passes the names with `--variables` and the scripts follow.
+Write `##trades_table##`, never `trades`. Every exported table name is configurable in the trade server's export
+configuration, so a deployment that renamed one passes the name with `--variables` and the scripts follow.
 
 The variables that are always available:
 
@@ -126,6 +126,9 @@ The variables that are always available:
 |----------|-------|
 | `##database_name##` | Database from the connection string |
 | `##trades_table##` | `trades` unless overridden |
+| `##daily_statements_table##` | `daily_statements_export` unless overridden |
+| `##order_snapshots_table##` | `daily_statements_order_snapshots` unless overridden |
+| `##position_snapshots_table##` | `daily_statements_position_snapshots` unless overridden |
 | `##cursor_table##` | `export_cursor` unless overridden |
 | `##assembly_version##` | Version of the migrator applying the script |
 
@@ -143,7 +146,7 @@ verbatim without validation, so treat that flag as trusted operator input.
 
 ## Writing for both engines
 
-> **Important:** `clickhouse/` does **not** create the trades and cursor tables — a ClickHouse deployment
+> **Important:** `clickhouse/` does **not** create the exported tables or the cursor — a ClickHouse deployment
 > provisions those itself, and this repository only grants on them and keeps the journal. So a change to the
 > table *definitions* is a PostgreSQL-only migration here; its ClickHouse counterpart belongs in the deployment
 > that owns those tables, and in the test-only definitions under `src/Migrator.Tests/TestScripts/clickhouse/` so
@@ -158,6 +161,7 @@ Where a change does span both folders, keep them parallel — same file name in 
 | `NUMERIC` | `Decimal(38, 18)` |
 | `VARCHAR(n)` | `String`, or `LowCardinality(String)` for low-cardinality columns |
 | `TIMESTAMP WITH TIME ZONE` | `DateTime64(6, 'UTC')` |
+| a nullable column | the same type wrapped in `Nullable(…)` |
 
 Differences to keep in mind:
 
@@ -181,7 +185,8 @@ Before opening a PR with a new script:
 
 - [ ] Right phase — incremental in the folder root, idempotent things in `views/` / `post/`
 - [ ] Named `YYYYMMDD_NN_what_it_does.sql` if incremental
-- [ ] `##trades_table##` / `##cursor_table##` rather than hard-coded names
+- [ ] The table variables (`##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
+      `##position_snapshots_table##`, `##cursor_table##`) rather than hard-coded names
 - [ ] `IF NOT EXISTS` / `CREATE OR REPLACE` wherever the engine allows it
 - [ ] ClickHouse: a `----break----` between every statement, and `##cluster_name_suffix##` on every DDL statement
 - [ ] Mirrored in the other provider's folder, or a comment explaining why not — remembering that table

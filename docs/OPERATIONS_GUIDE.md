@@ -12,6 +12,12 @@
 
 ## Before you start
 
+The host running the migration needs the **.NET SDK 10.0.301+** — `migrate.sh` builds `src/Migrator` before it
+connects to anything, so the runtime on its own is not enough. Verify with `dotnet --list-sdks`; install per
+[Getting Started](GETTING_STARTED.md#install-the-net-sdk). A host that may not carry an SDK can run a
+`dotnet publish` output instead of the wrapper — that needs only the .NET 10 runtime. See
+[Deploying a self-contained copy](#deploying-a-self-contained-copy).
+
 Three properties of this tool shape every procedure below:
 
 | Property | Consequence |
@@ -31,10 +37,11 @@ Three properties of this tool shape every procedure below:
 
 The order matters: schema first, users second, and the export pipeline only after both.
 
-> **Important:** On **ClickHouse**, `trades` and `export_cursor` are not created by the migrator — the
-> deployment provisions them. Create them before starting the export; the migration itself succeeds without
-> them, because ClickHouse grants on a table by name whether or not it exists. On PostgreSQL the migrator
-> creates both. See [Schema Reference](SCHEMA_REFERENCE.md#overview).
+> **Important:** On **ClickHouse**, the five tables the trade server writes to — trades, the daily statements,
+> the two snapshot tables and the cursor — are not created by the migrator; the deployment provisions them.
+> Create them before starting the export; the migration itself succeeds without them, because ClickHouse grants
+> on a table by name whether or not it exists. On PostgreSQL the migrator creates them all. See
+> [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
 **1. Confirm the target.** The connection string must name the database. The account needs DDL rights, and
 `CREATEDB` (PostgreSQL) or the equivalent ClickHouse grant if the database does not exist yet.
@@ -121,20 +128,23 @@ database here if a run does something surprising.
 
 ```
 ====================================
-Migrating Postgres database trading, trades table: trades, cursor table: export_cursor, users: [trade_exporter(exporter)]
+Migrating Postgres database trading, tables: [trades_table=trades, daily_statements_table=daily_statements_export, order_snapshots_table=daily_statements_order_snapshots, position_snapshots_table=daily_statements_position_snapshots, cursor_table=export_cursor], users: [trade_exporter(exporter)]
 ```
 
 The target line reports the **effective** values — after `--variables` overrides — so this is where you confirm
-that a renamed trades table was actually picked up.
+that a renamed table was actually picked up.
 
 ```
 ====================================
 Running migration: (root)
 ...
 Scripts path: (root)
-Executed scripts: 2
+Executed scripts: 5
  - [psql] 20260101_01_create_trades.sql
  - [psql] 20260101_02_create_export_cursor.sql
+ - [psql] 20260101_03_create_daily_statements.sql
+ - [psql] 20260101_04_create_order_snapshots.sql
+ - [psql] 20260101_05_create_position_snapshots.sql
 ```
 
 One block per phase, `(root)` being the incremental phase. `No files for views` means the phase had nothing to

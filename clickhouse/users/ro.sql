@@ -23,6 +23,27 @@ ON ##database_name##.##trades_table## TO role_##database_name##_ro;
 
 ----break----
 
+-- daily statements
+GRANT ##cluster_name_suffix##
+SELECT
+ON ##database_name##.##daily_statements_table## TO role_##database_name##_ro;
+
+----break----
+
+-- daily statement order snapshots
+GRANT ##cluster_name_suffix##
+SELECT
+ON ##database_name##.##order_snapshots_table## TO role_##database_name##_ro;
+
+----break----
+
+-- daily statement position snapshots
+GRANT ##cluster_name_suffix##
+SELECT
+ON ##database_name##.##position_snapshots_table## TO role_##database_name##_ro;
+
+----break----
+
 -- export cursor
 GRANT ##cluster_name_suffix##
 SELECT

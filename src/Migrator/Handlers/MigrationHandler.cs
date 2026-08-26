@@ -36,11 +36,30 @@ public class MigrationHandler : IMigrationHandler
 
     private const string DefaultTradesTable = "trades";
     private const string DefaultCursorTable = "export_cursor";
+    private const string DefaultDailyStatementsTable = "daily_statements_export";
+    private const string DefaultOrderSnapshotsTable = "daily_statements_order_snapshots";
+    private const string DefaultPositionSnapshotsTable = "daily_statements_position_snapshots";
+
+    /// <summary>
+    /// The variables naming a table the trade server writes to, in the order the migration log reports them.
+    /// </summary>
+    private static readonly string[] tableVariables =
+    [
+        "trades_table",
+        "daily_statements_table",
+        "order_snapshots_table",
+        "position_snapshots_table",
+        "cursor_table"
+    ];
 
     /// <summary>
     /// The variables that name a database object and therefore end up in DDL as text.
     /// </summary>
-    private static readonly string[] identifierVariables = ["database_name", "trades_table", "cursor_table", "cluster_name"];
+    /// <remarks>
+    /// Every table variable belongs here, so the two lists are kept as one - adding a table to
+    /// <see cref="tableVariables"/> alone would otherwise leave its name unvalidated.
+    /// </remarks>
+    private static readonly string[] identifierVariables = ["database_name", "cluster_name", ..tableVariables];
 
     /// <summary>
     /// Splits a user definition only at the semicolons that introduce one of its keys.
@@ -145,11 +164,10 @@ public class MigrationHandler : IMigrationHandler
 
         logger.LogInformation("====================================");
         logger.LogInformation(
-            "Migrating {Provider} database {DatabaseName}, trades table: {TradesTable}, cursor table: {CursorTable}, users: [{Users}]",
+            "Migrating {Provider} database {DatabaseName}, tables: [{Tables}], users: [{Users}]",
             provider,
             databaseName,
-            variables["trades_table"],
-            variables["cursor_table"],
+            string.Join(", ", tableVariables.Select(variable => $"{variable}={variables[variable]}")),
             string.Join(", ", users.Select(u => $"{u.User}({u.Access})")));
 
         var migrationResults = dbUpRunner.Run(new(
@@ -178,7 +196,10 @@ public class MigrationHandler : IMigrationHandler
             ["assembly_version"] = typeof(MigrationHandler).Assembly.GetName().Version!.ToString(),
             ["database_name"] = databaseName,
             ["trades_table"] = DefaultTradesTable,
-            ["cursor_table"] = DefaultCursorTable
+            ["cursor_table"] = DefaultCursorTable,
+            ["daily_statements_table"] = DefaultDailyStatementsTable,
+            ["order_snapshots_table"] = DefaultOrderSnapshotsTable,
+            ["position_snapshots_table"] = DefaultPositionSnapshotsTable
         };
 
         if (provider == DatabaseProvider.ClickHouse)

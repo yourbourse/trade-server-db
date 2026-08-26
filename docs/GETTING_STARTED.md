@@ -4,7 +4,7 @@
 
 **From an empty database to a migrated schema, step by step**
 
-[Prerequisites](#prerequisites) · [Install](#step-1-get-the-repository) · [Local databases](#step-2-start-a-database-to-practise-on) · [First migration](#step-4-apply-the-schema) · [Verify](#step-5-verify) · [Next steps](#next-steps)
+[Prerequisites](#prerequisites) · [.NET SDK](#install-the-net-sdk) · [Install](#step-1-get-the-repository) · [Windows](#running-on-windows) · [Local databases](#step-2-start-a-database-to-practise-on) · [First migration](#step-4-apply-the-schema) · [Verify](#step-5-verify) · [Next steps](#next-steps)
 
 </div>
 
@@ -24,6 +24,37 @@
 > **Note:** `ClickHouse.Driver` 1.3.0 sends settings that older servers reject, so ClickHouse 24.x is a hard
 > floor. PostgreSQL has no such constraint — the scripts use nothing newer than `GENERATED ALWAYS AS IDENTITY`.
 
+### Install the .NET SDK
+
+`migrate.sh` **compiles the migrator before it runs it**, so the SDK is not optional and the runtime alone is not
+enough. Install it before the first run:
+
+| Platform | Command |
+|----------|---------|
+| Windows | `winget install Microsoft.DotNet.SDK.10` |
+| macOS | `brew install --cask dotnet-sdk` |
+| Ubuntu / Debian | `sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0` |
+| Anything else | The [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0), or the [dotnet-install script](https://learn.microsoft.com/dotnet/core/tools/dotnet-install-script) |
+
+On Windows the wrapper runs under Git Bash or WSL. Git Bash calls the Windows SDK installed above; **WSL is a
+separate machine with its own SDK** — installing on one side does not install on the other.
+
+Check what landed:
+
+```bash
+dotnet --list-sdks
+```
+
+`global.json` pins **10.0.301** with `rollForward: latestPatch`, which accepts `10.0.301` or any later patch in
+the same `10.0.3xx` feature band — and nothing else. `latestPatch` does **not** roll forward across bands, so a
+`10.0.4xx` SDK on its own will not satisfy it either. Several SDKs can sit side by side; `global.json` picks the
+one it wants. An empty list, or one showing only `9.x`, fails the build with
+`The specified SDK version could not be found` — see
+[Troubleshooting](TROUBLESHOOTING.md#dotnet-build-cannot-find-the-sdk).
+
+The first build also **restores NuGet packages from nuget.org**, so it needs network access once. After that the
+packages are cached under `~/.nuget/packages` and later builds work offline.
+
 You will also need, on the database you are migrating:
 
 - **A database that already exists, or permission to create one.** The migrator issues a
@@ -39,24 +70,106 @@ You will also need, on the database you are migrating:
 git clone https://github.com/yourbourse/trade-server-db.git
 ```
 
-Every command below is run from the repository root, so `cd trade-server-db` first. Nothing else to install:
-`migrate.sh` restores and builds on first run.
+Every command below is run from the repository root, so `cd trade-server-db` first.
 
-### Running without bash
+### Build it once
 
-`migrate.sh` is a convenience wrapper. On a machine with no bash — Windows PowerShell or `cmd` — build once and
-call the binary directly; every option is identical:
+`migrate.sh` restores and builds on every run, but doing it once by hand separates *toolchain* problems from
+*database* problems — a failure here is the SDK or the package feed, never a connection string:
+
+```bash
+dotnet build TradeServerDb.slnx -c Release
+```
+
+Release is what the wrapper builds, so the run is not wasted: this is the binary `migrate.sh` will execute.
+Expect `Build succeeded`, and a `Migrator.dll` in `src/Migrator/bin/Release/net10.0/`.
+
+> **Note:** `TreatWarningsAsErrors` is on for every project, so a warning fails the build. A clean checkout has
+> none — if one appears, it came from a local edit.
+
+Once it builds, `TSDB_NO_BUILD=1` in front of any `migrate.sh` command skips the rebuild and runs the binary
+left by the previous build. Useful when a pipeline stage has already built; leave it off while editing SQL.
+
+### Running on Windows
+
+`migrate.sh` is a bash script, and Windows has no bash of its own. There are three ways to run it, and the one
+you pick decides which .NET SDK the build uses:
+
+| Shell | `migrate.sh` | Which SDK it builds with |
+|-------|--------------|--------------------------|
+| **Git Bash** (ships with Git for Windows) | Runs unchanged — **the recommended option** | The Windows SDK |
+| **WSL** | Runs unchanged | A **Linux** SDK installed inside WSL — *not* the Windows one |
+| **PowerShell / `cmd`** | Cannot run it — call the binary directly | The Windows SDK |
+
+#### Git Bash
+
+Nothing to configure. Open Git Bash in the repository root and use every command in this guide as written:
+
+```bash
+./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --dry-run
+```
+
+Git Bash rewrites POSIX-looking arguments into Windows paths before the program sees them, so
+`--scripts-root /d/work/trade-server-db` arrives as `D:/work/trade-server-db`. That is the form the migrator
+wants, so it works in your favour — but it is why a path argument echoed back in the log looks different from
+what you typed.
+
+#### WSL
+
+The wrapper runs unchanged, with one trap that costs people an afternoon: **WSL is a separate machine with its
+own SDK.** Installing the .NET SDK on Windows does *not* install it in WSL, and inside WSL the build fails with
+`dotnet: command not found` even when `dotnet --list-sdks` on the Windows side lists a dozen of them.
+
+Windows executables *do* leak into WSL through PATH interop, but only under their real filename — so
+`which dotnet` finds nothing while `which dotnet.exe` returns `/mnt/c/Program Files/dotnet/dotnet.exe`. Do not
+reach for that: `migrate.sh` invokes `dotnet`, and building a Linux-side checkout with the Windows SDK is not a
+combination worth debugging. Install the Linux SDK instead:
+
+```bash
+sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
+```
+
+The repository is reachable from WSL under `/mnt/d/...`, but builds across that boundary are markedly slower than
+in the WSL filesystem. For occasional migrations it does not matter; if you work in WSL daily, clone into
+`~/` instead.
+
+#### PowerShell and `cmd`
+
+No wrapper. Build once and call the binary directly — every option is identical:
 
 ```powershell
 dotnet build TradeServerDb.slnx -c Release
 ```
 
 ```powershell
-dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "Host=...;Port=5432;Database=trading;Username=postgres;Password=..." --dry-run
+dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --dry-run
 ```
 
-Run it from the repository root, as the wrapper does, so `psql/` and `clickhouse/` are picked up from the working
-copy. On Windows, Git Bash and WSL both run `migrate.sh` unchanged.
+Run it **from the repository root**, as the wrapper does, so `psql/` and `clickhouse/` are picked up from the
+working copy.
+
+> **Warning:** **Always quote the connection string.** A connection string is full of `;`, which PowerShell reads
+> as a statement separator — unquoted, `--connection-string Host=localhost;Port=5432;Database=trading` reaches
+> the migrator as `Host=localhost` and PowerShell tries to run `Port=5432` as a command. Anything after the first
+> `;` is lost, **`--dry-run` included** — so the guard you thought you had is silently gone. The same applies to
+> each `--users` value.
+
+Two more differences from the bash examples elsewhere in these docs:
+
+| Bash | PowerShell |
+|------|------------|
+| `\` at end of line to continue | Backtick `` ` `` — or just keep it on one line |
+| `export TSDB_CONNECTION_STRING="…"` | `$env:TSDB_CONNECTION_STRING = "…"` |
+
+Multi-value flags behave the same in both: several quoted values follow **one** flag.
+
+```powershell
+$env:TSDB_CONNECTION_STRING = "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd"
+```
+
+```powershell
+dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --users "Access=exporter;User=trade_exporter;Password=passw0rd" "Access=ro;User=trade_reader;Password=passw0rd" --dry-run
+```
 
 ---
 
@@ -90,9 +203,12 @@ docker compose up -d
 The output ends with a per-phase list of pending scripts:
 
 ```
-Dry run: 2 script(s) would be applied for (root)
+Dry run: 5 script(s) would be applied for (root)
  - [psql] 20260101_01_create_trades.sql
  - [psql] 20260101_02_create_export_cursor.sql
+ - [psql] 20260101_03_create_daily_statements.sql
+ - [psql] 20260101_04_create_order_snapshots.sql
+ - [psql] 20260101_05_create_position_snapshots.sql
 ```
 
 > **Note:** On a database that does not exist yet the journal cannot be read, so the migrator logs a warning and
@@ -119,7 +235,7 @@ Now the same against ClickHouse:
 ./migrate.sh --provider clickhouse --connection-string "Host=localhost;Port=18223;Database=trade_demo;Username=default;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd"
 ```
 
-> **Important:** On ClickHouse the migrator does **not** create `trades` and `export_cursor` — a ClickHouse
+> **Important:** On ClickHouse the migrator does **not** create the exported tables or the cursor — a ClickHouse
 > deployment provisions those itself, and this repository only creates the journal, the users and their grants.
 > The grants succeed whether or not the tables exist yet. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview) for the definitions the migrator expects to find.
@@ -133,7 +249,7 @@ Three things are worth checking after a first run.
 **The tables exist.**
 
 ```sql
--- PostgreSQL: expects trades, export_cursor, schema_versions
+-- PostgreSQL: expects trades, export_cursor, the three daily statement tables, schema_versions
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
@@ -153,6 +269,9 @@ Incremental scripts appear under their file name; re-runnable ones carry an `::m
 ```
 [psql] 20260101_01_create_trades.sql
 [psql] 20260101_02_create_export_cursor.sql
+[psql] 20260101_03_create_daily_statements.sql
+[psql] 20260101_04_create_order_snapshots.sql
+[psql] 20260101_05_create_position_snapshots.sql
 [psql/users] exporter.sql for trade_exporter::7f3c…
 [psql/post] run_on_every_build.sql::a1b2…
 ```

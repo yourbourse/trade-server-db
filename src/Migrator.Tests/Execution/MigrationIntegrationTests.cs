@@ -84,6 +84,9 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
 
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "trades"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "export_cursor"));
+        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_export"));
+        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_order_snapshots"));
+        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_position_snapshots"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "schema_versions"));
     }
 
@@ -150,6 +153,9 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
 
         Assert.True(PostgresTableExists(request.ConnectionString, "trades"));
         Assert.True(PostgresTableExists(request.ConnectionString, "export_cursor"));
+        Assert.True(PostgresTableExists(request.ConnectionString, "daily_statements_export"));
+        Assert.True(PostgresTableExists(request.ConnectionString, "daily_statements_order_snapshots"));
+        Assert.True(PostgresTableExists(request.ConnectionString, "daily_statements_position_snapshots"));
         Assert.True(PostgresTableExists(request.ConnectionString, "schema_versions"));
     }
 
@@ -161,6 +167,9 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
 
         request.Variables["trades_table"] = "trades_export";
         request.Variables["cursor_table"] = "trades_export_cursor";
+        request.Variables["daily_statements_table"] = "statements_export";
+        request.Variables["order_snapshots_table"] = "statements_order_snapshots";
+        request.Variables["position_snapshots_table"] = "statements_position_snapshots";
 
         var runner = CreateRunner();
 
@@ -172,7 +181,11 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
 
         Assert.True(PostgresTableExists(request.ConnectionString, "trades_export"));
         Assert.True(PostgresTableExists(request.ConnectionString, "trades_export_cursor"));
+        Assert.True(PostgresTableExists(request.ConnectionString, "statements_export"));
+        Assert.True(PostgresTableExists(request.ConnectionString, "statements_order_snapshots"));
+        Assert.True(PostgresTableExists(request.ConnectionString, "statements_position_snapshots"));
         Assert.False(PostgresTableExists(request.ConnectionString, "trades"));
+        Assert.False(PostgresTableExists(request.ConnectionString, "daily_statements_export"));
     }
 
     [Fact(DisplayName = "Postgres migration Should create the users it is given")]
@@ -231,6 +244,12 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(PostgresHasPrivilege(request.ConnectionString, userName, "trades", "SELECT"));
         Assert.False(PostgresHasPrivilege(request.ConnectionString, userName, "trades", "INSERT"));
         Assert.False(PostgresHasPrivilege(request.ConnectionString, userName, "export_cursor", "UPDATE"));
+
+        // the daily statement tables are covered by the same revoke and grant lists
+        Assert.True(PostgresHasPrivilege(request.ConnectionString, userName, "daily_statements_export", "SELECT"));
+        Assert.False(PostgresHasPrivilege(request.ConnectionString, userName, "daily_statements_export", "INSERT"));
+        Assert.False(PostgresHasPrivilege(request.ConnectionString, userName, "daily_statements_order_snapshots", "INSERT"));
+        Assert.False(PostgresHasPrivilege(request.ConnectionString, userName, "daily_statements_position_snapshots", "INSERT"));
     }
 
     [Fact(DisplayName = "Postgres migration Should keep the journal entry of a script whose name is a prefix of another")]
@@ -419,6 +438,9 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["database_name"] = databaseName,
                 ["trades_table"] = "trades",
                 ["cursor_table"] = "export_cursor",
+                ["daily_statements_table"] = "daily_statements_export",
+                ["order_snapshots_table"] = "daily_statements_order_snapshots",
+                ["position_snapshots_table"] = "daily_statements_position_snapshots",
                 ["cluster_name"] = "",
                 ["cluster_name_suffix"] = "",
                 ["merge_tree_engine"] = "MergeTree",

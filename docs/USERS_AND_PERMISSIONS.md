@@ -16,11 +16,11 @@ The *Export Setup* guide describes two accounts, and the `users/` phase provisio
 
 | Access level | Script | Purpose | Rights |
 |--------------|--------|---------|--------|
-| `exporter` | `users/exporter.sql` | The account the trade server authenticates as | `INSERT`, `SELECT` on trades; `INSERT`, `SELECT`, `UPDATE` on the cursor |
-| `ro` | `users/ro.sql` | Reporting and support access | `SELECT` on both tables |
+| `exporter` | `users/exporter.sql` | The account the trade server authenticates as | `INSERT`, `SELECT` on the exported tables; `INSERT`, `SELECT`, `UPDATE` on the cursor |
+| `ro` | `users/ro.sql` | Reporting and support access | `SELECT` on every table |
 
 The exporter deliberately has **no DDL rights and no DELETE** — the export is append-only and never removes or
-rewrites a trade. Run migrations with a separate, more privileged account.
+rewrites an exported record. Run migrations with a separate, more privileged account.
 
 ---
 
@@ -58,7 +58,7 @@ The mechanics:
 
 The scripts converge on the access level you ask for, rather than merely adding to it. Running an account that
 previously held `Access=exporter` with `Access=ro` **revokes its write access**: PostgreSQL revokes all
-privileges on both tables before granting `SELECT` back, and ClickHouse revokes the exporter role before
+privileges on every table before granting `SELECT` back, and ClickHouse revokes the exporter role before
 granting the read-only one. The reverse direction needs no special handling — the exporter grants are a superset
 of the read-only ones.
 
@@ -88,6 +88,9 @@ ALTER ROLE ##user_name## WITH LOGIN PASSWORD '##user_password##';
 GRANT CONNECT ON DATABASE ##database_name## TO ##user_name##;
 GRANT USAGE ON SCHEMA public TO ##user_name##;
 GRANT INSERT, SELECT ON TABLE ##trades_table## TO ##user_name##;
+GRANT INSERT, SELECT ON TABLE ##daily_statements_table## TO ##user_name##;
+GRANT INSERT, SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
+GRANT INSERT, SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 ```
 
@@ -96,7 +99,13 @@ GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 | `CONNECT` on the database | yes | yes |
 | `USAGE` on schema `public` | yes | yes |
 | `trades` | `INSERT`, `SELECT` | `SELECT` |
+| `daily_statements_export` | `INSERT`, `SELECT` | `SELECT` |
+| `daily_statements_order_snapshots` | `INSERT`, `SELECT` | `SELECT` |
+| `daily_statements_position_snapshots` | `INSERT`, `SELECT` | `SELECT` |
 | `export_cursor` | `INSERT`, `SELECT`, `UPDATE` | `SELECT` |
+
+`UPDATE` is granted on the cursor table alone: it is the only row the export ever rewrites. An exported record is
+never updated or deleted.
 
 The role is created only if missing, and the password is then set unconditionally — so re-running is safe and
 also rotates the password.
@@ -111,13 +120,16 @@ also rotates the password.
 
 ClickHouse separates roles from users, so the script creates a role named after the database, grants on it, then
 creates the user and assigns the role. The tables themselves are **not** created here — a ClickHouse deployment
-provisions `trades` and `export_cursor` itself, and ClickHouse happily grants on a table by name before it
+provisions the exported tables and the cursor itself, and ClickHouse happily grants on a table by name before it
 exists:
 
 ```sql
 CREATE ROLE IF NOT EXISTS role_##database_name##_exporter ##cluster_name_suffix##;
 
 GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##trades_table## TO role_##database_name##_exporter;
+GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##daily_statements_table## TO role_##database_name##_exporter;
+GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##order_snapshots_table## TO role_##database_name##_exporter;
+GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##position_snapshots_table## TO role_##database_name##_exporter;
 GRANT ##cluster_name_suffix## SELECT, INSERT, ALTER UPDATE ON ##database_name##.##cursor_table## TO role_##database_name##_exporter;
 
 CREATE USER IF NOT EXISTS ##user_name## ##cluster_name_suffix##
@@ -169,8 +181,9 @@ that logs in with one to prove it. Details in [Security](SECURITY.md).
 The access level is just a file name, so a third role needs no code change:
 
 1. Create `psql/users/<access>.sql` and `clickhouse/users/<access>.sql`.
-2. Use `##user_name##` and `##user_password##` for the account, and `##trades_table##` / `##cursor_table##` /
-   `##database_name##` for the objects.
+2. Use `##user_name##` and `##user_password##` for the account, and the table variables — `##trades_table##`,
+   `##daily_statements_table##`, `##order_snapshots_table##`, `##position_snapshots_table##`,
+   `##cursor_table##` — plus `##database_name##` for the objects.
 3. Follow the existing pattern: create if missing, then set the password unconditionally, then grant. The script
    must be idempotent — it is re-runnable.
 4. ClickHouse: one statement per `----break----`, and `##cluster_name_suffix##` on every statement.

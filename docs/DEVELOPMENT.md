@@ -126,6 +126,9 @@ trade-server-db/
 ├── psql/                               PostgreSQL scripts
 │   ├── 20260101_01_create_trades.sql       incremental (folder root)
 │   ├── 20260101_02_create_export_cursor.sql
+│   ├── 20260101_03_create_daily_statements.sql
+│   ├── 20260101_04_create_order_snapshots.sql
+│   ├── 20260101_05_create_position_snapshots.sql
 │   ├── post/ users/ views/                 re-runnable, same phases as clickhouse/
 ├── src/
 │   ├── Migrator/                       The CLI
@@ -145,15 +148,16 @@ trade-server-db/
 │   ├── DbUp.PSQL/                      DbUp provider for PostgreSQL
 │   ├── DbUp.ClickHouse/                DbUp provider for ClickHouse
 │   └── Migrator.Tests/                 Unit + integration tests
-│       └── TestScripts/clickhouse/         trades + cursor definitions, test-only (see below)
+│       └── TestScripts/clickhouse/         exported table definitions, test-only (see below)
 ├── .github/workflows/ci.yaml           build, unit tests, integration tests
 ├── docker-compose.yml                  ClickHouse + PostgreSQL for testing
 ├── migrate.sh                          build-and-run wrapper
 └── docs/                               this documentation
 ```
 
-> **Note:** `clickhouse/` deliberately has no table-creation scripts. A ClickHouse deployment provisions `trades`
-> and `export_cursor` itself; this repository only journals, grants and runs the `post/` phase against them. The
+> **Note:** `clickhouse/` deliberately has no table-creation scripts. A ClickHouse deployment provisions the
+> exported tables and the cursor itself; this repository only journals, grants and runs the `post/` phase
+> against them. The
 > definitions the ClickHouse integration tests migrate against live in `src/Migrator.Tests/TestScripts/clickhouse/`
 > and are passed to the runner as an extra `--scripts` folder, so they never ship as a migration.
 
@@ -165,7 +169,7 @@ trade-server-db/
 
 Covered in full by [Writing Migrations](WRITING_MIGRATIONS.md). The short version: incremental scripts go in the
 folder root named `YYYYMMDD_NN_what_it_does.sql`, re-runnable ones in `views/` / `users/` / `post/`, use
-`##trades_table##` rather than a literal name, mirror the change in the other provider, and verify that a second
+the table variables rather than literal names, mirror the change in the other provider, and verify that a second
 run applies nothing.
 
 ### Add a command line option

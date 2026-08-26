@@ -173,9 +173,8 @@ Full detail: [Users & Permissions](USERS_AND_PERMISSIONS.md).
 
 Applied **last**, so they override the derived values. Values are substituted verbatim and are **not**
 validated, because they legitimately carry things that are not identifiers — engine names, TTL numbers,
-intervals. The four that name database objects (`database_name`, `trades_table`, `cursor_table`, `cluster_name`)
-are validated after the override, so overriding one of those with something that is not an identifier still
-fails.
+intervals. Those that name a database object (`database_name`, `cluster_name` and the five table names) are
+validated after the override, so overriding one of them with something that is not an identifier still fails.
 
 Full list of what is already defined: [Template Variables](TEMPLATE_VARIABLES.md).
 
@@ -198,7 +197,7 @@ database that does not exist yet the journal read fails; the migrator logs a war
 pending rather than stopping.
 
 > **Note:** The per-phase summary at the end of a run is shared with a real migration, so on a dry run it still
-> reads `Executed scripts: 2` — meaning *would be executed*. The `Dry run:` lines above it, and the
+> reads `Executed scripts: N` — meaning *would be executed*. The `Dry run:` lines above it, and the
 > `Dry run: the database will not be created and no script will be executed` line near the top, are what tell you
 > nothing happened.
 

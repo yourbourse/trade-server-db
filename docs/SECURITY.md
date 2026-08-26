@@ -65,13 +65,16 @@ the intersection of what both engines accept as an unquoted identifier, capped a
 | `--journal-table` | command line |
 | `##database_name##` | connection string |
 | `##trades_table##` | default or `--variables` |
+| `##daily_statements_table##` | default or `--variables` |
+| `##order_snapshots_table##` | default or `--variables` |
+| `##position_snapshots_table##` | default or `--variables` |
 | `##cursor_table##` | default or `--variables` |
 | `##cluster_name##` | `--cluster` (empty passes) |
 | `##user_name##` | each `--users` entry |
 
 Anything else fails the run **before a statement is built**, with an error naming the offending value and the
-rule. The four variable-based identifiers are validated *after* `--variables` has been applied, so an override
-cannot smuggle something past the check.
+rule. The variable-based identifiers are validated *after* `--variables` has been applied, so an override cannot
+smuggle something past the check.
 
 ```
 User name 'trade-exporter' is not a valid SQL identifier. It has to start with a letter or an underscore,

@@ -84,7 +84,8 @@ What a reviewer will check, and therefore what to check yourself first.
 
 - [ ] An incremental script is genuinely new — no already-applied script was edited
 - [ ] Re-runnable scripts are idempotent
-- [ ] `##trades_table##` / `##cursor_table##` used instead of literal names
+- [ ] The table variables (`##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
+      `##position_snapshots_table##`, `##cursor_table##`) used instead of literal names
 - [ ] ClickHouse: `----break----` between statements, `##cluster_name_suffix##` on every DDL statement
 - [ ] ClickHouse: the script is safe to re-enter after failing partway — there are no transactions
 - [ ] New identifiers pass the identifier rule, and new free-form values are escaped or bound

@@ -24,8 +24,20 @@ GRANT USAGE ON SCHEMA public TO ##user_name##;
 -- privilege that was never granted is a no-op, so this is safe on a fresh role.
 REVOKE ALL PRIVILEGES ON TABLE ##trades_table## FROM ##user_name##;
 
+REVOKE ALL PRIVILEGES ON TABLE ##daily_statements_table## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##order_snapshots_table## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##position_snapshots_table## FROM ##user_name##;
+
 REVOKE ALL PRIVILEGES ON TABLE ##cursor_table## FROM ##user_name##;
 
 GRANT SELECT ON TABLE ##trades_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##daily_statements_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##cursor_table## TO ##user_name##;

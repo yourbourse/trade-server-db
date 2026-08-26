@@ -51,7 +51,33 @@ dotnet build TradeServerDb.slnx -c Release
 dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "..." --dry-run
 ```
 
-Run it from the repository root so the SQL folders are found. Git Bash and WSL both run the wrapper unchanged.
+Run it from the repository root so the SQL folders are found. On Windows this is only necessary in PowerShell or
+`cmd` — **Git Bash and WSL both run the wrapper unchanged**, and Git Bash needs no setup at all. See
+[Running on Windows](GETTING_STARTED.md#running-on-windows).
+
+### PowerShell: `Port=5432: The term 'Port=5432' is not recognized…`
+
+The connection string was not quoted. PowerShell treats `;` as a statement separator, so it splits the argument
+and tries to run each fragment as a command:
+
+```powershell
+# wrong - everything after the first ';' is lost
+dotnet …\Migrator.dll --provider postgres --connection-string Host=localhost;Port=5432;Database=trading
+```
+
+```powershell
+# right
+dotnet …\Migrator.dll --provider postgres --connection-string "Host=localhost;Port=5432;Database=trading;Username=postgres;Password=..."
+```
+
+> **Warning:** The migrator still starts, with a truncated connection string — and **every flag after the first
+> `;` is dropped too, `--dry-run` among them.** An unquoted command you believed was a dry run is not one. Quote
+> every `--connection-string`, every `--users` value and every `--variables` value.
+
+### PowerShell: the trailing `\` in a documented command does nothing
+
+The multi-line examples in these docs are bash, where `\` continues a line. PowerShell uses a backtick
+`` ` ``. Simplest fix is to put the command on one line.
 
 ### `Migrator binary not found: …/bin/Release/net10.0/Migrator.dll`
 
@@ -290,8 +316,55 @@ the delete mutation is not completing — check `system.mutations` for failures.
 
 ### `dotnet build` cannot find the SDK
 
-`global.json` pins 10.0.301 with `rollForward: latestPatch`. Install a matching SDK; `dotnet --list-sdks` shows
-what you have.
+```
+The specified SDK version could not be found: 10.0.301
+```
+
+`global.json` pins 10.0.301 with `rollForward: latestPatch`: `10.0.301` or a later patch in the same `10.0.3xx`
+band satisfies it, nothing else does — including a `10.0.4xx` SDK, since `latestPatch` never rolls across
+feature bands. See what you have:
+
+```bash
+dotnet --list-sdks
+```
+
+An empty list means only the **runtime** is installed — enough to run a published migrator, not to build one.
+`migrate.sh` builds, so it needs the SDK: [Install the .NET SDK](GETTING_STARTED.md#install-the-net-sdk).
+
+### `dotnet: command not found` when running `migrate.sh`
+
+The SDK is not installed, or its directory is not on `PATH`. A `dotnet-install` script installation does not
+touch `PATH`; add its target (`$HOME/.dotnet` by default) yourself:
+
+```bash
+export PATH="$HOME/.dotnet:$PATH"
+```
+
+**Inside WSL, this is almost always the missing Linux SDK.** WSL is a separate machine: an SDK installed on
+Windows is not installed in WSL, no matter what `dotnet --list-sdks` reports from PowerShell.
+
+```bash
+sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
+```
+
+PATH interop makes this confusing, because Windows executables *are* reachable from WSL under their real
+filename. On a machine with no Linux SDK:
+
+```
+$ which dotnet
+$ which dotnet.exe
+/mnt/c/Program Files/dotnet/dotnet.exe
+```
+
+Do not use that as the fix. `migrate.sh` calls `dotnet`, not `dotnet.exe`, and pointing a Linux-side build at the
+Windows SDK is not a combination worth debugging. Install the Linux SDK.
+
+### The build fails on a NuGet restore
+
+`NuGet.config` clears all sources and adds only nuget.org, so the first build needs to reach
+`api.nuget.org` — behind a proxy or an air-gapped host it will not. Either build on a machine with access and
+copy `~/.nuget/packages` over, or add an internal mirror to `NuGet.config`. Once restored, `migrate.sh` builds
+offline.
 
 ### Integration tests fail with a connection error
 

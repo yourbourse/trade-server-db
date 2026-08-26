@@ -26,6 +26,10 @@ New to this repository? Read in this order:
 
 Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
+> **Before anything else:** `migrate.sh` compiles the migrator before running it, so it needs the **.NET SDK
+> 10.0.301+** — not just the runtime. Check with `dotnet --list-sdks`; install it per
+> [Getting Started](GETTING_STARTED.md#install-the-net-sdk).
+
 ---
 
 ## Setup & Configuration
@@ -52,7 +56,7 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 | Reference | Description |
 |-----------|-------------|
-| [Schema Reference](SCHEMA_REFERENCE.md) | `trades`, `export_cursor` and `schema_versions` on both engines, column by column, with the type mapping |
+| [Schema Reference](SCHEMA_REFERENCE.md) | The trade, daily statement, snapshot, cursor and journal tables on both engines, column by column, with the type mapping |
 | [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
 | [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
 
@@ -102,6 +106,9 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 |-------|---------|
 | Journal table | `schema_versions` |
 | Trades table | `trades` |
+| Daily statements table | `daily_statements_export` |
+| Order snapshots table | `daily_statements_order_snapshots` |
+| Position snapshots table | `daily_statements_position_snapshots` |
 | Cursor table | `export_cursor` |
 | Script folder | `psql` or `clickhouse`, after the provider |
 | Connection string | `$TSDB_CONNECTION_STRING` when `--connection-string` is absent |
