@@ -444,8 +444,9 @@ repository does not own the ClickHouse `trades` table, shipping the view would t
 failing export into a failing migration. So on ClickHouse the views belong to the deployment that owns the
 table; the definition it should carry is in
 [`src/Migrator.Tests/TestScripts/clickhouse/views/`](../src/Migrator.Tests/TestScripts/clickhouse/views),
-alongside the table definitions and applied the same way by the integration tests. `clickhouse/users/ro.sql`
-grants on both views by name regardless, exactly as it does on the tables.
+alongside the table definitions and applied the same way by the integration tests. The grants go with them:
+unlike the exported tables, which `clickhouse/users/ro.sql` grants on by name whether or not they exist, the
+views are left to the deployment that creates them.
 
 Both names are templated — `##trades_history_view##` and `##cash_transfers_view##` — so a deployment that
 already owns an object under one of them moves ours aside with `--variables`.
@@ -515,9 +516,10 @@ be `0` on a collateral transfer.
 row until the parts merge, which is not something a reporting view should expose. `FINAL` costs more than a plain
 read; a deployment that prefers the speed and accepts the duplication window drops the keyword.
 
-**Reading a view needs `SELECT` on the view itself** — a grant on the underlying table does not reach through —
-so `users/ro.sql` grants on both, on either engine. `exporter` gets neither: it writes rows, it does not read
-reports.
+**Reading a view needs `SELECT` on the view itself** — a grant on the underlying table does not reach through. On
+PostgreSQL `psql/users/ro.sql` grants it; `exporter` gets neither view, because it writes rows and does not read
+reports. On ClickHouse the views are not granted here, so a reporting account that can read `trades` still gets
+`ACCESS_DENIED` on `trades_history` until the deployment grants on them alongside creating them.
 
 ---
 

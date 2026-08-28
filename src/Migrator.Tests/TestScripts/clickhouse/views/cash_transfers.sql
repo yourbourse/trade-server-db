@@ -8,8 +8,8 @@
 -- ClickHouse CREATE VIEW resolves the table it reads, and ##trades_table## is not created by this repository -
 -- shipping the view would turn a missing table from a failing export into a failing migration. So the view
 -- belongs to the deployment that owns the table; this copy is what the integration tests migrate against, and
--- it is the definition that deployment should carry. clickhouse/users/ro.sql still grants on it by name,
--- exactly as it does on the tables.
+-- it is the definition that deployment should carry - along with the grants, which clickhouse/users/ro.sql
+-- does not apply to the views the way it does to the tables.
 --
 -- The transfer pipeline populates a fixed subset of the trades columns, and this view is that subset - the
 -- fifteen columns every transfer carries, then the seven a collateral transfer adds. The rest of the trades

@@ -161,8 +161,9 @@ verbatim without validation, so treat that flag as trusted operator input.
 > reads, so — unlike a `GRANT` — it fails outright when the table is not there yet. Shipping it in
 > `clickhouse/views/` would turn a missing table from a failing export into a failing migration, so a view over
 > `##trades_table##` and friends belongs in `src/Migrator.Tests/TestScripts/clickhouse/views/` with the table
-> definitions, and the deployment that owns the table carries it. `clickhouse/views/` is for views over objects
-> this repository does own.
+> definitions, and the deployment that owns the table carries it — its `GRANT`s included, since a view it creates
+> is not one `clickhouse/users/` knows about. `clickhouse/views/` is for views over objects this repository does
+> own.
 >
 > `psql/views/` has no such constraint — PostgreSQL creates the tables here, so the view can ship beside them.
 > That asymmetry is why `psql/views/trades_history.sql` is a migration and its ClickHouse twin is not.

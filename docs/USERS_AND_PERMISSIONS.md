@@ -111,9 +111,12 @@ never updated or deleted.
 
 The two views are granted to `ro` only — the exporter writes rows, it does not read reports. A view carries its
 own privileges, so `SELECT` on `trades` does not reach through to a view over it; the grant has to name the view.
-On PostgreSQL the `views/` phase runs before `users/`, so both exist by the time the grants are applied. On
-ClickHouse the views are provisioned by the deployment rather than here, and the grant names them anyway — the
-same by-name arrangement the exported tables already use.
+The `views/` phase runs before `users/`, so both exist by the time the grants are applied.
+
+> **Note:** This is PostgreSQL only. The ClickHouse `ro` role is granted the five exported tables and nothing
+> else — the views are neither created nor granted there, so a deployment that adds them has to add the
+> `GRANT SELECT` too, or its reporting account gets `ACCESS_DENIED` on a view whose underlying table it can read.
+> See [Schema Reference → Views](SCHEMA_REFERENCE.md#views).
 
 The role is created only if missing, and the password is then set unconditionally — so re-running is safe and
 also rotates the password.
@@ -139,7 +142,6 @@ GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##daily_statem
 GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##order_snapshots_table## TO role_##database_name##_exporter;
 GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##position_snapshots_table## TO role_##database_name##_exporter;
 GRANT ##cluster_name_suffix## SELECT, INSERT, ALTER UPDATE ON ##database_name##.##cursor_table## TO role_##database_name##_exporter;
--- ro additionally: SELECT on ##trades_history_view## and ##cash_transfers_view##
 
 CREATE USER IF NOT EXISTS ##user_name## ##cluster_name_suffix##
 IDENTIFIED WITH sha256_password BY '##user_password##'
@@ -192,8 +194,8 @@ The access level is just a file name, so a third role needs no code change:
 1. Create `psql/users/<access>.sql` and `clickhouse/users/<access>.sql`.
 2. Use `##user_name##` and `##user_password##` for the account, and the table variables — `##trades_table##`,
    `##daily_statements_table##`, `##order_snapshots_table##`, `##position_snapshots_table##`,
-   `##cursor_table##`, `##trades_history_view##`, `##cash_transfers_view##` — plus `##database_name##` for the
-   objects.
+   `##cursor_table##` — plus the view variables `##trades_history_view##` and `##cash_transfers_view##` where
+   the objects exist, and `##database_name##`.
 3. Follow the existing pattern: create if missing, then set the password unconditionally, then grant. The script
    must be idempotent — it is re-runnable.
 4. ClickHouse: one statement per `----break----`, and `##cluster_name_suffix##` on every statement.

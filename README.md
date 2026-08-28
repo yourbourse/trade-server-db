@@ -278,7 +278,8 @@ The two filters are complements, so every row of `trades` is visible through exa
 They follow the table they read. A `GRANT` tolerates an object that does not exist yet, but a `CREATE VIEW`
 resolves the table it selects from — so shipping the ClickHouse views would turn a missing `trades` table from a
 failing export into a failing migration. Their definitions live beside the ClickHouse table definitions in
-`src/Migrator.Tests/TestScripts/clickhouse/views/`; `clickhouse/users/ro.sql` grants on them by name either way.
+`src/Migrator.Tests/TestScripts/clickhouse/views/`, and the grants on them belong to that deployment too —
+`clickhouse/users/ro.sql` covers the five exported tables, not the views.
 
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
