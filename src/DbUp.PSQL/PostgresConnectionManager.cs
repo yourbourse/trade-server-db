@@ -47,9 +47,11 @@ public class PostgresConnectionManager : DatabaseConnectionManager
     /// </summary>
     /// <remarks>
     /// Npgsql happily executes a multi-statement command, so a script without any separator is sent to the
-    /// server as a single command - which keeps it inside one implicit transaction. Add separators only when
-    /// the statements have to run on their own, for example <c>CREATE INDEX CONCURRENTLY</c>, which
-    /// PostgreSQL refuses to run inside a transaction block.
+    /// server as a single command. Splitting one changes how many commands are sent, not how many transactions
+    /// they run in: the runner configures <c>WithTransactionPerScript()</c>, so every chunk of a PostgreSQL
+    /// script still runs inside the one transaction wrapping that script. A statement PostgreSQL refuses to run
+    /// inside a transaction block - <c>CREATE INDEX CONCURRENTLY</c> is the usual example - therefore cannot be
+    /// made to work by adding a separator, and has to be run outside the migrator.
     /// </remarks>
     /// <param name="scriptContents">The contents of the script to split.</param>
     public override IEnumerable<string> SplitScriptIntoCommands(string scriptContents)

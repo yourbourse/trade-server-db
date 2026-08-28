@@ -126,6 +126,8 @@ Every column is `NOT NULL`.
 |-------|------------|---------|
 | `idx_sender_trade_<trades_table>` | `UNIQUE (sender_id, trade_id)` | Deduplicates at-least-once delivery |
 | `idx_time_created_<trades_table>` | `(time_created)` | Time-range queries |
+| `idx_account_time_<trades_table>` | `(trading_account_id, time_created)` | An account's trades over a period - the main reporting path, and `trades_history` |
+| `idx_transfers_account_time_<trades_table>` | `(trading_account_id, time_created)` `WHERE trade_type NOT IN (0, 1, 14, 15)` | The same query against `cash_transfers`; partial, so it holds only the accounting records |
 
 What the index covers comes **before** the table name, because PostgreSQL truncates identifiers to 63 bytes: a
 long configured table name would otherwise leave both indexes with the same truncated name, and the second
@@ -222,6 +224,7 @@ Every column is `NOT NULL`.
 | Index | Definition | Purpose |
 |-------|------------|---------|
 | `idx_sender_stmt_account_<daily_statements_table>` | `UNIQUE (sender_id, time_statement, trading_account_id)` | Deduplicates at-least-once delivery |
+| `idx_account_stmt_<daily_statements_table>` | `(trading_account_id, time_statement)` | An account's statement history. The unique index carries `trading_account_id` third, so it cannot serve a filter on the account alone |
 
 ### ClickHouse
 
@@ -297,6 +300,7 @@ order is not part of a statement.
 | Index | Definition | Purpose |
 |-------|------------|---------|
 | `idx_sender_stmt_order_<order_snapshots_table>` | `UNIQUE (sender_id, time_statement, order_id)` | Deduplicates at-least-once delivery |
+| `idx_account_stmt_<order_snapshots_table>` | `(trading_account_id, time_statement)` | The working orders behind one account's statement. `trading_account_id` is not in the unique index at all |
 
 ### ClickHouse
 
@@ -363,6 +367,7 @@ One row per open position of the account, as it stood at `time_statement`.
 | Index | Definition | Purpose |
 |-------|------------|---------|
 | `idx_sender_stmt_position_<position_snapshots_table>` | `UNIQUE (sender_id, time_statement, position_id)` | Deduplicates at-least-once delivery |
+| `idx_account_stmt_<position_snapshots_table>` | `(trading_account_id, time_statement)` | The open positions behind one account's statement. `trading_account_id` is not in the unique index at all |
 
 ### ClickHouse
 
@@ -615,6 +620,32 @@ exactness that implies for monetary values.
 The snapshot tables are the exception, and only for the columns the guide marks nullable — `avg_fill_price`,
 `stop_price`, `limit_price`, `stop_loss` and `take_profit`. There a `NaN` means *not set*, so the exporter writes
 `NULL` and the column is nullable on both engines.
+
+### Adding an index to a large, live table
+
+The read-path indexes are added by `psql/20260828_01_add_reporting_indexes.sql`, an ordinary incremental script,
+so on an empty or small database they are simply built. On a table already holding a serious number of rows they
+are not free: `CREATE INDEX` takes an `ACCESS EXCLUSIVE` lock for the whole build and the exporter's inserts
+block until it finishes.
+
+`CREATE INDEX CONCURRENTLY` is the usual escape and **it cannot be used from the migrator** — every PostgreSQL
+script runs inside one transaction and PostgreSQL rejects `CONCURRENTLY` inside a transaction block with
+`25001`. Splitting the script with `----break----` does not change that; it produces several commands in the
+same transaction.
+
+The routine is therefore: build them concurrently by hand first, then migrate. Every statement in the script is
+`CREATE INDEX IF NOT EXISTS`, so it adopts what is already there and does nothing.
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_account_time_trades ON trades (trading_account_id, time_created);
+```
+
+A cancelled or failed concurrent build leaves an **invalid** index behind, which the planner ignores and
+`IF NOT EXISTS` will not replace. Check before trusting it:
+
+```sql
+SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
+```
 
 ### `IF NOT EXISTS` everywhere
 

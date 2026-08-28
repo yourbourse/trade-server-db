@@ -167,6 +167,33 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(PostgresTableExists(request.ConnectionString, "cash_transfers"));
     }
 
+    [Fact(DisplayName = "Postgres migration Should create the read path indexes")]
+    public void Postgres_migration_Should_create_the_read_path_indexes()
+    {
+        // arrange
+        var request = CreateRequest(DatabaseProvider.Postgres);
+        var runner = CreateRunner();
+
+        // act
+        AssertSuccessful(runner.Run(request));
+
+        // assert
+        // the write-path indexes the create scripts ship with
+        Assert.True(PostgresIndexExists(request.ConnectionString, "idx_sender_trade_trades"));
+        Assert.True(PostgresIndexExists(request.ConnectionString, "idx_time_created_trades"));
+
+        // and the read-path indexes added on top of them
+        Assert.True(PostgresIndexExists(request.ConnectionString, "idx_account_time_trades"));
+        Assert.True(PostgresIndexExists(request.ConnectionString, "idx_transfers_account_time_trades"));
+        Assert.True(PostgresIndexExists(request.ConnectionString, "idx_account_stmt_daily_statements_export"));
+        Assert.True(PostgresIndexExists(request.ConnectionString, "idx_account_stmt_daily_statements_order_snapshots"));
+        Assert.True(PostgresIndexExists(request.ConnectionString, "idx_account_stmt_daily_statements_position_snapshots"));
+
+        // every index name has to survive PostgreSQL's 63-byte truncation intact, or two of them collide and the
+        // second CREATE ... IF NOT EXISTS silently does nothing
+        Assert.Empty(PostgresTruncatedIndexNames(request.ConnectionString));
+    }
+
     [Fact(DisplayName = "ClickHouse views Should split every trade type between trades history and cash transfers")]
     public void ClickHouse_views_Should_split_every_trade_type_between_trades_history_and_cash_transfers()
     {
@@ -644,6 +671,46 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         using var command = connection.CreateCommand($"SELECT count() FROM system.tables WHERE database = '{databaseName}' AND name = '{tableName}'");
 
         return Convert.ToInt32(command.ExecuteScalar()) == 1;
+    }
+
+    private static bool PostgresIndexExists(string connectionString, string indexName)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = @name";
+        command.Parameters.Add(new NpgsqlParameter("name", indexName));
+
+        return Convert.ToInt32(command.ExecuteScalar()) == 1;
+    }
+
+    /// <summary>
+    /// The index names that reached PostgreSQL's 63-byte identifier limit and were therefore truncated.
+    /// </summary>
+    /// <remarks>
+    /// A truncated name is not an error on its own, but two indexes truncating to the same name are: the second
+    /// <c>CREATE INDEX IF NOT EXISTS</c> then sees a name that already exists and quietly does nothing, leaving
+    /// the index missing. Flagging any name at the limit catches that before it can happen.
+    /// </remarks>
+    private static List<string> PostgresTruncatedIndexNames(string connectionString)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND length(indexname) >= 63";
+
+        using var reader = command.ExecuteReader();
+
+        var names = new List<string>();
+
+        while (reader.Read())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
     }
 
     private static bool PostgresTableExists(string connectionString, string tableName)

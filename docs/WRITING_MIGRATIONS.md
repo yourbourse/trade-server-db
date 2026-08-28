@@ -96,9 +96,20 @@ The rules differ by engine:
 | **ClickHouse** | **Yes, between every statement** | The HTTP interface accepts exactly one statement per request |
 | **PostgreSQL** | No | Npgsql sends a whole file as one command, inside one implicit transaction |
 
-Add a separator to a PostgreSQL script only for a statement that must run on its own — `CREATE INDEX
-CONCURRENTLY`, which PostgreSQL refuses to run inside a transaction block. Splitting a PostgreSQL script gives up
-the all-or-nothing behaviour for that file, so do it deliberately.
+A PostgreSQL script needs no separator, and adding one buys less than it looks like it does.
+
+> **Warning:** **A separator does not escape the transaction.** The migrator applies every PostgreSQL script with
+> `WithTransactionPerScript()`, so splitting a file produces several commands *inside the same transaction*, not
+> several independent ones. `CREATE INDEX CONCURRENTLY` therefore fails here whether or not the script is split:
+>
+> ```
+> 25001: CREATE INDEX CONCURRENTLY cannot run inside a transaction block
+> ```
+>
+> Build such an index by hand outside the migrator and let the script's `IF NOT EXISTS` adopt it — see
+> [`psql/20260828_01_add_reporting_indexes.sql`](../psql/20260828_01_add_reporting_indexes.sql), which documents
+> the routine. Making the migrator support non-transactional scripts would mean running them through a second
+> upgrade engine built `WithoutTransaction()`; nothing needs it yet.
 
 A chunk containing nothing but comments is dropped rather than sent to the server, which is why the ClickHouse
 scripts can open with a `----break----` above their file header comment: the header becomes its own chunk and is
