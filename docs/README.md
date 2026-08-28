@@ -93,7 +93,7 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 | Path | Purpose |
 |------|---------|
 | `psql/` | PostgreSQL scripts - root is incremental, `views/` `users/` `post/` are re-runnable |
-| `clickhouse/` | ClickHouse scripts - `views/` `users/` `post/` only, no table creation |
+| `clickhouse/` | ClickHouse scripts - `users/` `post/` only, no table and no view creation |
 | `src/Migrator/` | The CLI: option parsing, target resolution, phase orchestration |
 | `src/DbUp.PSQL/` | DbUp provider for PostgreSQL |
 | `src/DbUp.ClickHouse/` | DbUp provider for ClickHouse |

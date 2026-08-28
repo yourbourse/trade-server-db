@@ -4,7 +4,7 @@ Schema migrations for the databases the **trade server** exports trading data in
 
 The trade server writes trades, daily statements, their order and position snapshots, and an export cursor to an
 external database — see the *Export Setup* guide for how the export pipelines are configured. This repository
-owns the other half: creating and evolving the tables, indexes and users that export needs.
+owns the other half: creating and evolving the tables, indexes, views and users that export needs.
 
 Two providers are supported:
 
@@ -105,7 +105,7 @@ The rest of this file is a summary. The full documentation lives in [`docs/`](do
 
 | Reference | Description |
 |---|---|
-| [Schema Reference](docs/SCHEMA_REFERENCE.md) | The trade, daily statement, snapshot, cursor and journal tables, column by column, with the type mapping |
+| [Schema Reference](docs/SCHEMA_REFERENCE.md) | The trade, daily statement, snapshot, cursor and journal tables and the two views, column by column, with the type mapping |
 | [Template Variables](docs/TEMPLATE_VARIABLES.md) | Every `##variable##`, where its value comes from, and how it is validated |
 | [Security](docs/SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model |
 
@@ -266,6 +266,20 @@ definitions the migrator expects — and the copies the ClickHouse integration t
 `src/Migrator.Tests/TestScripts/clickhouse/` — are documented in
 [Schema Reference](docs/SCHEMA_REFERENCE.md).
 
+On top of `trades` there are two views:
+
+| View | Default name | Rows | PostgreSQL | ClickHouse |
+|---|---|---|---|---|
+| Trades history | `trades_history` | the executed and cancelled trades — `trade_type` 0, 1, 14, 15 | created by the migrator | provisioned by the deployment |
+| Cash transfers | `cash_transfers` | every other `trade_type`: balances, credits, fees, commissions, interest, dividends and the rest | created by the migrator | provisioned by the deployment |
+
+The two filters are complements, so every row of `trades` is visible through exactly one of them.
+
+They follow the table they read. A `GRANT` tolerates an object that does not exist yet, but a `CREATE VIEW`
+resolves the table it selects from — so shipping the ClickHouse views would turn a missing `trades` table from a
+failing export into a failing migration. Their definitions live beside the ClickHouse table definitions in
+`src/Migrator.Tests/TestScripts/clickhouse/views/`; `clickhouse/users/ro.sql` grants on them by name either way.
+
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
 together.
@@ -324,11 +338,12 @@ second run applies nothing. Connection strings come from
 
 ```
 psql/                  PostgreSQL scripts: root = incremental, views/ users/ post/ = re-runnable
-clickhouse/            ClickHouse scripts: views/ users/ post/ only - no table creation, see Schema
+clickhouse/            ClickHouse scripts: users/ post/ only - no tables and no views, see Schema
 src/DbUp.ClickHouse/   DbUp provider for ClickHouse (connection manager, journal, executor)
 src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI
 src/Migrator.Tests/    Unit and integration tests
+  TestScripts/clickhouse/  The ClickHouse tables and views this repository does not ship
 docs/                  Full documentation, indexed in docs/README.md
 migrate.sh             Wrapper over the CLI
 docker-compose.yml     ClickHouse and PostgreSQL for the integration tests

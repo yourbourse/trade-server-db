@@ -39,6 +39,8 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultDailyStatementsTable = "daily_statements_export";
     private const string DefaultOrderSnapshotsTable = "daily_statements_order_snapshots";
     private const string DefaultPositionSnapshotsTable = "daily_statements_position_snapshots";
+    private const string DefaultTradesHistoryView = "trades_history";
+    private const string DefaultCashTransfersView = "cash_transfers";
 
     /// <summary>
     /// The variables naming a table the trade server writes to, in the order the migration log reports them.
@@ -53,13 +55,27 @@ public class MigrationHandler : IMigrationHandler
     ];
 
     /// <summary>
+    /// The variables naming a view this repository creates over the exported tables.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="tableVariables"/> because the trade server never writes to a view and so has
+    /// no say in its name. They are templated all the same, so a deployment that already owns an object under
+    /// one of the default names can move ours aside with --variables.
+    /// </remarks>
+    private static readonly string[] viewVariables =
+    [
+        "trades_history_view",
+        "cash_transfers_view"
+    ];
+
+    /// <summary>
     /// The variables that name a database object and therefore end up in DDL as text.
     /// </summary>
     /// <remarks>
-    /// Every table variable belongs here, so the two lists are kept as one - adding a table to
+    /// Every table and view variable belongs here, so the lists are kept as one - adding a table to
     /// <see cref="tableVariables"/> alone would otherwise leave its name unvalidated.
     /// </remarks>
-    private static readonly string[] identifierVariables = ["database_name", "cluster_name", ..tableVariables];
+    private static readonly string[] identifierVariables = ["database_name", "cluster_name", ..tableVariables, ..viewVariables];
 
     /// <summary>
     /// Splits a user definition only at the semicolons that introduce one of its keys.
@@ -199,7 +215,9 @@ public class MigrationHandler : IMigrationHandler
             ["cursor_table"] = DefaultCursorTable,
             ["daily_statements_table"] = DefaultDailyStatementsTable,
             ["order_snapshots_table"] = DefaultOrderSnapshotsTable,
-            ["position_snapshots_table"] = DefaultPositionSnapshotsTable
+            ["position_snapshots_table"] = DefaultPositionSnapshotsTable,
+            ["trades_history_view"] = DefaultTradesHistoryView,
+            ["cash_transfers_view"] = DefaultCashTransfersView
         };
 
         if (provider == DatabaseProvider.ClickHouse)
@@ -221,8 +239,8 @@ public class MigrationHandler : IMigrationHandler
             variables[key] = value;
         }
 
-        // these four name database objects and are written into DDL as text, so they are checked after the
-        // command line has had its say rather than before
+        // these name database objects and are written into DDL as text, so they are checked after the command
+        // line has had its say rather than before
         foreach (var identifierVariable in identifierVariables)
         {
             if (variables.TryGetValue(identifierVariable, out var identifier) && identifier.Length > 0)

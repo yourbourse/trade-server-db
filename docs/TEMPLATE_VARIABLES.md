@@ -38,6 +38,8 @@ The order in which values are decided:
 | `##order_snapshots_table##` | `daily_statements_order_snapshots`, unless overridden | `daily_statements_order_snapshots` |
 | `##position_snapshots_table##` | `daily_statements_position_snapshots`, unless overridden | `daily_statements_position_snapshots` |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=…` overrides it | `export_cursor` |
+| `##trades_history_view##` | `trades_history`, unless overridden | `trades_history` |
+| `##cash_transfers_view##` | `cash_transfers`, unless overridden | `cash_transfers` |
 | `##assembly_version##` | Version of the migrator binary applying the script | `1.0.0.0` |
 
 The five table names are templated because the trade server's export configuration makes them configurable —
@@ -48,6 +50,10 @@ tables.
 ```bash
 ./migrate.sh --provider postgres --connection-string "..." --variables trades_table=trades_export cursor_table=trades_export_cursor
 ```
+
+The two view names are templated for a different reason: the trade server never writes to a view and so has no
+say in its name, but a database that already owns an object called `trades_history` or `cash_transfers` needs a
+way to move ours aside.
 
 > **Note:** Changing a table name changes the processed content of every re-runnable script that mentions it, so
 > its MD5 changes and the script re-runs. That is the intended behaviour, not a side effect.
@@ -136,6 +142,8 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##order_snapshots_table##` | same |
 | `##position_snapshots_table##` | same |
 | `##cursor_table##` | same |
+| `##trades_history_view##` | same |
+| `##cash_transfers_view##` | same |
 | `##cluster_name##` | same, when not empty |
 | `##user_name##` | same |
 

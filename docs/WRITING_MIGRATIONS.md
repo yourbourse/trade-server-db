@@ -18,7 +18,7 @@ Each provider folder — `psql/` and `clickhouse/` — holds the same five phase
 |-------|--------|-------------|--------------|---------|
 | 1 | `pre/` | yes | `[psql/pre] x.sql::md5` | Anything that must exist before the tables. Optional — create it when you need it |
 | 2 | *folder root* | **no** | `[psql] x.sql` | Incremental migrations, applied once in file-name order |
-| 3 | `views/` | yes | `[psql/views] x.sql::md5` | Views and materialized views |
+| 3 | `views/` | yes | `[psql/views] x.sql::md5` | Views and materialized views — `trades_history` and `cash_transfers` live here, PostgreSQL only |
 | 4 | `users/` | yes | `[psql/users] x.sql for <user>::md5` | Roles and users, once per matching `--users` entry |
 | 5 | `post/` | yes | `[psql/post] x.sql::md5` | Everything that has to run after the schema, such as TTLs |
 
@@ -67,6 +67,9 @@ That has two consequences worth internalising:
 
 - **A re-runnable script must be idempotent.** It will run again, possibly many times. `CREATE OR REPLACE VIEW`,
   `CREATE … IF NOT EXISTS`, `ALTER … ` that converges on a target state — all fine. A bare `INSERT` is not.
+  `CREATE OR REPLACE VIEW` is the right idiom for a view because it keeps the grants the `users/` phase applied,
+  but on PostgreSQL it can only *append* a column: renaming, reordering or dropping one needs an incremental
+  script that `DROP`s the view first, and the run carrying it has to pass `--users` so the grants come back.
 - **Changing a variable changes the hash.** Renaming the trades table with `--variables` re-runs every
   re-runnable script that mentions `##trades_table##`, because their processed content differs.
 
@@ -130,6 +133,8 @@ The variables that are always available:
 | `##order_snapshots_table##` | `daily_statements_order_snapshots` unless overridden |
 | `##position_snapshots_table##` | `daily_statements_position_snapshots` unless overridden |
 | `##cursor_table##` | `export_cursor` unless overridden |
+| `##trades_history_view##` | `trades_history` unless overridden |
+| `##cash_transfers_view##` | `cash_transfers` unless overridden |
 | `##assembly_version##` | Version of the migrator applying the script |
 
 ClickHouse adds the cluster and engine variables; the `users/` phase adds `##user_name##` and
@@ -150,7 +155,17 @@ verbatim without validation, so treat that flag as trusted operator input.
 > provisions those itself, and this repository only grants on them and keeps the journal. So a change to the
 > table *definitions* is a PostgreSQL-only migration here; its ClickHouse counterpart belongs in the deployment
 > that owns those tables, and in the test-only definitions under `src/Migrator.Tests/TestScripts/clickhouse/` so
-> the integration tests keep matching reality. Changes to `users/`, `views/` and `post/` still apply to both.
+> the integration tests keep matching reality. Changes to `users/` and `post/` still apply to both.
+
+> **Warning:** **A view over an exported table follows the table.** A ClickHouse `CREATE VIEW` resolves what it
+> reads, so — unlike a `GRANT` — it fails outright when the table is not there yet. Shipping it in
+> `clickhouse/views/` would turn a missing table from a failing export into a failing migration, so a view over
+> `##trades_table##` and friends belongs in `src/Migrator.Tests/TestScripts/clickhouse/views/` with the table
+> definitions, and the deployment that owns the table carries it. `clickhouse/views/` is for views over objects
+> this repository does own.
+>
+> `psql/views/` has no such constraint — PostgreSQL creates the tables here, so the view can ship beside them.
+> That asymmetry is why `psql/views/trades_history.sql` is a migration and its ClickHouse twin is not.
 
 Where a change does span both folders, keep them parallel — same file name in each — and translate the types:
 
@@ -189,9 +204,10 @@ Before opening a PR with a new script:
       `##position_snapshots_table##`, `##cursor_table##`) rather than hard-coded names
 - [ ] `IF NOT EXISTS` / `CREATE OR REPLACE` wherever the engine allows it
 - [ ] ClickHouse: a `----break----` between every statement, and `##cluster_name_suffix##` on every DDL statement
+- [ ] The view variables (`##trades_history_view##`, `##cash_transfers_view##`) rather than hard-coded names
 - [ ] Mirrored in the other provider's folder, or a comment explaining why not — remembering that table
-      definitions are PostgreSQL-only here, with the ClickHouse counterparts kept under
-      `src/Migrator.Tests/TestScripts/clickhouse/`
+      definitions **and any view over them** are PostgreSQL-only here, with the ClickHouse counterparts kept
+      under `src/Migrator.Tests/TestScripts/clickhouse/`
 - [ ] `--dry-run` lists it, and only it
 - [ ] Applied twice: the second run reports `Executed scripts: 0`
 - [ ] Integration tests pass against both engines

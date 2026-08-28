@@ -88,6 +88,10 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_order_snapshots"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_position_snapshots"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "schema_versions"));
+
+        // system.tables lists a view alongside the tables
+        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "trades_history"));
+        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "cash_transfers"));
     }
 
     [Fact(DisplayName = "ClickHouse migration Should re-apply the re-runnable scripts when forced")]
@@ -157,6 +161,74 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(PostgresTableExists(request.ConnectionString, "daily_statements_order_snapshots"));
         Assert.True(PostgresTableExists(request.ConnectionString, "daily_statements_position_snapshots"));
         Assert.True(PostgresTableExists(request.ConnectionString, "schema_versions"));
+
+        // information_schema.tables lists a view alongside the tables
+        Assert.True(PostgresTableExists(request.ConnectionString, "trades_history"));
+        Assert.True(PostgresTableExists(request.ConnectionString, "cash_transfers"));
+    }
+
+    [Fact(DisplayName = "ClickHouse views Should split every trade type between trades history and cash transfers")]
+    public void ClickHouse_views_Should_split_every_trade_type_between_trades_history_and_cash_transfers()
+    {
+        // arrange
+        var request = CreateRequest(DatabaseProvider.ClickHouse);
+        var runner = CreateRunner();
+
+        AssertSuccessful(runner.Run(request));
+
+        using var connection = new ClickHouseConnection(request.ConnectionString);
+        connection.Open();
+
+        foreach (var tradeType in AllTradeTypes)
+        {
+            using var insert = connection.CreateCommand(ClickHouseTradeInsert(tradeType));
+            insert.ExecuteNonQuery();
+        }
+
+        // act
+        var history = ClickHouseTradeTypes(connection, "trades_history");
+        var transfers = ClickHouseTradeTypes(connection, "cash_transfers");
+
+        // assert
+        Assert.Equal(TradingTradeTypes, history);
+        Assert.Equal(AllTradeTypes.Except(TradingTradeTypes).ToList(), transfers);
+
+        // the collateral row is the only one carrying a symbol
+        using var collateral = connection.CreateCommand("SELECT trade_type FROM cash_transfers WHERE is_collateral ORDER BY trade_type");
+        Assert.Equal([CollateralTradeType], ReadInts(collateral));
+    }
+
+    [Fact(DisplayName = "Postgres views Should split every trade type between trades history and cash transfers")]
+    public void Postgres_views_Should_split_every_trade_type_between_trades_history_and_cash_transfers()
+    {
+        // arrange
+        var request = CreateRequest(DatabaseProvider.Postgres);
+        var runner = CreateRunner();
+
+        AssertSuccessful(runner.Run(request));
+
+        using var connection = new NpgsqlConnection(request.ConnectionString);
+        connection.Open();
+
+        foreach (var tradeType in AllTradeTypes)
+        {
+            using var insert = connection.CreateCommand();
+            insert.CommandText = PostgresTradeInsert(tradeType);
+            insert.ExecuteNonQuery();
+        }
+
+        // act
+        var history = PostgresTradeTypes(connection, "trades_history");
+        var transfers = PostgresTradeTypes(connection, "cash_transfers");
+
+        // assert
+        Assert.Equal(TradingTradeTypes, history);
+        Assert.Equal(AllTradeTypes.Except(TradingTradeTypes).ToList(), transfers);
+
+        // the collateral row is the only one carrying a symbol
+        using var collateral = connection.CreateCommand();
+        collateral.CommandText = "SELECT trade_type FROM cash_transfers WHERE is_collateral ORDER BY trade_type";
+        Assert.Equal([CollateralTradeType], ReadInts(collateral));
     }
 
     [Fact(DisplayName = "Postgres migration Should honour the table names passed as variables")]
@@ -441,6 +513,8 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["daily_statements_table"] = "daily_statements_export",
                 ["order_snapshots_table"] = "daily_statements_order_snapshots",
                 ["position_snapshots_table"] = "daily_statements_position_snapshots",
+                ["trades_history_view"] = "trades_history",
+                ["cash_transfers_view"] = "cash_transfers",
                 ["cluster_name"] = "",
                 ["cluster_name_suffix"] = "",
                 ["merge_tree_engine"] = "MergeTree",
@@ -480,6 +554,86 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
 
             await command.ExecuteNonQueryAsync();
         }
+    }
+
+    /// <summary>
+    /// Every value of the trade server's TradeType enum, kBuy through kCreditBonus.
+    /// </summary>
+    private static readonly List<int> AllTradeTypes = [.. Enumerable.Range(0, 22)];
+
+    /// <summary>
+    /// The four the trades history view keeps: kBuy, kSell, kBuyCancelled and kSellCancelled. Everything else
+    /// is a cash movement and belongs to the other view.
+    /// </summary>
+    private static readonly List<int> TradingTradeTypes = [0, 1, 14, 15];
+
+    /// <summary>
+    /// The one trade type the tests below give a symbol to, standing in for a collateral transfer - the trade
+    /// server resolves a symbol only when the transfer currency differs from the account currency.
+    /// </summary>
+    private const int CollateralTradeType = 5;
+
+    /// <summary>
+    /// The columns of a trades row, in the order the two INSERT helpers supply their values.
+    /// </summary>
+    private const string TradeColumns =
+        "sender_id, group_name, symbol_name, trade_id, time_created, time_modified, trading_account_id, group_id, " +
+        "trade_type, executed_price, volume, order_id, position_id, profit, commission, swaps, fee, position_price, " +
+        "profit_conversion_rate, contract_size, notional_value_in_original_currency, " +
+        "notional_value_in_account_currency, tick_value, tick_size, market_bid, market_ask, symbol_id, group_markup, " +
+        "side, entry_type, reason, price_decimal_places, account_currency_decimal_places, comment, agent_commission, " +
+        "notional_value_in_usd";
+
+    /// <summary>
+    /// One trades row per trade type, carrying a symbol only for <see cref="CollateralTradeType"/>. The trade
+    /// type doubles as the trade id, which is what keeps the rows distinct under either engine's deduplication.
+    /// </summary>
+    private static string TradeValues(int tradeType, string now)
+    {
+        var symbolId = tradeType == CollateralTradeType ? 77 : 0;
+
+        return $"1, 'g', 'EUR', {tradeType}, {now}, {now}, 7, 3, " +
+               $"{tradeType}, 0, 0, 0, 0, 0, 0, 0, 0, 0, " +
+               "1, 0, 100, " +
+               "100, 0, 0, 0, 0, " +
+               $"{symbolId}, 0, " +
+               "0, 0, 1, 5, 2, '', 0, " +
+               "100";
+    }
+
+    private static string ClickHouseTradeInsert(int tradeType) =>
+        $"INSERT INTO trades ({TradeColumns}) VALUES ({TradeValues(tradeType, "now64(6)")})";
+
+    private static string PostgresTradeInsert(int tradeType) =>
+        $"INSERT INTO trades ({TradeColumns}) VALUES ({TradeValues(tradeType, "now()")})";
+
+    private static List<int> ClickHouseTradeTypes(ClickHouseConnection connection, string viewName)
+    {
+        using var command = connection.CreateCommand($"SELECT trade_type FROM {viewName} ORDER BY trade_type");
+
+        return ReadInts(command);
+    }
+
+    private static List<int> PostgresTradeTypes(NpgsqlConnection connection, string viewName)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT trade_type FROM {viewName} ORDER BY trade_type";
+
+        return ReadInts(command);
+    }
+
+    private static List<int> ReadInts(DbCommand command)
+    {
+        using var reader = command.ExecuteReader();
+
+        var values = new List<int>();
+
+        while (reader.Read())
+        {
+            values.Add(Convert.ToInt32(reader.GetValue(0)));
+        }
+
+        return values;
     }
 
     private static bool ClickHouseTableExists(string connectionString, string databaseName, string tableName)

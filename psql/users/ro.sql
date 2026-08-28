@@ -32,6 +32,12 @@ REVOKE ALL PRIVILEGES ON TABLE ##position_snapshots_table## FROM ##user_name##;
 
 REVOKE ALL PRIVILEGES ON TABLE ##cursor_table## FROM ##user_name##;
 
+-- a view carries its own privileges, so SELECT on the trades table does not reach through to them. The views
+-- phase runs before this one, so both exist by the time they are named here.
+REVOKE ALL PRIVILEGES ON TABLE ##trades_history_view## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##cash_transfers_view## FROM ##user_name##;
+
 GRANT SELECT ON TABLE ##trades_table## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##daily_statements_table## TO ##user_name##;
@@ -41,3 +47,7 @@ GRANT SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
 GRANT SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##cursor_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##trades_history_view## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##cash_transfers_view## TO ##user_name##;

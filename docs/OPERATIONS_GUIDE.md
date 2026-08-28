@@ -147,8 +147,9 @@ Executed scripts: 5
  - [psql] 20260101_05_create_position_snapshots.sql
 ```
 
-One block per phase, `(root)` being the incremental phase. `No files for views` means the phase had nothing to
-do. On the second run the counts are `0` everywhere except, if you passed `--force`, the re-runnable phases whose
+One block per phase, `(root)` being the incremental phase. `No files for pre` means the phase had nothing to do:
+`pre/` ships empty on both providers, and on ClickHouse so do the root and `views/` phases — that deployment
+provisions its own tables and views. On the second run the counts are `0` everywhere except, if you passed `--force`, the re-runnable phases whose
 inputs you supplied.
 
 > **Note:** On a `--dry-run` this same summary reads `Executed scripts: N`, meaning *would be executed*. Trust

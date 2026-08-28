@@ -2,9 +2,9 @@
 
 # Schema Reference
 
-**The tables the migrator creates, on both engines, column by column**
+**The tables and views the export uses, on both engines, column by column**
 
-[Overview](#overview) · [trades](#trades) · [daily_statements_export](#daily_statements_export) · [order snapshots](#daily_statements_order_snapshots) · [position snapshots](#daily_statements_position_snapshots) · [export_cursor](#export_cursor) · [schema_versions](#schema_versions) · [Type mapping](#type-mapping) · [Deduplication](#deduplication) · [Caveats](#caveats)
+[Overview](#overview) · [trades](#trades) · [daily_statements_export](#daily_statements_export) · [order snapshots](#daily_statements_order_snapshots) · [position snapshots](#daily_statements_position_snapshots) · [export_cursor](#export_cursor) · [Views](#views) · [schema_versions](#schema_versions) · [Type mapping](#type-mapping) · [Deduplication](#deduplication) · [Caveats](#caveats)
 
 </div>
 
@@ -22,6 +22,13 @@ Six tables, in the database named by the connection string:
 | Position snapshots | `daily_statements_position_snapshots` | trade server | The account's open positions at the statement time |
 | Export cursor | `export_cursor` | trade server | How far the export has progressed |
 | Journal | `schema_versions` | migrator | Which scripts have been applied |
+
+…and two views over `trades`, created by the migrator on PostgreSQL and by the deployment on ClickHouse:
+
+| View | Default name | Purpose |
+|------|--------------|---------|
+| Trades history | `trades_history` | The executed and cancelled trades, without the accounting records |
+| Cash transfers | `cash_transfers` | The cash movements, over the columns a transfer actually populates |
 
 The five names the trade server writes to are configurable — they mirror its export configuration and are
 templated as `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
@@ -49,13 +56,14 @@ without the snapshots. Every pipeline shares the one `export_cursor` table, whic
 > |---|---|---|
 > | The five tables the trade server writes to | created by the migrator | **not created** — provisioned by the deployment |
 > | `schema_versions` | created by the migrator | created by the migrator |
+> | The two views over `trades` | created by the migrator | **not created** — provisioned by the deployment |
 > | Users and grants | applied by the migrator | applied by the migrator |
 >
 > On ClickHouse this repository grants on the exported tables **by name** without owning their definitions, which
 > is why a grant succeeds even before the tables exist. The definitions below document what the migrator expects
 > to find; the copies the integration tests migrate against live in
 > [`src/Migrator.Tests/TestScripts/clickhouse/`](../src/Migrator.Tests/TestScripts/clickhouse) and are not part
-> of a shipped migration.
+> of a shipped migration. The two views live there for the same reason — see [Views](#views).
 
 Both engines carry the same logical schema, matching the *Export Setup* guide. Where they differ, the difference
 is called out below.
@@ -417,6 +425,99 @@ order parts merge in.
 ```sql
 SELECT sender_id, table_name, last_written_position FROM export_cursor FINAL;
 ```
+
+---
+
+## Views
+
+Two views over `trades`. They exist because the trades table holds two unrelated kinds of record — an executed
+trade and a cash movement on the account — and a reader almost always wants one or the other.
+
+| View | Default name | Rows | Columns |
+|------|--------------|------|---------|
+| Trades history | `trades_history` | `trade_type` in (0, 1, 14, 15) | every `trades` column except the identity |
+| Cash transfers | `cash_transfers` | every other `trade_type` | the 22 the transfer pipeline populates, plus 2 |
+
+**PostgreSQL creates them; ClickHouse does not** — the same split as the tables, and for a related reason. A
+`GRANT` tolerates an object that is not there yet, but a `CREATE VIEW` resolves the table it reads. Since this
+repository does not own the ClickHouse `trades` table, shipping the view would turn a missing table from a
+failing export into a failing migration. So on ClickHouse the views belong to the deployment that owns the
+table; the definition it should carry is in
+[`src/Migrator.Tests/TestScripts/clickhouse/views/`](../src/Migrator.Tests/TestScripts/clickhouse/views),
+alongside the table definitions and applied the same way by the integration tests. `clickhouse/users/ro.sql`
+grants on both views by name regardless, exactly as it does on the tables.
+
+Both names are templated — `##trades_history_view##` and `##cash_transfers_view##` — so a deployment that
+already owns an object under one of them moves ours aside with `--variables`.
+
+The two filters are complements, so **the views partition the table**: every row is visible through exactly one
+of them, and a trade type the trade server gains later surfaces in `cash_transfers` rather than in neither.
+
+### trades_history
+
+`trade_type` selects the four trading records:
+
+| `trade_type` | Enum |
+|---|---|
+| `0` | `kBuy` |
+| `1` | `kSell` |
+| `14` | `kBuyCancelled` |
+| `15` | `kSellCancelled` |
+
+Every column of [`trades`](#trades) is exposed except the PostgreSQL identity column, which has no ClickHouse
+counterpart — leaving it out is what lets the two engines carry the same view.
+
+### cash_transfers
+
+Everything else: `kBalance`, `kCredit`, `kFee`, `kAdjustment`, `kBonus`, `kCommission`, `kDailyCommission`,
+`kMonthlyCommission`, `kAgentCommission`, `kDailyAgentCommission`, `kMonthlyAgentCommission`, `kInterest`,
+`kDividend`, `kFrankedDividend`, `kTax`, `kStopoutCompensation`, `kStopoutCreditAdjustment` and `kCreditBonus` —
+`trade_type` 2 to 13 and 16 to 21 today.
+
+The transfer pipeline populates a fixed subset of the trades columns and this view is that subset. The rest are
+left at `0` by the writer and are not exposed, so nothing invites a reader to draw a conclusion from them.
+
+| # | Column | Populated | Source in the trade server |
+|---|--------|-----------|----------------------------|
+| 1 | `sender_id` | always | export pipeline configuration |
+| 2 | `group_name` | always | `group.GetName()` |
+| 3 | `symbol_name` | always | the transfer currency |
+| 4 | `trade_id` | always | next trade id |
+| 5 | `time_created` | always | request timestamp |
+| 6 | `time_modified` | always | request timestamp |
+| 7 | `trading_account_id` | always | request |
+| 8 | `group_id` | always | `group.GetId()` |
+| 9 | `trade_type` | always | the transfer type |
+| 10 | `notional_value_in_original_currency` | always | amount, in the transfer currency |
+| 11 | `notional_value_in_account_currency` | always | amount, in the account currency |
+| 12 | `entry_type` | always | `kIn` / `kOut`; for collateral, by the sign of the amount |
+| 13 | `reason` | always | `kAdmin` |
+| 14 | `account_currency_decimal_places` | always | `group.GetCurrencyDecimalPlaces()` |
+| 15 | `comment` | always | request |
+| 16 | `volume` | collateral only | amount converted at the symbol's rate |
+| 17 | `contract_size` | collateral only | `symbol.GetLotSize()` |
+| 18 | `market_bid` | collateral only | top of book |
+| 19 | `market_ask` | collateral only | top of book |
+| 20 | `symbol_id` | collateral only | `symbol.GetId()` |
+| 21 | `side` | collateral only | `kBuy` / `kSell` by the sign of the amount |
+| 22 | `price_decimal_places` | collateral only | `symbol.GetDecimalPlaces()` |
+| 23 | `time_inserted` | *added by the view* | when the row landed in the database |
+| 24 | `is_collateral` | *added by the view* | `symbol_id <> 0` |
+
+A **collateral transfer** is one whose currency differs from the account currency. The trade server resolves a
+symbol for it and fills columns 16–22 from that symbol and the top of its book; a plain transfer leaves them at
+`0`. `is_collateral` is what tells the two apart — `symbol_id` is the one of the seven that cannot legitimately
+be `0` on a collateral transfer.
+
+### Two things to know
+
+**The ClickHouse definitions read `FROM trades FINAL`.** An at-least-once redelivery stays visible as a duplicate
+row until the parts merge, which is not something a reporting view should expose. `FINAL` costs more than a plain
+read; a deployment that prefers the speed and accepts the duplication window drops the keyword.
+
+**Reading a view needs `SELECT` on the view itself** — a grant on the underlying table does not reach through —
+so `users/ro.sql` grants on both, on either engine. `exporter` gets neither: it writes rows, it does not read
+reports.
 
 ---
 
