@@ -81,8 +81,8 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 | Command | Description |
 |---------|-------------|
-| `./migrate.sh --provider postgres --connection-string "…"` | Apply the PostgreSQL schema |
-| `./migrate.sh --provider clickhouse --connection-string "…"` | Apply the ClickHouse schema |
+| `./migrate.sh --provider postgres --connection-string "…" --users "…"` | Apply the PostgreSQL schema |
+| `./migrate.sh --provider clickhouse --connection-string "…" --users "…"` | Apply the ClickHouse schema |
 | `./migrate.sh … --dry-run` | Report what would be applied, touch nothing |
 | `./migrate.sh … --force` | Re-apply every re-runnable script even if unchanged |
 | `dotnet build TradeServerDb.slnx` | Build the solution |

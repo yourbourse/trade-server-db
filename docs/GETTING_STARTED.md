@@ -106,7 +106,7 @@ you pick decides which .NET SDK the build uses:
 Nothing to configure. Open Git Bash in the repository root and use every command in this guide as written:
 
 ```bash
-./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --dry-run
+./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd" --dry-run
 ```
 
 Git Bash rewrites POSIX-looking arguments into Windows paths before the program sees them, so
@@ -142,7 +142,7 @@ dotnet build TradeServerDb.slnx -c Release
 ```
 
 ```powershell
-dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --dry-run
+dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd" --dry-run
 ```
 
 Run it **from the repository root**, as the wrapper does, so `psql/` and `clickhouse/` are picked up from the
@@ -197,8 +197,12 @@ docker compose up -d
 `--dry-run` reports the scripts that would be applied and touches nothing — not even the create-database step:
 
 ```bash
-./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --dry-run
+./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd" "Access=ro;User=trade_reader;Password=passw0rd" --dry-run
 ```
+
+`--users` is required on every run, dry runs included — the accounts are re-granted each time so they pick up
+whatever tables the migration adds, and a run without the flag would silently grant nothing. Step 4 explains the
+two accounts; for now, pass them exactly as above.
 
 The output ends with a per-phase list of pending scripts:
 
@@ -218,7 +222,8 @@ Dry run: 5 script(s) would be applied for (root)
 
 ## Step 4: Apply the schema
 
-Drop `--dry-run` and add the two users the export pipeline needs:
+Drop `--dry-run`. The two accounts stay — they are the ones the export pipeline needs, and every later migration
+has to name them again so their grants keep up with the schema:
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd" "Access=ro;User=trade_reader;Password=passw0rd"
@@ -280,12 +285,16 @@ Incremental scripts appear under their file name; re-runnable ones carry an `::m
 pipeline:
 
 ```bash
-./migrate.sh --provider postgres --connection-string "..."
+./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=passw0rd" "Access=ro;User=trade_reader;Password=passw0rd"
 ```
 
 ```
 Executed scripts: 0
 ```
+
+The accounts are passed again and still nothing is applied: the `users/` scripts are journaled by content, so
+re-supplying an unchanged account is a no-op. They are re-applied only once the scripts change — which is
+exactly when a new table needs granting.
 
 ---
 
@@ -294,7 +303,9 @@ Executed scripts: 0
 Nothing changes except the connection string. Two habits worth keeping:
 
 - Pass the connection string through the environment so it does not land in your shell history:
-  `export TSDB_CONNECTION_STRING="Host=…"`, then `./migrate.sh --provider postgres`.
+  `export TSDB_CONNECTION_STRING="Host=…"`, then `./migrate.sh --provider postgres --users "…"`.
+- Keep the account passwords in a secret store the migration command reads from. `--users` is required on every
+  run, so they are needed every time and should never be typed by hand.
 - Run `--dry-run` first. Every time.
 
 See the [Operations Guide](OPERATIONS_GUIDE.md) for the full routine, including ClickHouse clusters.

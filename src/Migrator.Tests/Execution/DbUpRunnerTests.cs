@@ -182,8 +182,8 @@ public class DbUpRunnerTests
         Assert.Empty(actual);
     }
 
-    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should pass when every access level has a script")]
-    public void ValidateRequestedUsersHaveScripts_Should_pass_when_every_access_level_has_a_script()
+    [Fact(DisplayName = "ValidateUsers Should pass when every access level has a script")]
+    public void ValidateUsers_Should_pass_when_every_access_level_has_a_script()
     {
         // arrange
         var steps = new[] { CreateUsersStep(@"psql/users\exporter.sql", @"psql/users\ro.sql") };
@@ -195,11 +195,11 @@ public class DbUpRunnerTests
         };
 
         // act, assert
-        DbUpRunner.ValidateRequestedUsersHaveScripts(steps, users);
+        DbUpRunner.ValidateUsers(steps, users);
     }
 
-    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should reject an access level no script implements")]
-    public void ValidateRequestedUsersHaveScripts_Should_reject_an_access_level_no_script_implements()
+    [Fact(DisplayName = "ValidateUsers Should reject an access level no script implements")]
+    public void ValidateUsers_Should_reject_an_access_level_no_script_implements()
     {
         // arrange
         var steps = new[] { CreateUsersStep(@"psql/users\exporter.sql", @"psql/users\ro.sql") };
@@ -210,15 +210,15 @@ public class DbUpRunnerTests
         };
 
         // act
-        var exception = Assert.Throws<SchemaMigrationException>(() => DbUpRunner.ValidateRequestedUsersHaveScripts(steps, users));
+        var exception = Assert.Throws<SchemaMigrationException>(() => DbUpRunner.ValidateUsers(steps, users));
 
         // assert
         Assert.Contains("trade_reader (Access=readonly)", exception.Message);
         Assert.Contains("exporter, ro", exception.Message);
     }
 
-    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should report an empty users folder")]
-    public void ValidateRequestedUsersHaveScripts_Should_report_an_empty_users_folder()
+    [Fact(DisplayName = "ValidateUsers Should report an empty users folder")]
+    public void ValidateUsers_Should_report_an_empty_users_folder()
     {
         // arrange
         var steps = new[] { CreateUsersStep() };
@@ -229,20 +229,34 @@ public class DbUpRunnerTests
         };
 
         // act
-        var exception = Assert.Throws<SchemaMigrationException>(() => DbUpRunner.ValidateRequestedUsersHaveScripts(steps, users));
+        var exception = Assert.Throws<SchemaMigrationException>(() => DbUpRunner.ValidateUsers(steps, users));
 
         // assert
         Assert.Contains("none", exception.Message);
     }
 
-    [Fact(DisplayName = "ValidateRequestedUsersHaveScripts Should do nothing when no user was requested")]
-    public void ValidateRequestedUsersHaveScripts_Should_do_nothing_when_no_user_was_requested()
+    [Fact(DisplayName = "ValidateUsers Should require users when the scripts implement an access level")]
+    public void ValidateUsers_Should_require_users_when_the_scripts_implement_an_access_level()
+    {
+        // arrange
+        var steps = new[] { CreateUsersStep(@"psql/users\exporter.sql", @"psql/users\ro.sql") };
+
+        // act
+        var exception = Assert.Throws<SchemaMigrationException>(() => DbUpRunner.ValidateUsers(steps, []));
+
+        // assert
+        Assert.Contains("--users is required", exception.Message);
+        Assert.Contains("exporter, ro", exception.Message);
+    }
+
+    [Fact(DisplayName = "ValidateUsers Should do nothing when no user was requested and no script implements one")]
+    public void ValidateUsers_Should_do_nothing_when_no_user_was_requested_and_no_script_implements_one()
     {
         // arrange
         var steps = new[] { CreateUsersStep() };
 
         // act, assert
-        DbUpRunner.ValidateRequestedUsersHaveScripts(steps, []);
+        DbUpRunner.ValidateUsers(steps, []);
     }
 
     private static ExecutionStep CreateUsersStep(params string[] relativePaths)

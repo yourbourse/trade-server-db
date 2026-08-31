@@ -17,7 +17,7 @@ configuration file to deploy - the integration tests read their own `appsettings
 else is loaded unless you add it.
 
 ```bash
-./migrate.sh --provider <clickhouse|postgres> --connection-string "<connection string>" [options]
+./migrate.sh --provider <clickhouse|postgres> --connection-string "<connection string>" --users "<user definitions>" [options]
 ```
 
 Every argument given to `migrate.sh` is passed straight through, so `./migrate.sh --help` prints the full option

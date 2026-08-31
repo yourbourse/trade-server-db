@@ -117,7 +117,7 @@ public class DbUpRunner : IDbUpRunner
             filesToExecute.Add(new(executionOrder, deduplicatedFileOrders));
         }
 
-        ValidateRequestedUsersHaveScripts(filesToExecute, dbMigrationRequest.Users);
+        ValidateUsers(filesToExecute, dbMigrationRequest.Users);
 
         var executionResults = new List<(string, DatabaseUpgradeResult)>();
 
@@ -160,25 +160,47 @@ public class DbUpRunner : IDbUpRunner
     }
 
     /// <summary>
-    /// Fails the run when a --users entry names an access level that no script implements.
+    /// Fails the run when the users phase cannot be applied the way it was asked for.
     /// </summary>
     /// <remarks>
-    /// The access level selects the file in users/ by name, so a typo - or a script folder that does not carry
-    /// that role - would otherwise apply nothing at all and still report success, leaving the account missing
-    /// and the operator none the wiser.
+    /// Two ways that happens, and the migration log shows neither of them otherwise.
+    ///
+    /// A run without --users instantiates no user script at all, because a script in users/ is only processed
+    /// once per account that selects it. The phase then reports success having applied nothing, so a deployment
+    /// that provisioned its accounts on an earlier run keeps them frozen at the grants of that run: every table
+    /// a later migration adds is missing from them, and the failure surfaces as a permission error in the trade
+    /// server rather than here. That is why the accounts are required on every run and not only on the first.
+    ///
+    /// A --users entry naming an access level no script implements has the same shape - a typo, or a script
+    /// folder that does not carry that role, applies nothing and still reports success, leaving the account
+    /// missing and the operator none the wiser.
     /// </remarks>
-    public static void ValidateRequestedUsersHaveScripts(IEnumerable<ExecutionStep> executionSteps, IList<DatabaseUser> users)
+    public static void ValidateUsers(IEnumerable<ExecutionStep> executionSteps, IList<DatabaseUser> users)
     {
-        if (users.Count == 0)
-        {
-            return;
-        }
-
         var availableAccessLevels = executionSteps
             .Where(step => step.ExecutionOrder.SubFolder == ScriptSubFolders.Users)
             .SelectMany(step => step.Files)
             .Select(file => Path.GetFileNameWithoutExtension(file.FilePath))
             .ToHashSet(StringComparer.Ordinal);
+
+        if (users.Count == 0)
+        {
+            // a script set carrying no users phase leaves permissions to the deployment, so there is nothing to
+            // require - the rule only binds once the scripts in play actually implement a role
+            if (availableAccessLevels.Count == 0)
+            {
+                return;
+            }
+
+            var implemented = availableAccessLevels.Order().ToList();
+
+            throw new SchemaMigrationException(
+                $"--users is required, on every migration and not only the first. The {ScriptSubFolders.Users} folder implements {string.Join(", ", implemented)}, " +
+                "and a run without --users applies none of them: an account created by an earlier run would keep the grants of that run and be denied access to everything this migration adds. " +
+                "Pass the same accounts the deployment was migrated with the first time, for example: " +
+                $"--users \"Access={implemented[0]};User=trade_exporter;Password=<password>\". " +
+                "The password is re-applied on every run, so whatever is passed here becomes the account's password.");
+        }
 
         var unmatched = users
             .Where(user => !availableAccessLevels.Contains(user.Access))

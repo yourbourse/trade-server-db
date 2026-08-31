@@ -48,7 +48,7 @@ line so the scripts follow. Use the variables instead of hard-coded names in any
 tables.
 
 ```bash
-./migrate.sh --provider postgres --connection-string "..." --variables trades_table=trades_export cursor_table=trades_export_cursor
+./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --variables trades_table=trades_export cursor_table=trades_export_cursor
 ```
 
 The two view names are templated for a different reason: the trade server never writes to a view and so has no
@@ -112,7 +112,7 @@ the dialect it is written into rather than bound. See [Security](SECURITY.md) fo
 Anything not in the tables above is passed with `--variables`:
 
 ```bash
-./migrate.sh --provider clickhouse --connection-string "..." --variables ttl_days=90 retention_policy=hot_cold
+./migrate.sh --provider clickhouse --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --variables ttl_days=90 retention_policy=hot_cold
 ```
 
 ```sql

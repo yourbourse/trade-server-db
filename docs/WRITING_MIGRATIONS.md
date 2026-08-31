@@ -225,7 +225,7 @@ Before opening a PR with a new script:
 - [ ] Integration tests pass against both engines
 
 ```bash
-./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --dry-run
+./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd" --dry-run
 ```
 
 ---

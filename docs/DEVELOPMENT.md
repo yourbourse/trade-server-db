@@ -47,7 +47,7 @@ dotnet build TradeServerDb.slnx -c Release --nologo
 Running the CLI without the wrapper:
 
 ```bash
-dotnet run --project src/Migrator/Migrator.csproj -- --provider postgres --connection-string "..." --dry-run
+dotnet run --project src/Migrator/Migrator.csproj -- --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run
 ```
 
 `migrate.sh` is the usual entry point: it builds in Release and runs from the repository root so the SQL folders

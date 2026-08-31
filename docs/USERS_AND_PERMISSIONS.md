@@ -26,8 +26,7 @@ rewrites an exported record. Run migrations with a separate, more privileged acc
 
 ## How the `users/` phase works
 
-Nothing is created unless you ask for it. Each `--users` entry names an access level, and the access level is
-the **file name** of the script to run:
+Each `--users` entry names an access level, and the access level is the **file name** of the script to run:
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
@@ -47,7 +46,37 @@ The mechanics:
   `[psql/users] exporter.sql for trade_exporter::7f3c…`
 - An `Access` value that matches no file **fails the run** before anything is applied, naming the account and
   listing the access levels that do exist.
-- Omitting `--users` skips the phase entirely. It never revokes or drops anything.
+- Omitting `--users` **fails the run** too. See below.
+
+### `--users` is required on every run
+
+A script in `users/` is only instantiated once per account that selects it, so a run without `--users` produces
+no user script at all — the phase would report success having applied nothing. The accounts an earlier run
+created would then stay frozen at the grants of that run, and every table a later migration adds would be
+missing from them. That failure surfaces much later, as a permission error inside the trade server, with nothing
+in the migration log pointing at the cause.
+
+So the migrator refuses to start instead, as soon as the scripts in play implement any access level:
+
+```
+--users is required, on every migration and not only the first. The users folder implements exporter, ro, and a
+run without --users applies none of them: an account created by an earlier run would keep the grants of that run
+and be denied access to everything this migration adds. Pass the same accounts the deployment was migrated with
+the first time, for example: --users "Access=exporter;User=trade_exporter;Password=<password>". The password is
+re-applied on every run, so whatever is passed here becomes the account's password.
+```
+
+The check runs before the database is created and before any script executes, so a missing flag cannot leave a
+half-provisioned deployment behind. Practical consequences:
+
+- **Every migration needs the account passwords to hand.** Keep them in the secret store the migration command
+  reads from rather than in someone's shell history — see the warning under [Rotation](#password-rotation).
+- **`--dry-run` needs them too**, deliberately: a dry run is there to tell you whether the real command will
+  work, so it validates the same thing.
+- A custom `--scripts` folder set that carries **no** `users/` folder is exempt — there is no role to provision,
+  so nothing is required. This is the only way to run without the flag.
+
+The rule also means the first migration establishes the accounts every later migration has to repeat.
 
 > **Warning:** All three keys are required. A malformed entry fails the run with the expected format, with the
 > password masked in the error. A password containing `=` or `;` is fine — the entry is split only at the
@@ -123,7 +152,9 @@ also rotates the password.
 
 > **Note:** Grants are per-table and by name, so a `--variables trades_table=…` override grants on the renamed
 > table. A table added by a later migration is **not** granted automatically — add the `GRANT` to the `users/`
-> scripts, and because that edit changes their content the phase re-runs on the next migration by itself.
+> scripts. That edit changes their content, so their MD5 changes and the phase re-runs on the next migration on
+> its own, without `--force`. It re-runs *for the accounts that run passes*, which is why
+> [`--users` is required every time](#--users-is-required-on-every-run).
 
 ---
 

@@ -37,7 +37,10 @@ public record CommandLineOptions
     [Option('c', "cluster", Required = false, HelpText = "ClickHouse only. The name of the cluster to use. When empty a single instance is assumed")]
     public string? Cluster { get; set; }
 
-    [Option('u', "users", Required = false, HelpText = "A list of users to be created, format: Access=exporter;User=trade_exporter;Password=passw0rd")]
+    // Required is left off so the check can live in DbUpRunner, where the scripts in play are known: the flag is
+    // only demanded when the script set carries a users phase, and the message can then name the access levels
+    // it implements instead of the parser's generic "a required option is missing"
+    [Option('u', "users", Required = false, HelpText = "The users to create or update, format: Access=exporter;User=trade_exporter;Password=passw0rd. Required whenever the scripts carry a users folder, and has to be repeated on every migration - the grants are re-applied per run, so a run without it leaves the accounts without access to any table the migration adds")]
     public IEnumerable<string>? Users { get; set; }
 
     [Option('v', "variables", Required = false, HelpText = "Additional template variables, format: key=value. Substituted into the scripts as ##key##")]

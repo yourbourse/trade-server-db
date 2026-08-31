@@ -53,11 +53,15 @@ export TSDB_CONNECTION_STRING="Host=db.example.com;Port=5432;Database=trading;Us
 ```
 
 ```bash
-./migrate.sh --provider postgres --dry-run
+./migrate.sh --provider postgres --dry-run --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
 ```
 
 Expect every script to be listed as pending, and a warning that the journal could not be read — the database
 does not exist yet, and a dry run is not allowed to create it.
+
+The accounts are named here even though a dry run creates nothing: `--users` is required on every run, and a dry
+run is there to tell you whether the real command will work. **Write these two down** — every later migration has
+to name the same accounts, and the passwords with them.
 
 **3. Apply.**
 
@@ -84,30 +88,32 @@ git pull
 ```
 
 ```bash
-./migrate.sh --provider postgres --dry-run
+./migrate.sh --provider postgres --dry-run --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
 ```
 
 ```bash
-./migrate.sh --provider postgres
+./migrate.sh --provider postgres --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
 ```
 
 The dry run is the review step: it lists exactly the scripts that are new since the last run. If that list
 contains something you were not expecting, stop and read the script before applying it.
 
-Pass `--users` again on every run if you want the role definitions kept in step — the `users/` scripts are
-re-runnable and also rotate the password (see [Users & Permissions](USERS_AND_PERMISSIONS.md)). Omitting
-`--users` simply skips the phase; it does not remove anything.
+`--users` is **required on every run**, dry runs included, and has to name the same accounts the deployment was
+migrated with the first time. The `users/` scripts are re-runnable, so each run re-applies the grants — that is
+how an account picks up the tables a migration adds. A run without the flag would apply none of them and leave
+the account denied on everything new, so the migrator refuses to start instead. It also re-applies the password,
+so the value passed becomes the account's password (see [Users & Permissions](USERS_AND_PERMISSIONS.md)).
 
 ### Both engines
 
 There is no combined mode: run the migrator once per engine, each with its own provider and connection string.
 
 ```bash
-./migrate.sh --provider postgres   --connection-string "Host=pg;Port=5432;Database=trading;Username=migrator;Password=..."
+./migrate.sh --provider postgres   --connection-string "Host=pg;Port=5432;Database=trading;Username=migrator;Password=..." --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
 ```
 
 ```bash
-./migrate.sh --provider clickhouse --connection-string "Host=ch;Port=8123;Database=trading;Username=migrator;Password=..."
+./migrate.sh --provider clickhouse --connection-string "Host=ch;Port=8123;Database=trading;Username=migrator;Password=..." --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
 ```
 
 ---
@@ -173,7 +179,7 @@ On a replicated setup, pass `--cluster` on **every** run — it is not recorded 
 would create local, unreplicated objects next to the replicated ones:
 
 ```bash
-./migrate.sh --provider clickhouse --cluster my_cluster --connection-string "Host=ch-1;Port=8123;Database=trading;Username=migrator;Password=..."
+./migrate.sh --provider clickhouse --cluster my_cluster --connection-string "Host=ch-1;Port=8123;Database=trading;Username=migrator;Password=..." --users "Access=exporter;User=trade_exporter;Password=..."
 ```
 
 | What changes | Effect |
@@ -199,8 +205,14 @@ The migrator is built for unattended use: it is idempotent, it exits non-zero on
 prompts.
 
 ```bash
-TSDB_CONNECTION_STRING="$DEPLOY_DB_CONNECTION" ./migrate.sh --provider postgres
+TSDB_CONNECTION_STRING="$DEPLOY_DB_CONNECTION" ./migrate.sh --provider postgres \
+  --users "Access=exporter;User=trade_exporter;Password=$DEPLOY_EXPORTER_PASSWORD" \
+          "Access=ro;User=trade_reader;Password=$DEPLOY_READER_PASSWORD"
 ```
+
+The account passwords come from the pipeline's secret store, the same as the connection string. They are needed
+on **every** run, not only the first — that is what keeps the accounts' grants in step with the schema, and the
+migrator refuses to run without them.
 
 Recommendations:
 
@@ -221,7 +233,7 @@ dotnet publish src/Migrator/Migrator.csproj -c Release -o /opt/trade-server-db-m
 ```
 
 ```bash
-dotnet /opt/trade-server-db-migrator/Migrator.dll --provider postgres --dry-run
+dotnet /opt/trade-server-db-migrator/Migrator.dll --provider postgres --users "Access=exporter;User=trade_exporter;Password=..." --dry-run
 ```
 
 The publish output carries `psql/` and `clickhouse/` next to `Migrator.dll`, so the same invocation works with no

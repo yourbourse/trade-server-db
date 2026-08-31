@@ -48,7 +48,7 @@ dotnet build TradeServerDb.slnx -c Release
 ```
 
 ```powershell
-dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "..." --dry-run
+dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run
 ```
 
 Run it from the repository root so the SQL folders are found. On Windows this is only necessary in PowerShell or
@@ -93,7 +93,7 @@ The multi-line examples in these docs are bash, where `\` continues a line. Powe
 `--provider` has no default and is not inferred from the connection string.
 
 ```bash
-./migrate.sh --provider postgres --connection-string "..."
+./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..."
 ```
 
 ### `Option 'u, users' is defined multiple times`
@@ -195,12 +195,47 @@ cluster name and every `--users` name. Background: [Security](SECURITY.md).
 
 ### `--force` did not restore a role
 
-The `users/` phase only runs for the `--users` entries it is given. A forced run without `--users` reports `0`
-for that phase — there is no user to write. Pass both:
+The `users/` phase only runs for the `--users` entries it is given, so `--force` on its own restores nothing —
+and since the flag is required, a forced run without it does not start at all. Pass both:
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "..." --force --users "Access=exporter;User=trade_exporter;Password=..."
 ```
+
+### `--users is required, on every migration and not only the first`
+
+The migration stopped before touching the database because no `--users` entry was given while the scripts in play
+implement at least one access level.
+
+This is deliberate. A `users/` script is instantiated once per account that selects it, so a run without
+`--users` produces no user script at all and the phase reports success having applied nothing. The accounts an
+earlier run created would then keep the grants of that run, and every table this migration adds would be missing
+from them — surfacing later as a permission error inside the trade server, with nothing in the migration log
+explaining it.
+
+The fix is to pass the same accounts the deployment was migrated with the first time:
+
+```bash
+./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
+```
+
+Two things to know:
+
+- **The password is re-applied on every run**, so whatever is passed becomes the account's password. Read it from
+  the same secret store the connection string comes from rather than retyping it.
+- **`--dry-run` needs the flag too.** A dry run exists to tell you whether the real command will work, so it
+  validates the same requirement.
+
+If you no longer know which accounts a deployment uses, the journal records them — the same `script_name` column
+on both engines:
+
+```sql
+SELECT script_name FROM schema_versions WHERE script_name LIKE '%/users]%';
+```
+
+The rows read `[psql/users] exporter.sql for trade_exporter::7f3c…`, so the account name and its access level are
+both there. The passwords are not — they are never stored in recoverable form — but they do not need to be:
+passing a new one rotates the account to it.
 
 ### `No script implements the access level requested by: …`
 

@@ -472,6 +472,27 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.Contains("not a valid SQL identifier", exception.Message);
     }
 
+    [Theory(DisplayName = "Migration Should refuse to run without the accounts the users phase provisions")]
+    [InlineData(DatabaseProvider.ClickHouse)]
+    [InlineData(DatabaseProvider.Postgres)]
+    public void Migration_Should_refuse_to_run_without_the_accounts_the_users_phase_provisions(DatabaseProvider provider)
+    {
+        // arrange
+        var request = CreateRequest(provider) with { Users = [] };
+        var runner = CreateRunner();
+
+        // act
+        var exception = Assert.Throws<SchemaMigrationException>(() => runner.Run(request));
+
+        // assert
+        Assert.Contains("--users is required", exception.Message);
+        Assert.Contains("exporter", exception.Message);
+
+        // the run has to stop before anything reaches the database, so a missing flag cannot leave a schema
+        // behind whose grants were never applied
+        Assert.False(DatabaseExists(provider, request.ConnectionString));
+    }
+
     [Fact(DisplayName = "Postgres migration Should report the pending scripts without touching the database on a dry run")]
     public void Postgres_migration_Should_report_the_pending_scripts_without_touching_the_database_on_a_dry_run()
     {
@@ -479,8 +500,9 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         var request = CreateRequest(DatabaseProvider.Postgres);
         var runner = CreateRunner();
 
-        // the dry run needs a database to read the journal from, but must not write to it
-        runner.Run(request with { ScriptFolders = [] });
+        // the dry run needs a database to read the journal from, but must not write to it. No script folder also
+        // means no users phase, so this run has no account to provision and passes none
+        runner.Run(request with { ScriptFolders = [], Users = [] });
 
         // act
         var dryRun = runner.Run(request with { DryRun = true });
@@ -550,7 +572,10 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
             false,
             false,
             null,
-            new List<DatabaseUser>());
+            // every run has to carry the accounts it provisions, so the request the tests start from carries one.
+            // The name is derived from the database so the PostgreSQL roles, which are cluster wide rather than
+            // per database, stay unique across the suite
+            [new() { Access = "exporter", User = $"{databaseName}_exporter", Password = "passw0rd" }]);
     }
 
     private static string WithDatabase(DatabaseProvider provider, string connectionString, string databaseName)
@@ -561,6 +586,35 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         }
 
         return new NpgsqlConnectionStringBuilder(connectionString) { Database = databaseName }.ToString();
+    }
+
+    /// <summary>
+    /// Whether the database the connection string names has been created. Asked from the server level database so
+    /// it can be answered when the target does not exist.
+    /// </summary>
+    private static bool DatabaseExists(DatabaseProvider provider, string connectionString)
+    {
+        var databaseName = provider == DatabaseProvider.ClickHouse
+            ? new ClickHouseConnectionStringBuilder(connectionString).Database
+            : new NpgsqlConnectionStringBuilder(connectionString).Database;
+
+        if (provider == DatabaseProvider.ClickHouse)
+        {
+            using var clickHouseConnection = new ClickHouseConnection(WithDatabase(provider, connectionString, "system"));
+            clickHouseConnection.Open();
+
+            using var clickHouseCommand = clickHouseConnection.CreateCommand($"SELECT count() FROM system.databases WHERE name = '{databaseName}'");
+            return Convert.ToInt32(clickHouseCommand.ExecuteScalar()) > 0;
+        }
+
+        using var connection = new NpgsqlConnection(WithDatabase(provider, connectionString, "postgres"));
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT count(*) FROM pg_database WHERE datname = @name";
+        command.Parameters.AddWithValue("name", databaseName!);
+
+        return Convert.ToInt32(command.ExecuteScalar()) > 0;
     }
 
     private static async Task DropDatabase(DatabaseProvider provider, string connectionString, string databaseName)

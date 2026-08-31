@@ -19,11 +19,11 @@ On Windows, run these from **Git Bash** — it runs the wrapper unchanged. WSL w
 SDK; PowerShell cannot run the wrapper at all. [Running on Windows](GETTING_STARTED.md#running-on-windows).
 
 ```bash
-./migrate.sh --provider postgres --connection-string "Host=db;Port=5432;Database=trading;Username=postgres;Password=..." --dry-run
+./migrate.sh --provider postgres --connection-string "Host=db;Port=5432;Database=trading;Username=postgres;Password=..." --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..." --dry-run
 ```
 
 ```bash
-./migrate.sh --provider postgres --connection-string "Host=db;Port=5432;Database=trading;Username=postgres;Password=..."
+./migrate.sh --provider postgres --connection-string "Host=db;Port=5432;Database=trading;Username=postgres;Password=..." --users "Access=exporter;User=trade_exporter;Password=..." "Access=ro;User=trade_reader;Password=..."
 ```
 
 Swap `postgres` for `clickhouse` and the port for `8123` to migrate the other engine. `migrate.sh` builds

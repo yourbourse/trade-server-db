@@ -54,8 +54,18 @@ Now migrate:
 ```
 
 `--users` provisions the accounts the export pipeline needs — `exporter` for the trade server, `ro` for
-reporting. It takes a list, so several values follow one flag. Omit it and the schema is still created, but no
-account is granted access to it; see [Users & Permissions](docs/USERS_AND_PERMISSIONS.md).
+reporting. It takes a list, so several values follow one flag.
+
+**`--users` is required on every migration, not only the first.** The grants are re-applied per run, so a run
+without it would leave the accounts an earlier run created holding the grants of that run — and denied access to
+every table the migration just added. The migrator refuses to start rather than let that through:
+
+```
+--users is required, on every migration and not only the first. The users folder implements exporter, ro, …
+```
+
+Pass the same accounts each time. The password is re-applied on every run, so whatever is passed becomes the
+account's password — see [Users & Permissions](docs/USERS_AND_PERMISSIONS.md).
 
 `migrate.sh` builds `src/Migrator` and runs it from the root of the repository, so the scripts in `psql/` and
 `clickhouse/` are picked up as they are on disk. Every argument is passed straight through, so
@@ -74,7 +84,7 @@ machine and needs its own **Linux** SDK; the Windows one does not count. PowerSh
 wrapper at all — build once and call the binary directly:
 
 ```powershell
-dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "Host=...;Port=5432;Database=trading;Username=postgres;Password=..." --dry-run
+dotnet src\Migrator\bin\Release\net10.0\Migrator.dll --provider postgres --connection-string "Host=...;Port=5432;Database=trading;Username=postgres;Password=..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run
 ```
 
 Quote the connection string. PowerShell splits on `;`, so unquoted it truncates at the first one and silently
@@ -129,7 +139,7 @@ The rest of this file is a summary. The full documentation lives in [`docs/`](do
 | `-s, --scripts` | Script folders to apply. Defaults to a single folder named after the provider |
 | `-r, --scripts-root` | The folder the script folders are resolved against. Defaults to the current directory, then to the folder holding the binary |
 | `-c, --cluster` | ClickHouse only. Runs every statement `ON CLUSTER` and switches the engines to their `Replicated` variants |
-| `-u, --users` | `Access=exporter;User=trade_exporter;Password=passw0rd`. Several values follow one flag, separated by spaces |
+| `-u, --users` | `Access=exporter;User=trade_exporter;Password=passw0rd`. Several values follow one flag, separated by spaces. **Required on every run** whenever the scripts carry a `users/` folder |
 | `-v, --variables` | `key=value`, substituted into the scripts as `##key##`. Applied last, so it overrides the derived values. Several values follow one flag, separated by spaces |
 | `-j, --journal-table` | The table recording applied scripts. Defaults to `schema_versions` |
 | `-f, --force` | Re-applies every re-runnable script even when its content has not changed |
@@ -154,7 +164,7 @@ Each provider folder holds the same five phases, applied in this order:
 | 1 | `pre/` | yes | Anything that has to exist before the tables. Optional, create it when you need it |
 | 2 | *(the folder root)* | **no** | Incremental migrations. Applied once, in file name order, and never again |
 | 3 | `views/` | yes | Views and materialized views |
-| 4 | `users/` | yes | Roles and users. Applied once per matching `--users` entry |
+| 4 | `users/` | yes | Roles and users. Applied once per matching `--users` entry, which is why the flag is required on every run |
 | 5 | `post/` | yes | Everything that has to run after the schema, such as TTLs |
 
 **Incremental** scripts (the folder root) are recorded in `schema_versions` under their file name and are never
@@ -240,7 +250,7 @@ happens to contain a quote fails loudly or works correctly, rather than silently
 2. Use the table variables — `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
    `##position_snapshots_table##`, `##cursor_table##` — rather than hard-coded table names. They are all
    configurable in the trade server's export configuration.
-3. Check what it would do: `./migrate.sh --provider postgres --connection-string "..." --dry-run`.
+3. Check what it would do: `./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run`.
 4. Apply it, then run it a second time and confirm nothing is applied.
 5. Mirror the change in the other provider's folder if it applies to both.
 
