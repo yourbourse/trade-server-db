@@ -47,17 +47,15 @@ public class DbUpRunner : IDbUpRunner
     /// </summary>
     private static readonly TimeSpan executionTimeout = TimeSpan.FromDays(1);
 
-    private const string UsersSubFolder = "users";
-
     private static readonly Regex unresolvedVariablePattern = new(@"##[A-Za-z0-9_]+##", RegexOptions.Compiled);
 
     private static readonly List<ExecutionOrder> scriptExecutionOrder =
     [
-        new() { OrderId = 1, SubFolder = "pre", ReRunnable = true, FileContentResolver = DefaultFileTransformation },
-        new() { OrderId = 2, SubFolder = null, ReRunnable = false, FileContentResolver = DefaultFileTransformation },
-        new() { OrderId = 3, SubFolder = "views", ReRunnable = true, FileContentResolver = DefaultFileTransformation },
-        new() { OrderId = 4, SubFolder = UsersSubFolder, ReRunnable = true, FileContentResolver = UserFileTransformationResolver },
-        new() { OrderId = 5, SubFolder = "post", ReRunnable = true, FileContentResolver = DefaultFileTransformation }
+        new() { OrderId = 1, SubFolder = ScriptSubFolders.Pre, ReRunnable = true, FileContentResolver = DefaultFileTransformation },
+        new() { OrderId = 2, SubFolder = ScriptSubFolders.Root, ReRunnable = false, FileContentResolver = DefaultFileTransformation },
+        new() { OrderId = 3, SubFolder = ScriptSubFolders.Views, ReRunnable = true, FileContentResolver = DefaultFileTransformation },
+        new() { OrderId = 4, SubFolder = ScriptSubFolders.Users, ReRunnable = true, FileContentResolver = UserFileTransformationResolver },
+        new() { OrderId = 5, SubFolder = ScriptSubFolders.Post, ReRunnable = true, FileContentResolver = DefaultFileTransformation }
     ];
 
     private readonly ILogger<DbUpRunner> logger;
@@ -139,18 +137,18 @@ public class DbUpRunner : IDbUpRunner
         {
             if (!executionStep.Files.Any())
             {
-                logger.LogInformation("No files for {SubFolder}", executionStep.ExecutionOrder.SubFolder ?? "(root)");
+                logger.LogInformation("No files for {SubFolder}", executionStep.ExecutionOrder.SubFolder ?? ScriptSubFolders.RootDisplayName);
                 continue;
             }
 
             logger.LogInformation("====================================");
-            logger.LogInformation("Running migration: {SubFolder}", executionStep.ExecutionOrder.SubFolder ?? "(root)");
+            logger.LogInformation("Running migration: {SubFolder}", executionStep.ExecutionOrder.SubFolder ?? ScriptSubFolders.RootDisplayName);
 
             var sqlScripts = executionStep.Files
                 .SelectMany(scriptOrder => executionStep.ExecutionOrder.FileContentResolver(executionStep, scriptOrder, templateVariables, dbMigrationRequest));
 
             var upgradeResult = ExecuteScriptsInFolder(dbMigrationRequest, sqlScripts, executionStep.ExecutionOrder);
-            executionResults.Add((executionStep.ExecutionOrder.SubFolder ?? "(root)", upgradeResult));
+            executionResults.Add((executionStep.ExecutionOrder.SubFolder ?? ScriptSubFolders.RootDisplayName, upgradeResult));
 
             if (!upgradeResult.Successful)
             {
@@ -177,7 +175,7 @@ public class DbUpRunner : IDbUpRunner
         }
 
         var availableAccessLevels = executionSteps
-            .Where(step => step.ExecutionOrder.SubFolder == UsersSubFolder)
+            .Where(step => step.ExecutionOrder.SubFolder == ScriptSubFolders.Users)
             .SelectMany(step => step.Files)
             .Select(file => Path.GetFileNameWithoutExtension(file.FilePath))
             .ToHashSet(StringComparer.Ordinal);
@@ -195,7 +193,7 @@ public class DbUpRunner : IDbUpRunner
         throw new SchemaMigrationException(
             $"No script implements the access level requested by: {string.Join(", ", unmatched)}. " +
             $"Available access levels: {(availableAccessLevels.Count == 0 ? "none - the users folder is empty or missing" : string.Join(", ", availableAccessLevels.Order()))}. " +
-            $"The Access value has to match the name of a file in the {UsersSubFolder} folder, so Access=exporter runs {UsersSubFolder}/exporter.sql.");
+            $"The Access value has to match the name of a file in the {ScriptSubFolders.Users} folder, so Access=exporter runs {ScriptSubFolders.Users}/exporter.sql.");
     }
 
     /// <summary>
@@ -307,7 +305,7 @@ public class DbUpRunner : IDbUpRunner
                 pendingScripts = scripts;
             }
 
-            logger.LogInformation("Dry run: {PendingScriptCount} script(s) would be applied for {SubFolder}", pendingScripts.Count, executionRule.SubFolder ?? "(root)");
+            logger.LogInformation("Dry run: {PendingScriptCount} script(s) would be applied for {SubFolder}", pendingScripts.Count, executionRule.SubFolder ?? ScriptSubFolders.RootDisplayName);
 
             foreach (var pendingScript in pendingScripts)
             {

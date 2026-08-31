@@ -251,7 +251,7 @@ public class DbUpRunnerTests
             .Select(path => new FileOrder(GetAbsolutePath(path), 1))
             .ToList();
 
-        return new(new() { OrderId = 4, SubFolder = "users", ReRunnable = true }, files);
+        return new(new() { OrderId = 4, SubFolder = ScriptSubFolders.Users, ReRunnable = true }, files);
     }
 
     private static string GetAbsolutePath(string relativePath)
