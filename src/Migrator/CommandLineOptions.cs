@@ -37,10 +37,12 @@ public record CommandLineOptions
     [Option('c', "cluster", Required = false, HelpText = "ClickHouse only. The name of the cluster to use. When empty a single instance is assumed")]
     public string? Cluster { get; set; }
 
-    // Required is left off so the check can live in DbUpRunner, where the scripts in play are known: the flag is
-    // only demanded when the script set carries a users phase, and the message can then name the access levels
-    // it implements instead of the parser's generic "a required option is missing"
-    [Option('u', "users", Required = false, HelpText = "The users to create or update, format: Access=exporter;User=trade_exporter;Password=passw0rd. Required whenever the scripts carry a users folder, and has to be repeated on every migration - the grants are re-applied per run, so a run without it leaves the accounts without access to any table the migration adds")]
+    // The parser's Required is left off deliberately: whether the flag is needed depends on the scripts in play,
+    // which are only known once DbUpRunner has walked the folders. The check lives there instead, so it can be
+    // skipped for a script set carrying no users phase and can name the access levels that do exist rather than
+    // emitting the parser's bare "Required option 'u, users' is missing". The help text leads with Required all
+    // the same, so the option reads as mandatory here - which, for the folders this repository ships, it is.
+    [Option('u', "users", Required = false, HelpText = "Required on every migration, not only the first. The users to create or update, format: Access=exporter;User=trade_exporter;Password=passw0rd. The grants are re-applied per run, so a run without this flag leaves the accounts without access to any table the migration adds - and is refused. Only a script set carrying no users folder may omit it")]
     public IEnumerable<string>? Users { get; set; }
 
     [Option('v', "variables", Required = false, HelpText = "Additional template variables, format: key=value. Substituted into the scripts as ##key##")]
