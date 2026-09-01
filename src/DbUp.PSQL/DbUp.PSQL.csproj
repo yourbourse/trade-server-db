@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <RootNamespace>YB.DbUp.PSQL</RootNamespace>
+        <AssemblyName>YB.DbUp.PSQL</AssemblyName>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="dbup-core" Version="6.0.15" />
+        <PackageReference Include="dbup-postgresql" Version="6.1.2" />
+    </ItemGroup>
+
+</Project>

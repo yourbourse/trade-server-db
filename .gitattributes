@@ -1,0 +1,7 @@
+# Keep shell scripts LF so they still run after a Windows checkout
+*.sh text eol=lf
+
+# The migrator hashes the processed content of every re-runnable script to decide whether it has to run again,
+# so the bytes have to be identical on every platform: a CRLF checkout would change the hash and re-apply every
+# re-runnable script once after a migration was last run from the other operating system.
+*.sql text eol=lf
