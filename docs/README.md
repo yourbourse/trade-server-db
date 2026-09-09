@@ -73,9 +73,8 @@ the alternatives that were rejected.
 | [Trading accounts — SPEC](specs/trading-accounts/SPEC.md) | The trading account event log and the current-state table derived from it by trigger: workflows, edge cases and invariants |
 | [Trading accounts — design](specs/trading-accounts/design.md) | How the projection works, the decisions behind it, and what the backend team still has to confirm |
 
-The trading accounts specification is verified two ways: `TradingAccountsProjectionIntegrationTests` covers each
-of its edge cases and invariants automatically, and [`qa/`](../qa/README.md) carries the same ground as
-self-verifying SQL for checking a real database by hand.
+The trading accounts specification is verified by `TradingAccountsProjectionIntegrationTests`, where each test
+is named for the SPEC clause it covers, so the suite reads as a conformance list.
 
 ---
 

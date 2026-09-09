@@ -93,7 +93,8 @@ guess it leaves an account out rather than reviving one.
   batch carrying `end_A` then `start_B` had `end_A` sweeping against **B's** marker, deleting everything resync
   A had just re-announced. Fixed by bounding the lookup to markers before the end marker's own row.
 
-Both would have looked plausible in production, which is why the outstanding integration tests matter.
+Both would have looked plausible in production. Each has a named regression test, and both were confirmed to
+fail when the fix is removed - a green regression test that never goes red is worth nothing.
 
 ## Monitoring
 
@@ -133,7 +134,10 @@ Also worth a check: `SELECT DISTINCT event_type FROM trading_account_events` aga
 
 Documentation (`SCHEMA_REFERENCE.md` plus new `BOOLEAN` and `INTEGER` type-mapping rows,
 `TEMPLATE_VARIABLES.md`, the variable checklists, `USERS_AND_PERMISSIONS.md`, `FAQ.md`, `README.md`), the
-`post/run_on_every_build.sql` deployment line, and integration tests for the projection.
+`post/run_on_every_build.sql` deployment line.
+
+Verified by `src/Migrator.Tests/Execution/TradingAccountsProjectionIntegrationTests.cs`: 22 tests, each named
+for the SPEC clause it covers, plus a regression test for each of the two defects above.
 
 *One repo gotcha: DbUp's variable substitution claims `$name$`, so a custom dollar-quote tag fails the script.
 Use a bare `$$`, as `psql/users/exporter.sql` already does.*

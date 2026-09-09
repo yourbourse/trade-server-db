@@ -84,8 +84,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         }
     }
 
-    [Fact(DisplayName = "Schema: the log, the state table, the view and the trigger all exist")]
-    public void Projection_Should_create_the_log_the_state_table_the_view_and_the_trigger()
+    [Fact(DisplayName = "Schema Should create every object the projection needs")]
+    public void Schema_Should_create_every_object_the_projection_needs()
     {
         // arrange, act
         var connectionString = Migrate();
@@ -109,8 +109,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// the same types. A column added to one and not the other fails the migration; a type changed on one and
     /// not the other would not, and would silently truncate or round instead.
     /// </summary>
-    [Fact(DisplayName = "Schema: the log and the state table carry the same account columns")]
-    public void Projection_Should_carry_the_same_account_columns_in_the_log_and_the_state_table()
+    [Fact(DisplayName = "Schema Should carry the same account columns in the log and the state table")]
+    public void Schema_Should_carry_the_same_account_columns_in_the_log_and_the_state_table()
     {
         // arrange
         var connectionString = Migrate();
@@ -134,8 +134,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.Empty(Strings(connectionString, sql));
     }
 
-    [Fact(DisplayName = "SPEC edge case: several events for one account in one batch, the last one wins")]
-    public void Projection_Should_apply_the_last_event_of_a_batch_for_one_account()
+    [Fact(DisplayName = "Edge case Should let the last event of a batch win for one account")]
+    public void Edge_case_Should_let_the_last_event_of_a_batch_win_for_one_account()
     {
         // arrange
         var connectionString = Migrate();
@@ -150,8 +150,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.Equal([(1002L, 2L, 50, "v2"), (2003L, 1L, 200, "other")], ReadAccounts(connectionString));
     }
 
-    [Fact(DisplayName = "SPEC edge case: an account created and deleted in one batch never appears")]
-    public void Projection_Should_remove_an_account_created_and_deleted_inside_one_batch()
+    [Fact(DisplayName = "Edge case Should never show an account created and deleted in one batch")]
+    public void Edge_case_Should_never_show_an_account_created_and_deleted_in_one_batch()
     {
         // arrange
         var connectionString = Migrate();
@@ -165,8 +165,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.Empty(ReadAccounts(connectionString));
     }
 
-    [Fact(DisplayName = "SPEC edge case: a deletion for an account with no row has no effect")]
-    public void Projection_Should_ignore_a_deletion_for_an_account_it_does_not_hold()
+    [Fact(DisplayName = "Edge case Should ignore a deletion for an account with no row")]
+    public void Edge_case_Should_ignore_a_deletion_for_an_account_with_no_row()
     {
         // arrange
         var connectionString = Migrate();
@@ -183,8 +183,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// The reason the sweep runs at the end marker rather than the start: a resync spans several transactions,
     /// and the table has no way to hide a half-finished one from a reporting query.
     /// </summary>
-    [Fact(DisplayName = "SPEC workflow: the table stays complete while a resync is running")]
-    public void Projection_Should_keep_the_state_table_complete_while_a_resync_is_running()
+    [Fact(DisplayName = "Workflow Should keep the table complete while a resync is running")]
+    public void Workflow_Should_keep_the_table_complete_while_a_resync_is_running()
     {
         // arrange
         var connectionString = Migrate();
@@ -200,8 +200,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.True(ResyncInProgress(connectionString, Sender));
     }
 
-    [Fact(DisplayName = "SPEC workflow: a resync converges the table on the live set it listed")]
-    public void Projection_Should_sweep_the_accounts_a_resync_did_not_re_announce()
+    [Fact(DisplayName = "Workflow Should converge the table on the live set a resync listed")]
+    public void Workflow_Should_converge_the_table_on_the_live_set_a_resync_listed()
     {
         // arrange
         var connectionString = Migrate();
@@ -219,8 +219,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.False(ResyncInProgress(connectionString, Sender));
     }
 
-    [Fact(DisplayName = "SPEC edge case: an end marker with no start marker removes nothing")]
-    public void Projection_Should_remove_nothing_for_an_end_marker_with_no_start_marker()
+    [Fact(DisplayName = "Edge case Should remove nothing for an end marker with no start marker")]
+    public void Edge_case_Should_remove_nothing_for_an_end_marker_with_no_start_marker()
     {
         // arrange
         var connectionString = Migrate();
@@ -240,8 +240,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// watermark as an unbounded max(id) therefore swept against the wrong resync and deleted everything the
     /// finishing one had just re-announced.
     /// </summary>
-    [Fact(DisplayName = "Regression: two resyncs in one batch, each end marker sweeps against its own start")]
-    public void Projection_Should_sweep_against_its_own_start_marker_when_a_batch_carries_two_resyncs()
+    [Fact(DisplayName = "Regression Should sweep against its own start marker when a batch carries two resyncs")]
+    public void Regression_Should_sweep_against_its_own_start_marker_when_a_batch_carries_two_resyncs()
     {
         // arrange
         var connectionString = Migrate();
@@ -259,8 +259,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.Equal([100L, 200L], ReadAccounts(connectionString).Select(account => account.AccountId));
     }
 
-    [Fact(DisplayName = "SPEC edge case: an unrecognised event type is stored, not projected, and fails no batch")]
-    public void Projection_Should_store_an_unknown_event_type_without_projecting_it()
+    [Fact(DisplayName = "Edge case Should store an unrecognised event type without projecting it")]
+    public void Edge_case_Should_store_an_unrecognised_event_type_without_projecting_it()
     {
         // arrange
         var connectionString = Migrate();
@@ -280,8 +280,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// There is no deduplication key on the log, so a redelivered event lands as a second row. The state table
     /// has to absorb that rather than double-apply it.
     /// </summary>
-    [Fact(DisplayName = "SPEC edge case: a redelivered event leaves the state as if it arrived once")]
-    public void Projection_Should_leave_the_same_state_when_an_event_is_redelivered()
+    [Fact(DisplayName = "Edge case Should leave the same state when an event is redelivered")]
+    public void Edge_case_Should_leave_the_same_state_when_an_event_is_redelivered()
     {
         // arrange
         var connectionString = Migrate();
@@ -300,8 +300,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// applies whatever arrives last instead of comparing versions: a guard would reject every event of the new
     /// account and leave the row showing the previous holder's data with nothing to heal it.
     /// </summary>
-    [Fact(DisplayName = "SPEC edge case: an id reused after deletion shows the new account")]
-    public void Projection_Should_show_the_new_account_when_an_id_is_reused_after_deletion()
+    [Fact(DisplayName = "Edge case Should show the new account when an id is reused after deletion")]
+    public void Edge_case_Should_show_the_new_account_when_an_id_is_reused_after_deletion()
     {
         // arrange
         var connectionString = Migrate();
@@ -323,8 +323,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// deleted and the id reused, so the reuse is first seen as a re-announcement inside a resync, at a lower
     /// version than the row already holds.
     /// </summary>
-    [Fact(DisplayName = "SPEC edge case: a reused id first seen in a resync shows the new account")]
-    public void Projection_Should_show_the_new_account_when_a_reused_id_is_first_seen_in_a_resync()
+    [Fact(DisplayName = "Edge case Should show the new account when a reused id is first seen in a resync")]
+    public void Edge_case_Should_show_the_new_account_when_a_reused_id_is_first_seen_in_a_resync()
     {
         // arrange
         var connectionString = Migrate();
@@ -340,8 +340,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.Equal(33, ReadClientId(connectionString, 900));
     }
 
-    [Fact(DisplayName = "SPEC edge case: two senders in one database do not affect each other")]
-    public void Projection_Should_keep_senders_independent()
+    [Fact(DisplayName = "Edge case Should keep two senders in one database independent")]
+    public void Edge_case_Should_keep_two_senders_in_one_database_independent()
     {
         // arrange
         var connectionString = Migrate();
@@ -363,8 +363,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// that only looked for the newest retained event per account read the swept account's last pre-resync
     /// state event and brought it back from the dead.
     /// </summary>
-    [Fact(DisplayName = "Regression: re-applying the projection does not bring back a swept account")]
-    public void Projection_Should_heal_drift_on_force_without_reviving_a_swept_account()
+    [Fact(DisplayName = "Regression Should not bring back a swept account when the projection runs again")]
+    public void Regression_Should_not_bring_back_a_swept_account_when_the_projection_runs_again()
     {
         // arrange, 2003 is swept by a completed resync, leaving 1002 live
         var request = CreateRequest();
@@ -397,8 +397,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// <summary>
     /// The sender dies partway through a resync, so no end marker ever arrives and the sweep never runs.
     /// </summary>
-    [Fact(DisplayName = "SPEC edge case: a resync that never finishes leaves the table converging, not empty")]
-    public void Projection_Should_leave_the_table_converging_when_a_resync_never_finishes()
+    [Fact(DisplayName = "Edge case Should leave the table converging when a resync never finishes")]
+    public void Edge_case_Should_leave_the_table_converging_when_a_resync_never_finishes()
     {
         // arrange
         var connectionString = Migrate();
@@ -420,8 +420,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// The projection copies; it does not interpret, convert or re-derive. Every column is given a distinctive
     /// value here, including a comment carrying a quote, so a conversion or a truncation anywhere would show.
     /// </summary>
-    [Fact(DisplayName = "SPEC invariant: every field is copied from the event unchanged")]
-    public void Projection_Should_copy_every_field_from_the_event_unchanged()
+    [Fact(DisplayName = "Invariant Should copy every field from the event unchanged")]
+    public void Invariant_Should_copy_every_field_from_the_event_unchanged()
     {
         // arrange
         var connectionString = Migrate();
@@ -454,8 +454,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
             "SELECT count(*) FROM trading_accounts WHERE enabled = false AND allow_trading = true"));
     }
 
-    [Fact(DisplayName = "SPEC invariant: every state row names the log event that produced it")]
-    public void Projection_Should_stamp_every_state_row_with_the_event_that_produced_it()
+    [Fact(DisplayName = "Invariant Should name the log event that produced every state row")]
+    public void Invariant_Should_name_the_log_event_that_produced_every_state_row()
     {
         // arrange
         var connectionString = Migrate();
@@ -485,8 +485,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// The whole reason the current state is a table rather than a view over the log: an account can go
     /// unchanged for longer than the retention window, so the state has to outlive the events that built it.
     /// </summary>
-    [Fact(DisplayName = "SPEC invariant: purging the log cannot change the current state")]
-    public void Projection_Should_keep_the_current_state_when_the_log_is_purged()
+    [Fact(DisplayName = "Invariant Should keep the current state when the log is purged")]
+    public void Invariant_Should_keep_the_current_state_when_the_log_is_purged()
     {
         // arrange
         var connectionString = Migrate();
@@ -506,8 +506,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// Enforced by the schema rather than promised by upstream code: there is no column for a password
     /// anywhere, so one cannot arrive even if the exporter's descriptor were widened by mistake.
     /// </summary>
-    [Fact(DisplayName = "SPEC invariant: no credential material can reach PostgreSQL")]
-    public void Projection_Should_have_nowhere_to_put_credential_material()
+    [Fact(DisplayName = "Invariant Should have no column that could hold credential material")]
+    public void Invariant_Should_have_no_column_that_could_hold_credential_material()
     {
         // arrange, act
         var connectionString = Migrate();
@@ -527,8 +527,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.Empty(Strings(connectionString, credentialColumns));
     }
 
-    [Fact(DisplayName = "SPEC invariant: at most one row per sender and trading account")]
-    public void Projection_Should_hold_at_most_one_row_per_sender_and_account()
+    [Fact(DisplayName = "Invariant Should key the state table on sender and trading account")]
+    public void Invariant_Should_key_the_state_table_on_sender_and_trading_account()
     {
         // arrange, act
         var connectionString = Migrate();
@@ -551,8 +551,8 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// visible before that transaction commits and gone if it rolls back. That is what stops the two tables
     /// drifting, and it is the property a scheduled or polled projection could not offer.
     /// </summary>
-    [Fact(DisplayName = "SPEC invariant: the state table matches the log inside the writing transaction")]
-    public void Projection_Should_match_the_log_inside_the_writing_transaction()
+    [Fact(DisplayName = "Invariant Should project inside the writing transaction and roll back with it")]
+    public void Invariant_Should_project_inside_the_writing_transaction_and_roll_back_with_it()
     {
         // arrange
         var connectionString = Migrate();
