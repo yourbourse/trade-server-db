@@ -62,6 +62,23 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 ---
 
+## Specifications
+
+What a piece of behaviour has to do, and why it was built the way it was. A spec is the contract — it outlives
+the implementation and is what the tests are written against; the design beside it records the decisions and
+the alternatives that were rejected.
+
+| Specification | Description |
+|---------------|-------------|
+| [Trading accounts — SPEC](specs/trading-accounts/SPEC.md) | The trading account event log and the current-state table derived from it by trigger: workflows, edge cases and invariants |
+| [Trading accounts — design](specs/trading-accounts/design.md) | How the projection works, the decisions behind it, and what the backend team still has to confirm |
+
+The trading accounts specification is verified two ways: `TradingAccountsProjectionIntegrationTests` covers each
+of its edge cases and invariants automatically, and [`qa/`](../qa/README.md) carries the same ground as
+self-verifying SQL for checking a real database by hand.
+
+---
+
 ## Architecture & Development
 
 | Document | Description |

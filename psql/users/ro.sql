@@ -30,6 +30,12 @@ REVOKE ALL PRIVILEGES ON TABLE ##order_snapshots_table## FROM ##user_name##;
 
 REVOKE ALL PRIVILEGES ON TABLE ##position_snapshots_table## FROM ##user_name##;
 
+REVOKE ALL PRIVILEGES ON TABLE ##trading_account_events_table## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##trading_accounts_table## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##trading_accounts_resync_view## FROM ##user_name##;
+
 REVOKE ALL PRIVILEGES ON TABLE ##cursor_table## FROM ##user_name##;
 
 -- a view carries its own privileges, so SELECT on the trades table does not reach through to them. The views
@@ -45,6 +51,12 @@ GRANT SELECT ON TABLE ##daily_statements_table## TO ##user_name##;
 GRANT SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##trading_accounts_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##trading_accounts_resync_view## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##cursor_table## TO ##user_name##;
 
