@@ -188,6 +188,9 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##daily_statements_table##` | `daily_statements_export`, unless `--variables` says otherwise |
 | `##order_snapshots_table##` | `daily_statements_order_snapshots`, unless `--variables` says otherwise |
 | `##position_snapshots_table##` | `daily_statements_position_snapshots`, unless `--variables` says otherwise |
+| `##trading_account_events_table##` | `trading_account_events`, unless `--variables` says otherwise |
+| `##trading_accounts_table##` | `trading_accounts`, unless `--variables` says otherwise |
+| `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless `--variables` says otherwise |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=...` says otherwise |
 | `##assembly_version##` | The version of the migrator that applied the script |
 | `##user_name##`, `##user_password##` | The `users/` phase only, one pass per `--users` entry |
@@ -268,6 +271,8 @@ PostgreSQL has them created here:
 | Daily statements | `daily_statements_export` | created by the migrator | provisioned by the deployment |
 | Order snapshots | `daily_statements_order_snapshots` | created by the migrator | provisioned by the deployment |
 | Position snapshots | `daily_statements_position_snapshots` | created by the migrator | provisioned by the deployment |
+| Trading account events | `trading_account_events` | created by the migrator | not created — out of scope |
+| Trading accounts | `trading_accounts` | created by the migrator, maintained by a trigger | not created — out of scope |
 | Export cursor | `export_cursor` | created by the migrator | provisioned by the deployment |
 | Journal, users and grants | `schema_versions` | created by the migrator | created by the migrator |
 

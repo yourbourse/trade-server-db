@@ -221,7 +221,7 @@ reconcile-from-the-log statement together in one re-runnable `psql/views/` scrip
 | Fresh-install ordering | All in one transaction, so the trigger exists before anything else runs | Root (order 2) creates the tables, `views/` (order 3) the trigger — see the gap below | Same as 2 | Same as 2, and after `users/`, so grants would be applied before the objects they cover are wired up |
 | The gap between the table existing and the trigger existing | None | Real: on a **live** upgrade the trade server can export into the new log table inside that window, and those events would never be projected. Closed by the reconcile statement in the same script | Same as 2, same fix | Same as 2, same fix |
 | Cost of changing the projection later | A new incremental script per change | Edit the file; the MD5 change re-applies it (C-10) | Same as 2 | Same as 2 |
-| Repair when the *effect* is lost but the content is not — someone drops the trigger, or edits the state table by hand | Nothing to re-run. A corrective incremental script per incident | **`--force`**, which this repository already documents for exactly this case, "someone dropped a view by hand" (C-10) | Same as 2 | Same as 2 |
+| Repair when the *effect* is lost but the content is not — the trigger is dropped, or an earlier version of the projection wrote rows wrongly | Nothing to re-run. A corrective incremental script per incident | **`--force`**, which this repository already documents for exactly this case, "someone dropped a view by hand" (C-10) | Same as 2 | Same as 2 |
 | Code change needed | None | None | **Yes** — the five phases are a hard-coded list (C-8), so a sixth touches `DbUpRunner`, `ScriptSubFolders` and every place the docs enumerate the phases | None |
 | Naming honesty | n/a | A trigger-maintained table is an incrementally-maintained materialized view, and `psql/views/` is documented as "views and materialized views" — a stretch, but a defensible one | Exact | Poor: `post/` is for what runs after the schema, such as TTLs |
 
@@ -326,7 +326,7 @@ nothing.
 
 **Three items on the wire contract have to be settled with TS-2928 before implementation, not assumed:**
 
-1. **`event_type` representation.** Proposed: `SMALLINT`, matching every other enum in this schema
+1. **`event_type` representation — agreed with TS-2928.** `SMALLINT`, matching every other enum in this schema
    (`trade_type`, `side`, `reason`, `order_type` — all `SMALLINT` over a C++ `enum class : uint8_t`), with the
    mnemonics in a column comment and in `docs/SCHEMA_REFERENCE.md`. TS-2928's design writes the values as
    strings (`'snapshot_start'`, C-21), so either it means a mnemonic on the wire or it is prose shorthand for an
@@ -522,7 +522,8 @@ and rejected (C-20). It also keeps the function a mechanical column copy, which 
 Reporting convenience is a view away, over the state table, at zero cost and with no migration (KD-1).
 *Rejected:* translating sentinels to `NULL` on the way in — friendlier to read, at the price of the state table
 and its own log disagreeing by design.
-*Open, and not this repository's to close:* the `event_type` representation and its numeric values, the true
+*Settled with TS-2928:* the `event_type` representation and its numeric values — `SMALLINT`, with `0` state,
+`1` delete, `2` resync start, `3` resync end. *Open, and not this repository's to close:* the true
 widths of `external_account_id` and `comment`, and the confirmation that `password` is absent from the export
 descriptor. All three are wire-contract items to settle with TS-2928 before implementation.
 

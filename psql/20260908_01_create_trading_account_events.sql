@@ -34,9 +34,10 @@ CREATE TABLE IF NOT EXISTS ##trading_account_events_table##
     id                         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     time_inserted              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     sender_id                  BIGINT                   NOT NULL,
-    -- 0 account state, 1 deletion, 2 resync started, 3 resync finished. A value this schema does not know is
-    -- stored and left unprojected rather than rejected, so an event type the trade server gains later cannot
-    -- stall the export of a deployment that has not migrated yet.
+    -- 0 account state, 1 deletion, 2 resync started, 3 resync finished - agreed with the trade server side, so
+    -- these values are a contract rather than a guess. A value this schema does not know is stored and left
+    -- unprojected rather than rejected, so an event type the trade server gains later cannot stall the export
+    -- of a deployment that has not migrated yet.
     event_type                 SMALLINT                 NOT NULL,
     -- 0 on both marker rows
     trading_account_id         BIGINT                   NOT NULL,

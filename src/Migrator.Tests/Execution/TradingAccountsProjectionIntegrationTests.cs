@@ -117,17 +117,29 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
 
         // act, the columns each table holds that the other does not, ignoring the ones that are by design
         // local to one of them
+        // format_type, not information_schema.data_type: the latter reports both VARCHAR(64) and VARCHAR(256)
+        // as "character varying", so a width that had drifted between the two tables would pass unnoticed
         const string sql = """
+                           WITH cols AS (SELECT c.relname                                AS table_name,
+                                                a.attname                                AS column_name,
+                                                format_type(a.atttypid, a.atttypmod)     AS column_type
+                                         FROM pg_attribute a
+                                                  JOIN pg_class c ON c.oid = a.attrelid
+                                                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                                         WHERE n.nspname = 'public'
+                                           AND a.attnum > 0
+                                           AND NOT a.attisdropped
+                                           AND c.relname IN ('trading_account_events', 'trading_accounts'))
                            SELECT COALESCE(e.column_name, a.column_name) || ' (' ||
-                                  COALESCE(e.data_type, 'absent') || ' / ' || COALESCE(a.data_type, 'absent') || ')'
-                           FROM      (SELECT column_name, data_type FROM information_schema.columns
+                                  COALESCE(e.column_type, 'absent') || ' / ' || COALESCE(a.column_type, 'absent') || ')'
+                           FROM      (SELECT column_name, column_type FROM cols
                                       WHERE table_name = 'trading_account_events'
                                         AND column_name NOT IN ('id', 'time_inserted', 'event_type')) e
-                           FULL JOIN (SELECT column_name, data_type FROM information_schema.columns
+                           FULL JOIN (SELECT column_name, column_type FROM cols
                                       WHERE table_name = 'trading_accounts'
                                         AND column_name NOT IN ('source_event_row_id', 'time_applied')) a
                                   ON e.column_name = a.column_name
-                           WHERE e.column_name IS NULL OR a.column_name IS NULL OR e.data_type <> a.data_type
+                           WHERE e.column_name IS NULL OR a.column_name IS NULL OR e.column_type <> a.column_type
                            """;
 
         // assert
@@ -585,6 +597,144 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
         Assert.Equal(0, Scalar<long>(connectionString, "SELECT count(*) FROM trading_account_events"));
     }
 
+    /// <summary>
+    /// A row that is correctly stamped and wrong: what an earlier, buggy version of this projection would have
+    /// left behind, since the function copies fourteen columns twice and a mismapping produces exactly that.
+    /// Fixing the function and re-applying the file has to correct such a row, which means the reconcile must
+    /// replay the newest state event over it rather than compare the stamp against itself and skip.
+    ///
+    /// The UPDATE below is how the test manufactures that state, not a scenario in itself - nothing edits these
+    /// tables by hand, and SPEC.md assumes so.
+    /// </summary>
+    [Fact(DisplayName = "Regression Should correct a state row whose content disagrees with its event")]
+    public void Regression_Should_correct_a_state_row_whose_content_disagrees_with_its_event()
+    {
+        // arrange
+        var request = CreateRequest();
+        AssertSuccessful(CreateRunner().Run(request));
+        var connectionString = request.ConnectionString;
+
+        InsertOneStatement(connectionString, StateEvent(Sender, 1002, version: 1, leverage: 100, comment: "correct"));
+
+        // stand in for a row a broken projection wrote: right stamp, wrong content
+        Execute(connectionString, "UPDATE trading_accounts SET leverage = 999, comment = 'corrupted'");
+        Assert.Equal([(1002L, 1L, 999, "corrupted")], ReadAccounts(connectionString));
+
+        // act
+        AssertSuccessful(CreateRunner().Run(request with { FullReload = true }));
+
+        // assert, the log wins
+        Assert.Equal([(1002L, 1L, 100, "correct")], ReadAccounts(connectionString));
+    }
+
+    /// <summary>
+    /// Every other test here writes as the migration owner, which would keep passing if the grants were wrong or
+    /// the invoker-rights trigger could not reach the derived table. This one runs the real production path:
+    /// the exporter role, over <c>COPY</c>, including a resync whose sweep needs DELETE on a table the exporter
+    /// never reads for itself.
+    /// </summary>
+    [Fact(DisplayName = "Grants Should let the exporter role drive the whole projection over COPY")]
+    public void Grants_Should_let_the_exporter_role_drive_the_whole_projection_over_COPY()
+    {
+        // arrange
+        var request = CreateRequest();
+        AssertSuccessful(CreateRunner().Run(request));
+
+        using var exporter = new NpgsqlConnection(ExporterConnectionString(request));
+        exporter.Open();
+
+        // act, two accounts and a resync start, exactly as the export delivers them
+        Copy(exporter,
+            EventRow(Sender, eventType: 0, accountId: 1002, version: 1, leverage: 100, comment: "live"),
+            EventRow(Sender, eventType: 0, accountId: 2003, version: 1, leverage: 200, comment: "swept"));
+
+        Copy(exporter, EventRow(Sender, eventType: 2));
+
+        // assert, the trigger ran under the exporter's own rights and left the table complete
+        Assert.Equal([1002L, 2003L], ReadAccounts(request.ConnectionString).Select(account => account.AccountId));
+
+        // re-announce one account and close the resync: the sweep needs DELETE as the exporter
+        Copy(exporter, EventRow(Sender, eventType: 0, accountId: 1002, version: 1, leverage: 100, comment: "live"));
+        Copy(exporter, EventRow(Sender, eventType: 3));
+
+        Assert.Equal([(1002L, 1L, 100, "live")], ReadAccounts(request.ConnectionString));
+
+        // and the reader role can read the projection but not write it
+        using var reader = new NpgsqlConnection(ReaderConnectionString(request));
+        reader.Open();
+
+        using (var read = reader.CreateCommand())
+        {
+            read.CommandText = "SELECT count(*) FROM trading_accounts";
+            Assert.Equal(1L, (long)read.ExecuteScalar()!);
+        }
+
+        using var write = reader.CreateCommand();
+        write.CommandText = "DELETE FROM trading_accounts";
+        var denied = Assert.Throws<PostgresException>(() => write.ExecuteNonQuery());
+        Assert.Equal("42501", denied.SqlState);
+    }
+
+    /// <summary>
+    /// One event as a <c>COPY</c> text line: tab separated, in the order of <see cref="EventColumns"/>. An empty
+    /// field is an empty string here, which is what the exporter has to send - a <c>\N</c> would be NULL and
+    /// every column of this table is NOT NULL.
+    /// </summary>
+    private static string EventRow(long sender, int eventType, long accountId = 0, long version = 0,
+        long clientId = 0, int leverage = 0, string comment = "")
+    {
+        const string epoch = "1970-01-01 00:00:00+00";
+        var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.ffffff+00");
+        var isState = eventType == 0;
+
+        return string.Join('\t', [
+            sender.ToString(),
+            eventType.ToString(),
+            accountId.ToString(),
+            version.ToString(),
+            isState ? "1" : "0",
+            clientId.ToString(),
+            "0",
+            isState ? now : epoch,
+            isState ? now : epoch,
+            epoch,
+            leverage.ToString(),
+            isState ? "true" : "false",
+            isState ? "true" : "false",
+            "",
+            comment
+        ]);
+    }
+
+    /// <summary>
+    /// Sends rows the way the export does, over <c>COPY … FROM STDIN</c> rather than an INSERT.
+    /// </summary>
+    private static void Copy(NpgsqlConnection connection, params string[] rows)
+    {
+        using var writer = connection.BeginTextImport($"COPY trading_account_events ({EventColumns}) FROM STDIN");
+
+        foreach (var row in rows)
+        {
+            writer.Write(row);
+            writer.Write('\n');
+        }
+    }
+
+    private string ExporterConnectionString(DbMigratorRequest request)
+    {
+        return WithUser(request.ConnectionString, request.Users.Single(user => user.Access == "exporter"));
+    }
+
+    private string ReaderConnectionString(DbMigratorRequest request)
+    {
+        return WithUser(request.ConnectionString, request.Users.Single(user => user.Access == "ro"));
+    }
+
+    private static string WithUser(string connectionString, DatabaseUser user)
+    {
+        return new NpgsqlConnectionStringBuilder(connectionString) { Username = user.User, Password = user.Password }.ConnectionString;
+    }
+
     private static string StateEvent(long sender, long accountId, long version, long clientId = 1, int leverage = 100, string comment = "")
     {
         return $"({sender}, 0, {accountId}, {version}, 1, {clientId}, 0, now(), now(), to_timestamp(0), {leverage}, true, true, '', '{comment}')";
@@ -737,7 +887,10 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
             false,
             false,
             null,
-            [new() { Access = "exporter", User = $"{databaseName}_exporter", Password = "passw0rd" }]);
+            [
+                new() { Access = "exporter", User = $"{databaseName}_exporter", Password = "passw0rd" },
+                new() { Access = "ro", User = $"{databaseName}_reader", Password = "passw0rd" }
+            ]);
     }
 
     private static string WithDatabase(string connectionString, string databaseName)

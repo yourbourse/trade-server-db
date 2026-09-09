@@ -32,8 +32,10 @@ keyed on `(sender_id, trading_account_id)`, plus `source_event_row_id` (which ev
 | `psql/users/exporter.sql`, `ro.sql` | `users/` | grants |
 
 The two tables are incremental scripts, applied once. The projection is **re-runnable**, so the file is always
-the current definition and `--force` re-applies it — the repair path when the trigger gets dropped or the table
-edited by hand.
+the current definition and `--force` re-applies it. That is the repair path for a trigger that has been dropped,
+and for rows an earlier, buggy version of the projection wrote — its reconcile pass replays the newest retained
+event over every account, so fixing the function and re-applying corrects the data it had already written.
+Nothing edits these tables by hand; SPEC.md assumes that, and the repair does not depend on it.
 
 ## Decisions
 
@@ -118,25 +120,22 @@ Also worth a check: `SELECT DISTINCT event_type FROM trading_account_events` aga
 
 ## For the backend team
 
-1. **Confirm the `event_type` values** — `0` state, `1` delete, `2` resync start, `3` resync end. The trigger
-   branches on these, and TS-2928's design writes them as strings, so they are not settled.
-2. **`COPY` must write `''`, not `\N`, for empty strings.** `PgWriter` has only NULL-producing helpers today,
+1. **`COPY` must write `''`, not `\N`, for empty strings.** `PgWriter` has only NULL-producing helpers today,
    and a `NULL` into a `NOT NULL` column aborts the whole batch.
-3. **TS-2928's SPEC says non-delete events are recorded in "monotonically increasing `version` order".** That
+2. **TS-2928's SPEC says non-delete events are recorded in "monotonically increasing `version` order".** That
    cannot hold once an id is reused after deletion, since the reused id restarts at a low version. Nothing here
    depends on it, but it should be corrected or scoped to one incarnation of an id, because anyone who builds
    on it as written will get a reused id wrong.
-4. **`full_resync_on_startup` defaults to `false`.** Unless the trading account pipeline sets it, no resync ever
+3. **`full_resync_on_startup` defaults to `false`.** Unless the trading account pipeline sets it, no resync ever
    runs — markers never arrive, the sweep never runs, and deletions missed during downtime are never
    reconciled. It fails quietly.
 
 ## Remaining work here
 
-Documentation (`SCHEMA_REFERENCE.md` plus new `BOOLEAN` and `INTEGER` type-mapping rows,
-`TEMPLATE_VARIABLES.md`, the variable checklists, `USERS_AND_PERMISSIONS.md`, `FAQ.md`, `README.md`), the
-`post/run_on_every_build.sql` deployment line.
+None outstanding: the documentation, the deployment banner and the tests all ship with this change. The log has
+no retention policy yet, which is the natural follow-up and the thing the resync growth figures argue for.
 
-Verified by `src/Migrator.Tests/Execution/TradingAccountsProjectionIntegrationTests.cs`: 22 tests, each named
+Verified by `src/Migrator.Tests/Execution/TradingAccountsProjectionIntegrationTests.cs`: 24 tests, each named
 for the SPEC clause it covers, plus a regression test for each of the two defects above.
 
 *One repo gotcha: DbUp's variable substitution claims `$name$`, so a custom dollar-quote tag fails the script.

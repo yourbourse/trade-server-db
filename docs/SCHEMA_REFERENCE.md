@@ -12,7 +12,7 @@
 
 ## Overview
 
-Six tables, in the database named by the connection string:
+Eight tables, in the database named by the connection string:
 
 | Table | Default name | Written by | Purpose |
 |-------|--------------|------------|---------|
@@ -20,6 +20,8 @@ Six tables, in the database named by the connection string:
 | Daily statements | `daily_statements_export` | trade server | One end-of-day row per account |
 | Order snapshots | `daily_statements_order_snapshots` | trade server | The account's working orders at the statement time |
 | Position snapshots | `daily_statements_position_snapshots` | trade server | The account's open positions at the statement time |
+| Trading account events | `trading_account_events` | trade server | Every trading account change, as an ordered log |
+| Trading accounts | `trading_accounts` | **migrator, by trigger** | The current state of every live trading account |
 | Export cursor | `export_cursor` | trade server | How far the export has progressed |
 | Journal | `schema_versions` | migrator | Which scripts have been applied |
 
@@ -29,10 +31,13 @@ Six tables, in the database named by the connection string:
 |------|--------------|---------|
 | Trades history | `trades_history` | The executed and cancelled trades, without the accounting records |
 | Cash transfers | `cash_transfers` | The cash movements, over the columns a transfer actually populates |
+| Trading accounts resync | `trading_accounts_resync` | Whether a resync is in progress, per sender, read from the log's markers |
 
-The five names the trade server writes to are configurable — they mirror its export configuration and are
+The six names the trade server writes to are configurable — they mirror its export configuration and are
 templated as `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-`##position_snapshots_table##` and `##cursor_table##`. The journal name comes from `--journal-table`.
+`##position_snapshots_table##`, `##trading_account_events_table##` and `##cursor_table##`. The journal name
+comes from `--journal-table`. `trading_accounts` is templated too, as `##trading_accounts_table##`, even though
+the trade server never writes to it — a deployment may already own an object under that name.
 
 The three daily statement tables are produced by one export: when a statement is generated the trade server
 publishes the statement row, a snapshot of every **working** order and a snapshot of every open position, all
@@ -433,6 +438,118 @@ SELECT sender_id, table_name, last_written_position FROM export_cursor FINAL;
 
 ---
 
+## trading_account_events
+
+Every change to a trading account, as an ordered log. A creation or a modification carries the account's full
+state; a deletion carries none of it; and two marker types bracket a resync and are not about an account at all.
+
+Reducing this log to "which accounts are live" is the job of [`trading_accounts`](#trading_accounts), which a
+trigger maintains from it — see [Trading account projection](#trading-account-projection).
+
+### PostgreSQL
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. The recorded order, and the only column that orders events |
+| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | When the row reached PostgreSQL. Transaction start time, so a whole batch shares one — it cannot order events |
+| `sender_id` | `BIGINT` | The trade server instance that produced the event |
+| `event_type` | `SMALLINT` | `0` account state, `1` deletion, `2` resync started, `3` resync finished |
+| `trading_account_id` | `BIGINT` | `0` on both marker rows |
+| `version` | `BIGINT` | The account's version as of this event. `0` on a deletion and on both markers |
+| `group_id` | `BIGINT` | |
+| `client_id` | `BIGINT` | |
+| `introducer` | `BIGINT` | `0` means no introducing broker |
+| `time_created` | `TIMESTAMP WITH TIME ZONE` | |
+| `time_modified` | `TIMESTAMP WITH TIME ZONE` | |
+| `time_password_last_changed` | `TIMESTAMP WITH TIME ZONE` | The epoch means never changed |
+| `leverage` | `INTEGER` | |
+| `enabled` | `BOOLEAN` | |
+| `allow_trading` | `BOOLEAN` | |
+| `external_account_id` | `VARCHAR(64)` | `''` means none |
+| `comment` | `VARCHAR(256)` | |
+
+Every column is `NOT NULL`, and the exporter writes every one of them on every row — a field that does not
+apply carries a type-appropriate zero rather than relying on a column default. A delete row and both marker
+rows carry those zeros throughout, `version` and `trading_account_id` included, which is why a delete row cannot
+be ordered into an account's history by its `version`. Use `id`.
+
+Indexes: `(sender_id, trading_account_id, id)` for an account's history, and a partial
+`(sender_id, event_type, id) WHERE event_type IN (2, 3)` for the resync markers.
+
+> **Note:** **There is no deduplication key**, unlike every other exported table here. Delivery is
+> at-least-once, so a redelivered event lands as a second row rather than being rejected. `trading_accounts`
+> absorbs that — a re-applied change leaves the same state — but a consumer reading this log directly can see
+> one logical change twice.
+
+> **Warning:** The account password is deliberately absent and must stay absent. It is never present in an API
+> response, nothing here has a use for it, and leaving it out of the schema is what keeps it out of the
+> database — the `ro` role can read every table in here.
+
+### ClickHouse
+
+Out of scope. ClickHouse has no trigger mechanism, so a deployment that ever exports this entity needs its own
+current-state mechanism and its own grants.
+
+---
+
+## trading_accounts
+
+The current state of every live trading account: one row per `(sender_id, trading_account_id)`, so "which
+accounts are live and how is each configured" is a single read.
+
+**Not written by the trade server.** It is derived from `trading_account_events` by a trigger, inside the same
+transaction as the event that caused the change — so it cannot lag behind the log, and a batch that fails to
+commit leaves no trace in it.
+
+### PostgreSQL
+
+Every account column of `trading_account_events`, with the same types and the same meanings, minus the log's
+own envelope (`id`, `time_inserted`, `event_type`) and plus:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `sender_id`, `trading_account_id` | `BIGINT` | `PRIMARY KEY (sender_id, trading_account_id)` |
+| `source_event_row_id` | `BIGINT` | The `trading_account_events.id` this state came from. Traceability, and what a resync's end marker compares against |
+| `time_applied` | `TIMESTAMP WITH TIME ZONE` | When the projection last wrote the row, as against `time_modified`, when the account last changed |
+
+There is deliberately **no foreign key** on `source_event_row_id`: an event ages out of the retention window
+long before the account does, and a foreign key would make that purge either fail or cascade into here — which
+is the one thing this table exists not to do.
+
+No indexes beyond the primary key. The table is bounded at roughly the live account count, so a filter the
+primary key cannot serve is a scan of a small table rather than of a growing one.
+
+### ClickHouse
+
+Out of scope, as above.
+
+---
+
+## Trading account projection
+
+`psql/views/trading_accounts_projection.sql` creates the function `project_trading_accounts()` and the trigger
+`trg_project_trading_accounts`, an `AFTER INSERT … FOR EACH ROW` trigger on `trading_account_events`.
+
+| `event_type` | What the trigger does |
+|--------------|-----------------------|
+| `0` account state | Upserts the account's row, stamped with the event's `id` |
+| `1` deletion | Deletes the account's row |
+| `2` resync started | **Nothing.** The row's own `id` is the watermark the end marker reads back out of the log |
+| `3` resync finished | Deletes that sender's rows stamped older than the newest `2` before it |
+| anything else | Nothing — stored in the log, not projected, and no batch fails |
+
+Ordering is by arrival, never by `version`: trading account ids are reused after deletion, so a reused id
+restarts its version sequence, and deletions and markers carry `version 0` anyway.
+
+A resync sweeps at the **end** marker rather than the start, so the table stays complete and readable for the
+whole resync — which matters because a resync runs on every trade server startup that has it enabled.
+
+The script is re-runnable and ends with a reconcile pass that replays the newest retained event per account, so
+`--force` repairs a dropped trigger, and corrects rows an earlier, buggy version of the projection wrote. It
+cannot recover what the retention window has
+dropped; the authoritative repair for that is a resync from the trade server.
+
+---
 ## Views
 
 Two views over `trades`. They exist because the trades table holds two unrelated kinds of record — an executed
@@ -564,6 +681,8 @@ The guide's PostgreSQL types map onto ClickHouse as:
 | PostgreSQL | ClickHouse | Note |
 |------------|------------|------|
 | `BIGINT` | `Int64` | |
+| `INTEGER` | `Int32` | |
+| `BOOLEAN` | `Bool` | |
 | `SMALLINT` | `Int16` | |
 | `NUMERIC` | `Decimal(38, 18)` | 38 significant digits, 18 after the point |
 | `NUMERIC` nullable | `Nullable(Decimal(38, 18))` | The snapshot prices that are `NULL` when unset |
@@ -588,6 +707,7 @@ Each table has its own key, and on both engines the same columns carry the dedup
 | Daily statements | `(sender_id, time_statement, trading_account_id)` |
 | Order snapshots | `(sender_id, time_statement, order_id)` |
 | Position snapshots | `(sender_id, time_statement, position_id)` |
+| Trading account events | **none** — see below |
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
@@ -600,6 +720,11 @@ Each table has its own key, and on both engines the same columns carry the dedup
 -- ClickHouse: exact counts before a merge has happened
 SELECT count() FROM trades FINAL;
 ```
+
+`trading_account_events` is the exception: it carries no per-event id, so there is no key to deduplicate on and
+a redelivered event lands as a second row. `trading_accounts` absorbs that — a re-applied change leaves the same
+state — but a consumer reading the log directly can see one logical change twice. Adding a per-event id and a
+unique index on `(sender_id, event_id)` later would be purely additive.
 
 `FINAL` costs more than a plain read. For aggregate reporting over large ranges, consider deduplicating in the
 query (`argMax` by the key) or accepting the small window of duplication instead.

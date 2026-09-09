@@ -46,5 +46,6 @@ Reporting reads that table directly instead of replaying the log.
 - Live accounts are bounded at roughly 100,000, and account changes are rare next to trades.
 - The log's retention window belongs to the deployment; the current state must not depend on it.
 - A resync is the authoritative repair. Anything rebuilt locally from the log is best-effort.
-- Consumers only read the current state.
+- Consumers only read the current state. Nothing edits either table by hand, so the only writer is the trigger
+  and the only repair is re-deriving from the log.
 - ClickHouse is out of scope: no tables, no views, no grants.

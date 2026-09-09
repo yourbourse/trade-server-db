@@ -239,10 +239,23 @@ SELECT l.sender_id,
 FROM latest l
          LEFT JOIN completed_resync w ON w.sender_id = l.sender_id
 WHERE l.event_type = 0
-  AND l.id > COALESCE((SELECT a.source_event_row_id
-                       FROM ##trading_accounts_table## a
-                       WHERE a.sender_id = l.sender_id
-                         AND a.trading_account_id = l.trading_account_id), -1)
+  -- >= rather than >, so the newest retained state event is replayed even when the row already claims to be
+  -- stamped with it.
+  --
+  -- Nothing edits these tables by hand - SPEC.md assumes that - so the case this covers is our own: a row this
+  -- projection wrote wrongly. The function copies fourteen columns twice, in the VALUES list and again in the
+  -- ON CONFLICT SET list, and a mismapping there produces rows that are correctly stamped and wrong. Fixing the
+  -- function and re-applying this file is the documented response to that, and a strict > would make it a no-op
+  -- for every row the broken version had already written - it would compare each event against itself and skip.
+  -- Two defects in this projection reached review already; the third should be repairable in one command.
+  --
+  -- The cost is that a re-application rewrites every account rather than only the stale ones: measured at 1.9 s
+  -- and a transient doubling of the table for 100k accounts, on an operation that only runs on --force or when
+  -- this file's content changes.
+  AND l.id >= COALESCE((SELECT a.source_event_row_id
+                        FROM ##trading_accounts_table## a
+                        WHERE a.sender_id = l.sender_id
+                          AND a.trading_account_id = l.trading_account_id), -1)
   -- and the account was not already swept by a resync that finished.
   --
   -- A sweep leaves nothing behind in the log: an account dropped from a resync is gone by virtue of its
