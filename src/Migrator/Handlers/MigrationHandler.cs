@@ -39,6 +39,7 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultDailyStatementsTable = "daily_statements_export";
     private const string DefaultOrderSnapshotsTable = "daily_statements_order_snapshots";
     private const string DefaultPositionSnapshotsTable = "daily_statements_position_snapshots";
+    private const string DefaultTicksTable = "ticks";
     private const string DefaultTradesHistoryView = "trades_history";
     private const string DefaultCashTransfersView = "cash_transfers";
 
@@ -51,7 +52,8 @@ public class MigrationHandler : IMigrationHandler
         "daily_statements_table",
         "order_snapshots_table",
         "position_snapshots_table",
-        "cursor_table"
+        "cursor_table",
+        "ticks_table"
     ];
 
     /// <summary>
@@ -216,6 +218,7 @@ public class MigrationHandler : IMigrationHandler
             ["daily_statements_table"] = DefaultDailyStatementsTable,
             ["order_snapshots_table"] = DefaultOrderSnapshotsTable,
             ["position_snapshots_table"] = DefaultPositionSnapshotsTable,
+            ["ticks_table"] = DefaultTicksTable,
             ["trades_history_view"] = DefaultTradesHistoryView,
             ["cash_transfers_view"] = DefaultCashTransfersView
         };

@@ -87,6 +87,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_export"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_order_snapshots"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_position_snapshots"));
+        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "ticks"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "schema_versions"));
 
         // system.tables lists a view alongside the tables
@@ -562,6 +563,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["daily_statements_table"] = "daily_statements_export",
                 ["order_snapshots_table"] = "daily_statements_order_snapshots",
                 ["position_snapshots_table"] = "daily_statements_position_snapshots",
+                ["ticks_table"] = "ticks",
                 ["trades_history_view"] = "trades_history",
                 ["cash_transfers_view"] = "cash_transfers",
                 ["cluster_name"] = "",
