@@ -16,7 +16,7 @@ The *Export Setup* guide describes two accounts, and the `users/` phase provisio
 
 | Access level | Script | Purpose | Rights |
 |--------------|--------|---------|--------|
-| `exporter` | `users/exporter.sql` | The account the trade server authenticates as | `INSERT`, `SELECT` on the exported tables; `INSERT`, `SELECT`, `UPDATE` on the cursor |
+| `exporter` | `users/exporter.sql` | The account the trade server authenticates as | PostgreSQL: `INSERT`, `SELECT` on the exported tables and `INSERT`, `SELECT`, `UPDATE` on the cursor. ClickHouse: `INSERT` on the ticks table |
 | `ro` | `users/ro.sql` | Reporting and support access | `SELECT` on every table and view |
 
 The exporter deliberately has **no DDL rights and no DELETE** — the export is append-only and never removes or
@@ -142,10 +142,8 @@ The two views are granted to `ro` only — the exporter writes rows, it does not
 own privileges, so `SELECT` on `trades` does not reach through to a view over it; the grant has to name the view.
 The `views/` phase runs before `users/`, so both exist by the time the grants are applied.
 
-> **Note:** This is PostgreSQL only. The ClickHouse `ro` role is granted the five exported tables and nothing
-> else — the views are neither created nor granted there, so a deployment that adds them has to add the
-> `GRANT SELECT` too, or its reporting account gets `ACCESS_DENIED` on a view whose underlying table it can read.
-> See [Schema Reference → Views](SCHEMA_REFERENCE.md#views).
+> **Note:** This is PostgreSQL only. ClickHouse holds no views, and its `ro` role is granted the ticks table
+> alone. See [Schema Reference → Views](SCHEMA_REFERENCE.md#views).
 
 The role is created only if missing, and the password is then set unconditionally — so re-running is safe and
 also rotates the password.
@@ -161,28 +159,31 @@ also rotates the password.
 ## ClickHouse
 
 ClickHouse separates roles from users, so the script creates a role named after the database, grants on it, then
-creates the user and assigns the role. The tables themselves are **not** created here — a ClickHouse deployment
-provisions the exported tables and the cursor itself, and ClickHouse happily grants on a table by name before it
-exists:
+creates the user and assigns the role. The only table on ClickHouse is the ticks table, created by
+`clickhouse/20260922_01_create_ticks.sql` in the incremental phase, before the grants are applied:
 
 ```sql
 CREATE ROLE IF NOT EXISTS role_##database_name##_exporter ##cluster_name_suffix##;
 
-GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##trades_table## TO role_##database_name##_exporter;
-GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##daily_statements_table## TO role_##database_name##_exporter;
-GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##order_snapshots_table## TO role_##database_name##_exporter;
-GRANT ##cluster_name_suffix## SELECT, INSERT ON ##database_name##.##position_snapshots_table## TO role_##database_name##_exporter;
-GRANT ##cluster_name_suffix## SELECT, INSERT, ALTER UPDATE ON ##database_name##.##cursor_table## TO role_##database_name##_exporter;
+GRANT ##cluster_name_suffix## INSERT ON ##database_name##.##ticks_table## TO role_##database_name##_exporter;
 
 CREATE USER IF NOT EXISTS ##user_name## ##cluster_name_suffix##
 IDENTIFIED WITH sha256_password BY '##user_password##'
 DEFAULT ROLE role_##database_name##_exporter;
 ```
 
+| Grant | exporter | ro |
+|-------|----------|-----|
+| `ticks` | `INSERT` | `SELECT` |
+
+`INSERT` alone, because that is all the exporter does: a ClickHouse pipeline sends `INSERT INTO … VALUES` over
+the native protocol and never reads, and it has no cursor table — it keeps its export position on disk. A right
+added here later is picked up on the next migration, because the edit changes the MD5 the script is journalled
+under.
+
 | Detail | Why it is like that |
 |--------|---------------------|
 | Role name is derived: `role_<database>_exporter` | One ClickHouse instance often holds several deployments; the database name keeps the roles apart |
-| `ALTER UPDATE` instead of `UPDATE` | ClickHouse has no row `UPDATE`; the cursor is advanced with a mutation |
 | `sha256_password` | The password is stored hashed, not in plain text |
 | `REVOKE` then `GRANT` the role | Makes the assignment converge on exactly one role, so re-running cannot accumulate stale roles |
 | `ALTER USER … DEFAULT ROLE` | Ensures the role is active on login, not merely available |
@@ -223,10 +224,10 @@ that logs in with one to prove it. Details in [Security](SECURITY.md).
 The access level is just a file name, so a third role needs no code change:
 
 1. Create `psql/users/<access>.sql` and `clickhouse/users/<access>.sql`.
-2. Use `##user_name##` and `##user_password##` for the account, and the table variables — `##trades_table##`,
-   `##daily_statements_table##`, `##order_snapshots_table##`, `##position_snapshots_table##`,
-   `##cursor_table##` — plus the view variables `##trades_history_view##` and `##cash_transfers_view##` where
-   the objects exist, and `##database_name##`.
+2. Use `##user_name##` and `##user_password##` for the account, and the table variables of the engine —
+   `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`, `##position_snapshots_table##`
+   and `##cursor_table##` on PostgreSQL, `##ticks_table##` on ClickHouse — plus the view variables
+   `##trades_history_view##` and `##cash_transfers_view##` on PostgreSQL, and `##database_name##`.
 3. Follow the existing pattern: create if missing, then set the password unconditionally, then grant. The script
    must be idempotent — it is re-runnable.
 4. ClickHouse: one statement per `----break----`, and `##cluster_name_suffix##` on every statement.

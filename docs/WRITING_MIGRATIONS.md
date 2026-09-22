@@ -18,7 +18,7 @@ Each provider folder — `psql/` and `clickhouse/` — holds the same five phase
 |-------|--------|-------------|--------------|---------|
 | 1 | `pre/` | yes | `[psql/pre] x.sql::md5` | Anything that must exist before the tables. Optional — create it when you need it |
 | 2 | *folder root* | **no** | `[psql] x.sql` | Incremental migrations, applied once in file-name order |
-| 3 | `views/` | yes | `[psql/views] x.sql::md5` | Views and materialized views — `trades_history` and `cash_transfers` live here, PostgreSQL only |
+| 3 | `views/` | yes | `[psql/views] x.sql::md5` | Views and materialized views — `trades_history` and `cash_transfers` live here on PostgreSQL; ClickHouse has none |
 | 4 | `users/` | yes | `[psql/users] x.sql for <user>::md5` | Roles and users, once per matching `--users` entry |
 | 5 | `post/` | yes | `[psql/post] x.sql::md5` | Everything that has to run after the schema, such as TTLs |
 
@@ -120,7 +120,7 @@ discarded instead of arriving at the server as an empty query.
 
 -- This header is a comment-only chunk. It never reaches the server.
 
-CREATE TABLE IF NOT EXISTS ##trades_table## ##cluster_name_suffix##
+CREATE TABLE IF NOT EXISTS ##database_name##.##ticks_table## ##cluster_name_suffix##
 (
     ...
 )
@@ -131,8 +131,9 @@ ENGINE = ##replacing_merge_tree_engine##;
 
 ## Using template variables
 
-Write `##trades_table##`, never `trades`. Every exported table name is configurable in the trade server's export
-configuration, so a deployment that renamed one passes the name with `--variables` and the scripts follow.
+Write `##trades_table##`, never `trades`, and `##ticks_table##`, never `ticks`. Every exported table name is
+configurable in the trade server's export configuration, so a deployment that renamed one passes the name with
+`--variables` and the scripts follow.
 
 The variables that are always available:
 
@@ -144,6 +145,7 @@ The variables that are always available:
 | `##order_snapshots_table##` | `daily_statements_order_snapshots` unless overridden |
 | `##position_snapshots_table##` | `daily_statements_position_snapshots` unless overridden |
 | `##cursor_table##` | `export_cursor` unless overridden |
+| `##ticks_table##` | `ticks` unless overridden |
 | `##trades_history_view##` | `trades_history` unless overridden |
 | `##cash_transfers_view##` | `cash_transfers` unless overridden |
 | `##assembly_version##` | Version of the migrator applying the script |
@@ -162,35 +164,16 @@ verbatim without validation, so treat that flag as trusted operator input.
 
 ## Writing for both engines
 
-> **Important:** `clickhouse/` does **not** create the exported tables or the cursor — a ClickHouse deployment
-> provisions those itself, and this repository only grants on them and keeps the journal. So a change to the
-> table *definitions* is a PostgreSQL-only migration here; its ClickHouse counterpart belongs in the deployment
-> that owns those tables, and in the test-only definitions under `src/Migrator.Tests/TestScripts/clickhouse/` so
-> the integration tests keep matching reality. Changes to `users/` and `post/` still apply to both.
-
-> **Warning:** **A view over an exported table follows the table.** A ClickHouse `CREATE VIEW` resolves what it
-> reads, so — unlike a `GRANT` — it fails outright when the table is not there yet. Shipping it in
-> `clickhouse/views/` would turn a missing table from a failing export into a failing migration, so a view over
-> `##trades_table##` and friends belongs in `src/Migrator.Tests/TestScripts/clickhouse/views/` with the table
-> definitions, and the deployment that owns the table carries it — its `GRANT`s included, since a view it creates
-> is not one `clickhouse/users/` knows about. `clickhouse/views/` is for views over objects this repository does
-> own.
+> **Important:** The two folders create **different tables**, because the trade server exports each entity to
+> exactly one engine: trades, daily statements, their snapshots and the export cursor go to PostgreSQL, ticks go
+> to ClickHouse. A change to a table definition therefore lands in one folder only — `psql/` for the five
+> PostgreSQL tables and the views over them, `clickhouse/` for the ticks table — and has nothing to mirror.
 >
-> `psql/views/` has no such constraint — PostgreSQL creates the tables here, so the view can ship beside them.
-> That asymmetry is why `psql/views/trades_history.sql` is a migration and its ClickHouse twin is not.
+> What does span both folders is the `users/` and `post/` phases: a new role, or a change to what an existing
+> one may do, is written for both engines in their own dialects.
 
-Where a change does span both folders, keep them parallel — same file name in each — and translate the types:
-
-| PostgreSQL | ClickHouse |
-|------------|------------|
-| `BIGINT` | `Int64` |
-| `SMALLINT` | `Int16` |
-| `NUMERIC` | `Decimal(38, 18)` |
-| `VARCHAR(n)` | `String`, or `LowCardinality(String)` for low-cardinality columns |
-| `TIMESTAMP WITH TIME ZONE` | `DateTime64(6, 'UTC')` |
-| a nullable column | the same type wrapped in `Nullable(…)` |
-
-Differences to keep in mind:
+Where a change does span both folders, keep them parallel — same file name in each — and remember the engines
+differ:
 
 | Concern | PostgreSQL | ClickHouse |
 |---------|------------|------------|
@@ -213,13 +196,12 @@ Before opening a PR with a new script:
 - [ ] Right phase — incremental in the folder root, idempotent things in `views/` / `post/`
 - [ ] Named `YYYYMMDD_NN_what_it_does.sql` if incremental
 - [ ] The table variables (`##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-      `##position_snapshots_table##`, `##cursor_table##`) rather than hard-coded names
+      `##position_snapshots_table##`, `##cursor_table##`, `##ticks_table##`) rather than hard-coded names
 - [ ] `IF NOT EXISTS` / `CREATE OR REPLACE` wherever the engine allows it
 - [ ] ClickHouse: a `----break----` between every statement, and `##cluster_name_suffix##` on every DDL statement
 - [ ] The view variables (`##trades_history_view##`, `##cash_transfers_view##`) rather than hard-coded names
-- [ ] Mirrored in the other provider's folder, or a comment explaining why not — remembering that table
-      definitions **and any view over them** are PostgreSQL-only here, with the ClickHouse counterparts kept
-      under `src/Migrator.Tests/TestScripts/clickhouse/`
+- [ ] Mirrored in the other provider's folder when it touches `users/` or `post/` — a table definition belongs
+      to the engine that holds the table and has no mirror
 - [ ] `--dry-run` lists it, and only it
 - [ ] Applied twice: the second run reports `Executed scripts: 0`
 - [ ] Integration tests pass against both engines

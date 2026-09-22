@@ -4,7 +4,7 @@
 
 **The tables and views the export uses, on both engines, column by column**
 
-[Overview](#overview) · [trades](#trades) · [daily_statements_export](#daily_statements_export) · [order snapshots](#daily_statements_order_snapshots) · [position snapshots](#daily_statements_position_snapshots) · [export_cursor](#export_cursor) · [Views](#views) · [schema_versions](#schema_versions) · [Type mapping](#type-mapping) · [Deduplication](#deduplication) · [Caveats](#caveats)
+[Overview](#overview) · [trades](#trades) · [daily_statements_export](#daily_statements_export) · [order snapshots](#daily_statements_order_snapshots) · [position snapshots](#daily_statements_position_snapshots) · [export_cursor](#export_cursor) · [Views](#views) · [ticks](#ticks) · [schema_versions](#schema_versions) · [Deduplication](#deduplication) · [Caveats](#caveats)
 
 </div>
 
@@ -12,27 +12,30 @@
 
 ## Overview
 
-Six tables, in the database named by the connection string:
+The trade server exports each entity to exactly one engine, so the two engines hold different tables. Every one
+of them is created by the migrator, in the database named by the connection string:
 
-| Table | Default name | Written by | Purpose |
-|-------|--------------|------------|---------|
-| Trades | `trades` | trade server | Every exported trade record, append-only |
-| Daily statements | `daily_statements_export` | trade server | One end-of-day row per account |
-| Order snapshots | `daily_statements_order_snapshots` | trade server | The account's working orders at the statement time |
-| Position snapshots | `daily_statements_position_snapshots` | trade server | The account's open positions at the statement time |
-| Export cursor | `export_cursor` | trade server | How far the export has progressed |
-| Journal | `schema_versions` | migrator | Which scripts have been applied |
+| Table | Default name | Engine | Written by | Purpose |
+|-------|--------------|--------|------------|---------|
+| Trades | `trades` | PostgreSQL | trade server | Every exported trade record, append-only |
+| Daily statements | `daily_statements_export` | PostgreSQL | trade server | One end-of-day row per account |
+| Order snapshots | `daily_statements_order_snapshots` | PostgreSQL | trade server | The account's working orders at the statement time |
+| Position snapshots | `daily_statements_position_snapshots` | PostgreSQL | trade server | The account's open positions at the statement time |
+| Export cursor | `export_cursor` | PostgreSQL | trade server | How far each PostgreSQL export has progressed |
+| Ticks | `ticks` | ClickHouse | trade server | The top of the order book of every symbol, one row per change |
+| Journal | `schema_versions` | both | migrator | Which scripts have been applied |
 
-…and two views over `trades`, created by the migrator on PostgreSQL and by the deployment on ClickHouse:
+…and two views over `trades`, on PostgreSQL:
 
 | View | Default name | Purpose |
 |------|--------------|---------|
 | Trades history | `trades_history` | The executed and cancelled trades, without the accounting records |
 | Cash transfers | `cash_transfers` | The cash movements, over the columns a transfer actually populates |
 
-The five names the trade server writes to are configurable — they mirror its export configuration and are
+The six names the trade server writes to are configurable — they mirror its export configuration and are
 templated as `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-`##position_snapshots_table##` and `##cursor_table##`. The journal name comes from `--journal-table`.
+`##position_snapshots_table##`, `##cursor_table##` and `##ticks_table##`. The journal name comes from
+`--journal-table`.
 
 The three daily statement tables are produced by one export: when a statement is generated the trade server
 publishes the statement row, a snapshot of every **working** order and a snapshot of every open position, all
@@ -47,35 +50,25 @@ statement run at time_statement
 ```
 
 Each has its own pipeline in the trade server's `export_config.json`, so a deployment can export the statement
-without the snapshots. Every pipeline shares the one `export_cursor` table, which holds a row per
+without the snapshots. Every PostgreSQL pipeline shares the one `export_cursor` table, which holds a row per
 `(sender_id, table_name)`.
 
-> **Important:** **Which of these the migrator creates depends on the engine.**
->
-> | | PostgreSQL | ClickHouse |
-> |---|---|---|
-> | The five tables the trade server writes to | created by the migrator | **not created** — provisioned by the deployment |
-> | `schema_versions` | created by the migrator | created by the migrator |
-> | The two views over `trades` | created by the migrator | **not created** — provisioned by the deployment |
-> | Users and grants | applied by the migrator | applied by the migrator |
->
-> On ClickHouse this repository grants on the exported tables **by name** without owning their definitions, which
-> is why a grant succeeds even before the tables exist. The definitions below document what the migrator expects
-> to find; the copies the integration tests migrate against live in
-> [`src/Migrator.Tests/TestScripts/clickhouse/`](../src/Migrator.Tests/TestScripts/clickhouse) and are not part
-> of a shipped migration. The two views live there for the same reason — see [Views](#views).
+> **Important:** **The engines are not mirrors of each other.** The *Export Setup* guide sends trades, daily
+> statements, their snapshots and the cursor to PostgreSQL only, and ticks to ClickHouse only; a pipeline that
+> pairs an entity with the other engine is rejected by the trade server. So `psql/` creates the five PostgreSQL
+> tables and the two views, `clickhouse/` creates the ticks table, and both create the journal. The ClickHouse
+> translations of the PostgreSQL tables under
+> [`src/Migrator.Tests/TestScripts/clickhouse/`](../src/Migrator.Tests/TestScripts/clickhouse) are test-only and
+> never ship.
 
-Both engines carry the same logical schema, matching the *Export Setup* guide. Where they differ, the difference
-is called out below.
+Every definition matches the *Export Setup* guide.
 
 ---
 
 ## trades
 
-Append-only. Delivery is at-least-once, so the same trade can arrive twice after a restart — see
+PostgreSQL. Append-only. Delivery is at-least-once, so the same trade can arrive twice after a restart — see
 [Deduplication](#deduplication).
-
-### PostgreSQL
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -133,45 +126,11 @@ What the index covers comes **before** the table name, because PostgreSQL trunca
 long configured table name would otherwise leave both indexes with the same truncated name, and the second
 `CREATE INDEX IF NOT EXISTS` would quietly do nothing.
 
-### ClickHouse
-
-Not created by the migrator — the deployment provisions it. What the migrator expects, and what the integration
-tests create, is the same column list with two omissions and a few engine-specific choices:
-
-| Difference | Detail |
-|------------|--------|
-| No `id` column | ClickHouse does not generate row ids, and the sorting key already identifies a row |
-| No unique index | ClickHouse has no unique constraint — deduplication is the engine's job |
-| `LowCardinality(String)` | Used for `group_name` and `symbol_name` |
-| `INDEX idx_time_created … TYPE minmax GRANULARITY 4` | Data-skipping index, the counterpart of the PostgreSQL time index |
-
-```sql
-ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --cluster
-PARTITION BY toYYYYMM(time_created)
-PRIMARY KEY (sender_id)
-ORDER BY (sender_id, trade_id, time_created)
-SETTINGS index_granularity = 8192
-```
-
-Monthly partitions by `time_created` keep dropping old data cheap and let time-bounded queries skip whole
-partitions.
-
-The primary key and the sorting key are deliberately different lengths:
-
-| Key | Contents | Why |
-|-----|----------|-----|
-| `PRIMARY KEY` | `(sender_id)` | This is the sparse index ClickHouse loads into memory. Keeping it to the low-cardinality column avoids holding a mark per trade id |
-| `ORDER BY` | `(sender_id, trade_id, time_created)` | `ReplacingMergeTree` deduplicates on the **sorting** key, so `trade_id` has to stay in it — without it, two different trades sharing a sender and a timestamp would collapse into one |
-
-The primary key must be a prefix of the sorting key, which is what makes this split legal.
-
 ---
 
 ## daily_statements_export
 
-One row per account per statement run. Append-only, at-least-once, same as trades.
-
-### PostgreSQL
+PostgreSQL. One row per account per statement run. Append-only, at-least-once, same as trades.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -226,32 +185,12 @@ Every column is `NOT NULL`.
 | `idx_sender_stmt_account_<daily_statements_table>` | `UNIQUE (sender_id, time_statement, trading_account_id)` | Deduplicates at-least-once delivery |
 | `idx_account_stmt_<daily_statements_table>` | `(trading_account_id, time_statement)` | An account's statement history. The unique index carries `trading_account_id` third, so it cannot serve a filter on the account alone |
 
-### ClickHouse
-
-Not created by the migrator — the deployment provisions it. What the migrator expects, and what the integration
-tests create, is the same column list without `id`, with the types of the [mapping](#type-mapping) and
-`LowCardinality(String)` on `group_name` and `account_currency`:
-
-```sql
-ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --cluster
-PARTITION BY toYYYYMM(time_statement)
-PRIMARY KEY (sender_id)
-ORDER BY (sender_id, time_statement, trading_account_id)
-SETTINGS index_granularity = 8192
-```
-
-The sorting key is the PostgreSQL unique key, because that is what `ReplacingMergeTree` deduplicates on —
-dropping `trading_account_id` from it would collapse every account of one statement run into a single row. The
-primary key stays at `sender_id` alone for the same reason as on trades: it is the sparse index held in memory.
-
 ---
 
 ## daily_statements_order_snapshots
 
-One row per **working** order of the account, as it stood at `time_statement`. A filled, cancelled or expired
-order is not part of a statement.
-
-### PostgreSQL
+PostgreSQL. One row per **working** order of the account, as it stood at `time_statement`. A filled, cancelled
+or expired order is not part of a statement.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -302,27 +241,11 @@ order is not part of a statement.
 | `idx_sender_stmt_order_<order_snapshots_table>` | `UNIQUE (sender_id, time_statement, order_id)` | Deduplicates at-least-once delivery |
 | `idx_account_stmt_<order_snapshots_table>` | `(trading_account_id, time_statement)` | The working orders behind one account's statement. `trading_account_id` is not in the unique index at all |
 
-### ClickHouse
-
-Not created by the migrator — the deployment provisions it. In the definition the integration tests create, the
-nullable columns become `Nullable(Decimal(38, 18))` and `Nullable(DateTime64(6, 'UTC'))`; `group_name` and
-`symbol_name` are `LowCardinality(String)`:
-
-```sql
-ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --cluster
-PARTITION BY toYYYYMM(time_statement)
-PRIMARY KEY (sender_id)
-ORDER BY (sender_id, time_statement, order_id)
-SETTINGS index_granularity = 8192
-```
-
 ---
 
 ## daily_statements_position_snapshots
 
-One row per open position of the account, as it stood at `time_statement`.
-
-### PostgreSQL
+PostgreSQL. One row per open position of the account, as it stood at `time_statement`.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -369,28 +292,14 @@ One row per open position of the account, as it stood at `time_statement`.
 | `idx_sender_stmt_position_<position_snapshots_table>` | `UNIQUE (sender_id, time_statement, position_id)` | Deduplicates at-least-once delivery |
 | `idx_account_stmt_<position_snapshots_table>` | `(trading_account_id, time_statement)` | The open positions behind one account's statement. `trading_account_id` is not in the unique index at all |
 
-### ClickHouse
-
-Not created by the migrator — the deployment provisions it. In the definition the integration tests create,
-`stop_loss` and `take_profit` become `Nullable(Decimal(38, 18))`:
-
-```sql
-ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --cluster
-PARTITION BY toYYYYMM(time_statement)
-PRIMARY KEY (sender_id)
-ORDER BY (sender_id, time_statement, position_id)
-SETTINGS index_granularity = 8192
-```
-
 ---
 
 ## export_cursor
 
-How many records the trade server has already committed for a given table — one row per
-`(sender_id, table_name)`, so every export pipeline of every server instance shares this one table. It — not the
-trade server's local `state.bin` — is the authoritative position; the local file is only a shutdown-time cache.
-
-### PostgreSQL
+PostgreSQL. How many records the trade server has already committed for a given table — one row per
+`(sender_id, table_name)`, so every PostgreSQL export pipeline of every server instance shares this one table.
+It — not the trade server's local `state.bin` — is the authoritative position; the local file is only a
+shutdown-time cache.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -403,61 +312,28 @@ trade server's local `state.bin` — is the authoritative position; the local fi
 The cursor row and the batch of records are written **in the same transaction**, which is what makes the cursor
 trustworthy: it can never claim more than was actually stored.
 
-### ClickHouse
-
-Not created by the migrator — as with the exported tables, the deployment provisions it and the migrator only
-grants on it.
-
-| Column | Type |
-|--------|------|
-| `sender_id` | `Int64` |
-| `table_name` | `LowCardinality(String)` |
-| `last_written_position` | `Int64` |
-
-```sql
-ENGINE = ReplacingMergeTree(last_written_position)
-PRIMARY KEY (sender_id, table_name)
-ORDER BY (sender_id, table_name)
-```
-
-ClickHouse has no row `UPDATE`, so the exporter **appends** a new position and the engine collapses the history.
-`last_written_position` doubles as the version column, so the highest position always wins regardless of the
-order parts merge in.
-
-> **Note:** Read the ClickHouse cursor with `FINAL`, or an `argMax`, to get the current position — without it a
-> query can see several rows for one `(sender_id, table_name)` until the parts merge.
-
-```sql
-SELECT sender_id, table_name, last_written_position FROM export_cursor FINAL;
-```
+There is no cursor on ClickHouse: a ClickHouse pipeline keeps its position on disk only, and after a crash it
+starts again from position 0. The *Export Setup* guide describes the consequences.
 
 ---
 
 ## Views
 
-Two views over `trades`. They exist because the trades table holds two unrelated kinds of record — an executed
-trade and a cash movement on the account — and a reader almost always wants one or the other.
+Two views over `trades`, on PostgreSQL. They exist because the trades table holds two unrelated kinds of record
+— an executed trade and a cash movement on the account — and a reader almost always wants one or the other.
 
 | View | Default name | Rows | Columns |
 |------|--------------|------|---------|
 | Trades history | `trades_history` | `trade_type` in (0, 1, 14, 15) | every `trades` column except the identity |
 | Cash transfers | `cash_transfers` | every other `trade_type` | the 22 the transfer pipeline populates, plus 2 |
 
-**PostgreSQL creates them; ClickHouse does not** — the same split as the tables, and for a related reason. A
-`GRANT` tolerates an object that is not there yet, but a `CREATE VIEW` resolves the table it reads. Since this
-repository does not own the ClickHouse `trades` table, shipping the view would turn a missing table from a
-failing export into a failing migration. So on ClickHouse the views belong to the deployment that owns the
-table; the definition it should carry is in
-[`src/Migrator.Tests/TestScripts/clickhouse/views/`](../src/Migrator.Tests/TestScripts/clickhouse/views),
-alongside the table definitions and applied the same way by the integration tests. The grants go with them:
-unlike the exported tables, which `clickhouse/users/ro.sql` grants on by name whether or not they exist, the
-views are left to the deployment that creates them.
-
 Both names are templated — `##trades_history_view##` and `##cash_transfers_view##` — so a deployment that
 already owns an object under one of them moves ours aside with `--variables`.
 
 The two filters are complements, so **the views partition the table**: every row is visible through exactly one
 of them, and a trade type the trade server gains later surfaces in `cash_transfers` rather than in neither.
+
+ClickHouse has no views: the ticks table is the only one there, and nothing reads it through a view.
 
 ### trades_history
 
@@ -470,8 +346,7 @@ of them, and a trade type the trade server gains later surfaces in `cash_transfe
 | `14` | `kBuyCancelled` |
 | `15` | `kSellCancelled` |
 
-Every column of [`trades`](#trades) is exposed except the PostgreSQL identity column, which has no ClickHouse
-counterpart — leaving it out is what lets the two engines carry the same view.
+Every column of [`trades`](#trades) is exposed except the identity column.
 
 ### cash_transfers
 
@@ -515,16 +390,69 @@ symbol for it and fills columns 16–22 from that symbol and the top of its book
 `0`. `is_collateral` is what tells the two apart — `symbol_id` is the one of the seven that cannot legitimately
 be `0` on a collateral transfer.
 
-### Two things to know
+### Reading a view needs `SELECT` on the view itself
 
-**The ClickHouse definitions read `FROM trades FINAL`.** An at-least-once redelivery stays visible as a duplicate
-row until the parts merge, which is not something a reporting view should expose. `FINAL` costs more than a plain
-read; a deployment that prefers the speed and accepts the duplication window drops the keyword.
+A grant on the underlying table does not reach through. `psql/users/ro.sql` grants both views; `exporter` gets
+neither, because it writes rows and does not read reports.
 
-**Reading a view needs `SELECT` on the view itself** — a grant on the underlying table does not reach through. On
-PostgreSQL `psql/users/ro.sql` grants it; `exporter` gets neither view, because it writes rows and does not read
-reports. On ClickHouse the views are not granted here, so a reporting account that can read `trades` still gets
-`ACCESS_DENIED` on `trades_history` until the deployment grants on them alongside creating them.
+---
+
+## ticks
+
+ClickHouse. The top of the order book of one symbol — the best bid and the best ask, each with its volume — one
+row per change. The trade server writes a tick when it publishes prices for a symbol and the best bid or the best
+ask differs from the previous publication; a change of price and a change of volume both count, a change deeper
+in the book does not. Prices include the symbol's markup and not the group markups. A symbol produces at most as
+many ticks per second as its `throttling` setting allows, from 1 to 5.
+
+Created by `clickhouse/20260922_01_create_ticks.sql`, column for column from the ticks script of the *Export
+Setup* guide:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `sender_id` | `UInt64` | Identifies the writing trade server. Every server exporting into one database must use a different value |
+| `sequence` | `UInt64` | The order in which this server instance inserted its rows |
+| `batch_time` | `DateTime64(6, 'UTC')` | When the batch that carried the row was created. Every row of one insert has the same value |
+| `created_time` | `DateTime64(6, 'UTC')` | When the trade server received the latest price update the publication includes |
+| `symbol_id` | `UInt64` | Unique identifier of the instrument |
+| `short_symbol_name` | `LowCardinality(String)` | Name of the instrument without its path, such as `EURUSD` |
+| `bid_price` | `Decimal128(12)` | Best bid price. Zero when the bid side is empty |
+| `bid_volume` | `Decimal64(8)` | Volume at the best bid, in the units of the order book. Zero when the bid side is empty |
+| `ask_price` | `Decimal128(12)` | Best ask price. Zero when the ask side is empty |
+| `ask_volume` | `Decimal64(8)` | Volume at the best ask. Zero when the ask side is empty |
+
+Every column is `NOT NULL`. The three service columns come first, as on every ClickHouse table the trade server
+writes; `batch_time` and `created_time` carry `CODEC(Delta, Default)`, because consecutive rows of one symbol
+are close in time.
+
+```sql
+ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --cluster
+PARTITION BY toYYYYMM(created_time)
+PRIMARY KEY (sender_id, short_symbol_name)
+ORDER BY (sender_id, short_symbol_name, created_time, sequence)
+TTL toDateTime(created_time) + toIntervalDay(31)
+SETTINGS ttl_only_drop_parts = 1
+```
+
+| Choice | Why |
+|--------|-----|
+| `ReplacingMergeTree` | Delivery is at-least-once: after a lost connection the server re-sends the batch it could not confirm. Duplicates collapse on the sorting key when the parts merge, and they are identical rows, so no version column is needed |
+| `PRIMARY KEY (sender_id, short_symbol_name)` | The sparse index held in memory stops at the symbol; the sorting key goes on to `created_time` and `sequence` so that two ticks of one symbol never collapse into each other |
+| Monthly partitions | Make the TTL cheap: a part is dropped whole once every row in it has expired |
+| `TTL … 31 days` | The retention the guide ships. Change it on a deployment with `ALTER TABLE … MODIFY TTL`; the migrator does not template it |
+
+**Reading it**
+
+- Add `FINAL` to read every row once before the parts have merged.
+- Sort by `created_time`, not by `sequence`, to read ticks in time order.
+- A side of the book with no quotes is a zero price **and** a zero volume — check the volume to tell an empty
+  side from a price.
+- When a symbol's session closes the server writes one tick with both sides empty, stamped with the time of the
+  last price update before the close. After a restart the first tick of every symbol is written even when it
+  equals the last one before the restart.
+
+Roles: `exporter` holds `INSERT` on the table and nothing else, `ro` holds `SELECT` —
+[Users & Permissions](USERS_AND_PERMISSIONS.md#clickhouse).
 
 ---
 
@@ -557,37 +485,19 @@ SELECT script_name, applied_at FROM schema_versions ORDER BY applied_at;
 
 ---
 
-## Type mapping
-
-The guide's PostgreSQL types map onto ClickHouse as:
-
-| PostgreSQL | ClickHouse | Note |
-|------------|------------|------|
-| `BIGINT` | `Int64` | |
-| `SMALLINT` | `Int16` | |
-| `NUMERIC` | `Decimal(38, 18)` | 38 significant digits, 18 after the point |
-| `NUMERIC` nullable | `Nullable(Decimal(38, 18))` | The snapshot prices that are `NULL` when unset |
-| `VARCHAR(n)` | `String` / `LowCardinality(String)` | ClickHouse does not enforce a length |
-| `TEXT` | `String` | |
-| `TIMESTAMP WITH TIME ZONE` | `DateTime64(6, 'UTC')` | Microsecond precision |
-| `TIMESTAMP WITH TIME ZONE` nullable | `Nullable(DateTime64(6, 'UTC'))` | `expiration_time` on an order snapshot |
-| `BIGINT GENERATED ALWAYS AS IDENTITY` | *(omitted)* | No ClickHouse equivalent |
-
----
-
 ## Deduplication
 
-Export delivery is at-least-once: after a restart the trade server may resend records it already sent. The two
-engines absorb that differently.
+Export delivery is at-least-once: after a restart or a lost connection the trade server may resend records it
+already sent. Each table has its own key, and the engine that holds the table absorbs the duplicate in its own
+way:
 
-Each table has its own key, and on both engines the same columns carry the deduplication:
-
-| Table | Key |
-|-------|-----|
-| Trades | `(sender_id, trade_id)` |
-| Daily statements | `(sender_id, time_statement, trading_account_id)` |
-| Order snapshots | `(sender_id, time_statement, order_id)` |
-| Position snapshots | `(sender_id, time_statement, position_id)` |
+| Table | Engine | Key |
+|-------|--------|-----|
+| Trades | PostgreSQL | `(sender_id, trade_id)` |
+| Daily statements | PostgreSQL | `(sender_id, time_statement, trading_account_id)` |
+| Order snapshots | PostgreSQL | `(sender_id, time_statement, order_id)` |
+| Position snapshots | PostgreSQL | `(sender_id, time_statement, position_id)` |
+| Ticks | ClickHouse | `(sender_id, short_symbol_name, created_time, sequence)` |
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
@@ -598,7 +508,7 @@ Each table has its own key, and on both engines the same columns carry the dedup
 
 ```sql
 -- ClickHouse: exact counts before a merge has happened
-SELECT count() FROM trades FINAL;
+SELECT count() FROM ticks FINAL;
 ```
 
 `FINAL` costs more than a plain read. For aggregate reporting over large ranges, consider deduplicating in the
@@ -607,19 +517,6 @@ query (`argMax` by the key) or accepting the small window of duplication instead
 ---
 
 ## Caveats
-
-### `NaN` on ClickHouse
-
-`Decimal` cannot represent `NaN`. The *Export Setup* guide states that non-trading records — Balance, Credit,
-Fee and the other accounting types — carry `0` or `NaN` in the fields that do not apply to them. An exporter
-sending `NaN` gets `DECIMAL_OVERFLOW` and has to write `0` instead.
-
-If the writer cannot be changed, switch the `Decimal(38, 18)` columns to `Float64`, accepting the loss of
-exactness that implies for monetary values.
-
-The snapshot tables are the exception, and only for the columns the guide marks nullable — `avg_fill_price`,
-`stop_price`, `limit_price`, `stop_loss` and `take_profit`. There a `NaN` means *not set*, so the exporter writes
-`NULL` and the column is nullable on both engines.
 
 ### Adding an index to a large, live table
 
@@ -652,21 +549,15 @@ SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
 Every create statement is conditional, so the migrator can be pointed at a database that was provisioned by hand
 from the guide before this repository existed. It adopts what is already there rather than failing — which also
 means it will **not** correct a table whose columns differ from the script. Compare the schema by hand when
-adopting a database you did not create.
-
-### The ClickHouse tables have to exist before the export runs
-
-Because the migrator does not create them, provisioning a ClickHouse target is two steps: create the five tables
-above — the four exported ones and the cursor — then run the migrator to apply the journal, the users and the
-`post/` phase. The grants themselves succeed either way — ClickHouse accepts a `GRANT` naming a table that does
-not exist yet — so a missing table shows up as a failing export, not a failing migration.
+adopting a database you did not create. On ClickHouse that includes the engine and the TTL: a `ticks` table
+created by hand without `--cluster` in mind stays a local table when the flag is added later.
 
 ### Renamed tables
 
 If the trade server's export configuration uses non-default table names, every run must pass the same
 `--variables trades_table=… daily_statements_table=… order_snapshots_table=… position_snapshots_table=…
-cursor_table=…`. Nothing records the names on the database side, so a run without them grants on — and on
-PostgreSQL creates — a second set of tables under the default names.
+cursor_table=…` on PostgreSQL, or `--variables ticks_table=…` on ClickHouse. Nothing records the names on the
+database side, so a run without them creates and grants on a second set of tables under the default names.
 
 ---
 

@@ -240,10 +240,10 @@ Now the same against ClickHouse:
 ./migrate.sh --provider clickhouse --connection-string "Host=localhost;Port=18223;Database=trade_demo;Username=default;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd"
 ```
 
-> **Important:** On ClickHouse the migrator does **not** create the exported tables or the cursor — a ClickHouse
-> deployment provisions those itself, and this repository only creates the journal, the users and their grants.
-> The grants succeed whether or not the tables exist yet. See
-> [Schema Reference](SCHEMA_REFERENCE.md#overview) for the definitions the migrator expects to find.
+> **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ticks are the
+> one entity the trade server exports to ClickHouse, so the run creates the `ticks` table, the journal, the
+> users and their grants, and none of the five PostgreSQL tables. See
+> [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
 ---
 
@@ -259,7 +259,7 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
 ```sql
--- ClickHouse: expects schema_versions, plus whatever the deployment provisioned
+-- ClickHouse: expects ticks and schema_versions
 SHOW TABLES FROM trade_demo;
 ```
 

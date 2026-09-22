@@ -15,13 +15,13 @@
 ### What is this repository?
 
 The schema for the databases the **trade server** exports trading data into, plus the tool that applies it. The
-trade server writes trades and an export cursor to an external PostgreSQL or ClickHouse database; this repository
-owns the other half — creating and evolving the tables, indexes and users that the export needs.
+trade server writes trades, daily statements and an export cursor to PostgreSQL and ticks to ClickHouse; this
+repository owns the other half — creating and evolving the tables, indexes and users that the export needs.
 
 ### Why plain SQL rather than a code-first migration tool?
 
-The schema is written to by the trade server, not by an application that owns a model of it, and it has to exist
-identically on two engines with very different dialects. Plain SQL applied by
+The schema is written to by the trade server, not by an application that owns a model of it, and it spans two
+engines with very different dialects. Plain SQL applied by
 [DbUp](https://dbup.readthedocs.io/) keeps the actual DDL reviewable — what you read in
 `psql/20260101_01_create_trades.sql` is exactly what runs, on the engine it was written for.
 
@@ -38,9 +38,9 @@ re-runnable scripts re-run only when their content changes. A second run reports
 
 ### Which engine should I use?
 
-Whichever the trade server's export pipeline is configured to write to. PostgreSQL gives you transactional
-writes and exact deduplication; ClickHouse gives you analytical query performance over large volumes. The schema
-is the same either way.
+Both, if you export both kinds of entity. The trade server sends trades, daily statements, their snapshots and
+the export cursor to PostgreSQL and ticks to ClickHouse, and rejects a pipeline that pairs an entity with the
+other engine. Run the migrator once per engine you export to; each run creates that engine's tables.
 
 ---
 
@@ -104,19 +104,23 @@ anything. The migrator logs a warning and reports everything as pending rather t
 
 ### Which tables does the migrator own?
 
-Five that the trade server writes to — `trades`, `daily_statements_export`,
-`daily_statements_order_snapshots`, `daily_statements_position_snapshots` and `export_cursor` — plus its own
-`schema_versions` journal. Each exported table matches one export pipeline in the trade server's
-`export_config.json`, and all of them share the one cursor table. Column by column:
+Five on PostgreSQL — `trades`, `daily_statements_export`, `daily_statements_order_snapshots`,
+`daily_statements_position_snapshots` and `export_cursor` — one on ClickHouse — `ticks` — plus its own
+`schema_versions` journal on each engine. Each exported table matches one export pipeline in the trade server's
+`export_config.json`, and the PostgreSQL pipelines share the one cursor table. Column by column:
 [Schema Reference](SCHEMA_REFERENCE.md).
 
 ### Can I rename the exported tables?
 
 Yes — every one of them is configurable in the trade server's export configuration, and the scripts template all
-five names. Pass the ones you renamed on every run:
+six names. Pass the ones you renamed on every run:
 
 ```bash
 --variables trades_table=trades_export cursor_table=trades_export_cursor daily_statements_table=statements_export
+```
+
+```bash
+--variables ticks_table=market_ticks
 ```
 
 Nothing records the names on the database side, so a run without them grants on — and on PostgreSQL creates — a
@@ -131,40 +135,28 @@ keys — join on `(sender_id, time_statement, trading_account_id)`.
 
 ### Does the migrator create the ClickHouse tables?
 
-**No.** On ClickHouse it creates the journal, the users and their grants, and runs the `post/` phase; the five
-tables the trade server writes to are provisioned by the deployment that owns them. ClickHouse accepts a `GRANT`
-naming a table that does not exist yet, so the users phase succeeds either way — a missing table surfaces as a
-failing export, not a failing migration.
+**Yes** — the one there is. ClickHouse receives ticks and nothing else, so `clickhouse/20260922_01_create_ticks.sql`
+creates the `ticks` table and the `users/` phase grants on it. The PostgreSQL tables have no ClickHouse
+counterpart, because the trade server never writes those entities there.
 
-On PostgreSQL the migrator does create them all. The definitions the ClickHouse side expects are documented in
-[Schema Reference](SCHEMA_REFERENCE.md), and the copies the integration tests use live in
-`src/Migrator.Tests/TestScripts/clickhouse/`.
+### Why is there no cursor table on ClickHouse?
 
-### Why does the ClickHouse `trades` table have no `id` column?
-
-ClickHouse does not generate row ids, and the sorting key `(sender_id, trade_id, time_created)` already identifies
-a row. The
-guide's identity column has no equivalent, so it is left out rather than faked.
+A ClickHouse pipeline keeps its export position on disk rather than in the database, so there is nothing for a
+cursor table to hold. After a crash it starts again from position 0 — the *Export Setup* guide describes the
+consequences.
 
 ### How are duplicate records handled?
 
 Export delivery is at-least-once, so the same record can arrive twice after a restart. Each table has its own
 deduplication key — `(sender_id, trade_id)` on trades, `(sender_id, time_statement, trading_account_id)` on
-statements, and the same pair plus `order_id` or `position_id` on the snapshots:
+statements, the same pair plus `order_id` or `position_id` on the snapshots, and
+`(sender_id, short_symbol_name, created_time, sequence)` on ticks:
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
 | Mechanism | a `UNIQUE` index on the key | `ReplacingMergeTree` sorted by the key |
 | When | immediately — the second insert is rejected | when parts merge |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
-
-### Why do I get `DECIMAL_OVERFLOW` on ClickHouse?
-
-`Decimal` cannot represent `NaN`, and non-trading records (Balance, Credit, Fee) may carry `NaN` in fields that do
-not apply to them. Either have the exporter write `0`, or switch those columns to `Float64` and accept the loss of
-exactness for monetary values. The snapshot columns the guide marks nullable — `avg_fill_price`, `stop_price`,
-`limit_price`, `stop_loss`, `take_profit` — are the exception: there `NaN` means *not set*, so the exporter writes
-`NULL` into a `Nullable` column instead.
 
 ### Can I point the migrator at a database that was set up by hand?
 

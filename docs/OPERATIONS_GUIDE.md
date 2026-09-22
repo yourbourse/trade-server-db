@@ -37,10 +37,9 @@ Three properties of this tool shape every procedure below:
 
 The order matters: schema first, users second, and the export pipeline only after both.
 
-> **Important:** On **ClickHouse**, the five tables the trade server writes to — trades, the daily statements,
-> the two snapshot tables and the cursor — are not created by the migrator; the deployment provisions them.
-> Create them before starting the export; the migration itself succeeds without them, because ClickHouse grants
-> on a table by name whether or not it exists. On PostgreSQL the migrator creates them all. See
+> **Important:** The two engines hold different tables — PostgreSQL the trades, the daily statements, the two
+> snapshot tables and the cursor, ClickHouse the ticks — and the migrator creates all of them. Run it once per
+> engine the export is configured for, before starting the export. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
 **1. Confirm the target.** The connection string must name the database. The account needs DDL rights, and
@@ -134,11 +133,12 @@ database here if a run does something surprising.
 
 ```
 ====================================
-Migrating Postgres database trading, tables: [trades_table=trades, daily_statements_table=daily_statements_export, order_snapshots_table=daily_statements_order_snapshots, position_snapshots_table=daily_statements_position_snapshots, cursor_table=export_cursor], users: [trade_exporter(exporter)]
+Migrating Postgres database trading, tables: [trades_table=trades, daily_statements_table=daily_statements_export, order_snapshots_table=daily_statements_order_snapshots, position_snapshots_table=daily_statements_position_snapshots, cursor_table=export_cursor, ticks_table=ticks], users: [trade_exporter(exporter)]
 ```
 
 The target line reports the **effective** values — after `--variables` overrides — so this is where you confirm
-that a renamed table was actually picked up.
+that a renamed table was actually picked up. Every table variable is listed whichever provider runs; only the
+ones the provider's scripts mention matter.
 
 ```
 ====================================
@@ -154,9 +154,9 @@ Executed scripts: 5
 ```
 
 One block per phase, `(root)` being the incremental phase. `No files for pre` means the phase had nothing to do:
-`pre/` ships empty on both providers, and on ClickHouse so do the root and `views/` phases — that deployment
-provisions its own tables and views. On the second run the counts are `0` everywhere except, if you passed `--force`, the re-runnable phases whose
-inputs you supplied.
+`pre/` ships empty on both providers, and `views/` is empty on ClickHouse — there is no view over the ticks
+table. On the second run the counts are `0` everywhere except, if you passed `--force`, the re-runnable phases
+whose inputs you supplied.
 
 > **Note:** On a `--dry-run` this same summary reads `Executed scripts: N`, meaning *would be executed*. Trust
 > the `Dry run:` lines, not the summary wording.
