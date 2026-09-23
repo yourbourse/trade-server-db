@@ -1,5 +1,10 @@
 -- The role and user the trade server authenticates as.
 --
+-- The ClickHouse exporter does exactly one thing: INSERT INTO the ticks table over the native protocol. It
+-- never reads, and a ClickHouse pipeline has no cursor table, so INSERT on the ticks table is the whole grant.
+-- A right added here later is picked up on the next migration, because the changed content changes the MD5
+-- this script is journalled under.
+--
 -- Applied once per --users entry with Access=exporter, for example:
 --   --users "Access=exporter;User=trade_exporter;Password=passw0rd"
 
@@ -9,38 +14,10 @@ CREATE ROLE IF NOT EXISTS role_##database_name##_exporter ##cluster_name_suffix#
 
 ----break----
 
--- trades
+-- ticks
 GRANT ##cluster_name_suffix##
-SELECT, INSERT
-ON ##database_name##.##trades_table## TO role_##database_name##_exporter;
-
-----break----
-
--- daily statements
-GRANT ##cluster_name_suffix##
-SELECT, INSERT
-ON ##database_name##.##daily_statements_table## TO role_##database_name##_exporter;
-
-----break----
-
--- daily statement order snapshots
-GRANT ##cluster_name_suffix##
-SELECT, INSERT
-ON ##database_name##.##order_snapshots_table## TO role_##database_name##_exporter;
-
-----break----
-
--- daily statement position snapshots
-GRANT ##cluster_name_suffix##
-SELECT, INSERT
-ON ##database_name##.##position_snapshots_table## TO role_##database_name##_exporter;
-
-----break----
-
--- export cursor
-GRANT ##cluster_name_suffix##
-SELECT, INSERT, ALTER UPDATE
-ON ##database_name##.##cursor_table## TO role_##database_name##_exporter;
+INSERT
+ON ##database_name##.##ticks_table## TO role_##database_name##_exporter;
 
 ----break----
 

@@ -39,6 +39,8 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultDailyStatementsTable = "daily_statements_export";
     private const string DefaultOrderSnapshotsTable = "daily_statements_order_snapshots";
     private const string DefaultPositionSnapshotsTable = "daily_statements_position_snapshots";
+    private const string DefaultTicksTable = "ticks";
+    private const string DefaultTicksTtlDays = "31";
     private const string DefaultTradesHistoryView = "trades_history";
     private const string DefaultCashTransfersView = "cash_transfers";
 
@@ -51,7 +53,8 @@ public class MigrationHandler : IMigrationHandler
         "daily_statements_table",
         "order_snapshots_table",
         "position_snapshots_table",
-        "cursor_table"
+        "cursor_table",
+        "ticks_table"
     ];
 
     /// <summary>
@@ -216,6 +219,7 @@ public class MigrationHandler : IMigrationHandler
             ["daily_statements_table"] = DefaultDailyStatementsTable,
             ["order_snapshots_table"] = DefaultOrderSnapshotsTable,
             ["position_snapshots_table"] = DefaultPositionSnapshotsTable,
+            ["ticks_table"] = DefaultTicksTable,
             ["trades_history_view"] = DefaultTradesHistoryView,
             ["cash_transfers_view"] = DefaultCashTransfersView
         };
@@ -231,6 +235,8 @@ public class MigrationHandler : IMigrationHandler
             // used when a cluster was requested
             variables["merge_tree_engine"] = clustered ? "ReplicatedMergeTree" : "MergeTree";
             variables["replacing_merge_tree_engine"] = clustered ? "ReplicatedReplacingMergeTree" : "ReplacingMergeTree";
+
+            variables["ticks_ttl_days"] = DefaultTicksTtlDays;
         }
 
         // command line variables are applied last so they can override any of the derived values
@@ -247,6 +253,12 @@ public class MigrationHandler : IMigrationHandler
             {
                 SqlSafety.ValidateIdentifier(identifier, $"##{identifierVariable}##");
             }
+        }
+
+        // the retention is written into MODIFY TTL as text, so it gets the same treatment as an identifier
+        if (variables.TryGetValue("ticks_ttl_days", out var ticksTtlDays))
+        {
+            SqlSafety.ValidatePositiveInteger(ticksTtlDays, "##ticks_ttl_days##");
         }
 
         return variables;

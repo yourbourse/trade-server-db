@@ -69,6 +69,7 @@ the intersection of what both engines accept as an unquoted identifier, capped a
 | `##order_snapshots_table##` | default or `--variables` |
 | `##position_snapshots_table##` | default or `--variables` |
 | `##cursor_table##` | default or `--variables` |
+| `##ticks_table##` | default or `--variables` |
 | `##cluster_name##` | `--cluster` (empty passes) |
 | `##user_name##` | each `--users` entry |
 
@@ -140,12 +141,12 @@ passwords in `docker-compose.yml`, the CI service-container values in `.github/w
 
 The roles the `users/` phase provisions are deliberately narrow:
 
-| Role | Trades | Cursor | DDL | Delete |
-|------|--------|--------|-----|--------|
-| `exporter` | `INSERT`, `SELECT` | `INSERT`, `SELECT`, `UPDATE` (`ALTER UPDATE` on ClickHouse) | no | no |
-| `ro` | `SELECT` | `SELECT` | no | no |
+| Role | PostgreSQL tables | PostgreSQL cursor | ClickHouse ticks | DDL | Delete |
+|------|-------------------|-------------------|------------------|-----|--------|
+| `exporter` | `INSERT`, `SELECT` | `INSERT`, `SELECT`, `UPDATE` | `INSERT` | no | no |
+| `ro` | `SELECT` | `SELECT` | `SELECT` | no | no |
 
-The export is append-only and never rewrites or removes a trade, so the exporter needs nothing more. Run
+The export is append-only and never rewrites or removes a record, so the exporter needs nothing more. Run
 migrations with a separate account that has DDL rights, and keep the two apart —
 [Users & Permissions](USERS_AND_PERMISSIONS.md) has the full grant list.
 

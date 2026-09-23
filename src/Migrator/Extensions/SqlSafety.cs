@@ -16,6 +16,7 @@
 //  * permission is obtained from Your Bourse Limited.
 //  */
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using YB.TradeServer.Db.Migrator.Execution;
 
@@ -57,6 +58,24 @@ public static class SqlSafety
                 "It has to start with a letter or an underscore, continue with letters, digits or underscores, " +
                 "and be at most 63 characters long. " +
                 "Identifiers are written into DDL as text - no database accepts a bound parameter in their place - so anything else is rejected here.");
+        }
+
+        return value!;
+    }
+
+    /// <summary>
+    /// Returns the value when it is a whole number greater than zero written with digits only, and fails the
+    /// migration when it is not.
+    /// </summary>
+    /// <param name="value">The candidate number.</param>
+    /// <param name="description">What the value is, used in the error message.</param>
+    public static string ValidatePositiveInteger(string? value, string description)
+    {
+        if (!uint.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number == 0)
+        {
+            throw new SchemaMigrationException(
+                $"{description} '{value}' is not a positive whole number. " +
+                "It is written into DDL as text, so anything but digits is rejected here.");
         }
 
         return value!;

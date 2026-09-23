@@ -38,14 +38,16 @@ The order in which values are decided:
 | `##order_snapshots_table##` | `daily_statements_order_snapshots`, unless overridden | `daily_statements_order_snapshots` |
 | `##position_snapshots_table##` | `daily_statements_position_snapshots`, unless overridden | `daily_statements_position_snapshots` |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=…` overrides it | `export_cursor` |
+| `##ticks_table##` | `ticks`, unless `--variables ticks_table=…` overrides it | `ticks` |
 | `##trades_history_view##` | `trades_history`, unless overridden | `trades_history` |
 | `##cash_transfers_view##` | `cash_transfers`, unless overridden | `cash_transfers` |
 | `##assembly_version##` | Version of the migrator binary applying the script | `1.0.0.0` |
 
-The five table names are templated because the trade server's export configuration makes them configurable —
+The six table names are templated because the trade server's export configuration makes them configurable —
 each export pipeline names its own target table, and a deployment that renamed one passes the name on the command
 line so the scripts follow. Use the variables instead of hard-coded names in any script that touches those
-tables.
+tables. The first five name PostgreSQL tables and `##ticks_table##` names the ClickHouse one; all six are
+defined for both providers, so a script does not have to care which engine it runs on.
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --variables trades_table=trades_export cursor_table=trades_export_cursor
@@ -76,7 +78,7 @@ an unresolved placeholder.
 the cluster name, and collapses to nothing on a single instance:
 
 ```sql
-CREATE TABLE IF NOT EXISTS ##trades_table## ##cluster_name_suffix##
+CREATE TABLE IF NOT EXISTS ##database_name##.##ticks_table## ##cluster_name_suffix##
 (
     ...
 )
@@ -116,8 +118,8 @@ Anything not in the tables above is passed with `--variables`:
 ```
 
 ```sql
-ALTER TABLE ##trades_table## ##cluster_name_suffix##
-MODIFY TTL time_created + INTERVAL ##ttl_days## DAY;
+ALTER TABLE ##database_name##.##ticks_table## ##cluster_name_suffix##
+MODIFY TTL toDateTime(created_time) + INTERVAL ##ttl_days## DAY;
 ```
 
 > **Warning:** `--variables` values are substituted **verbatim and unvalidated**, because they legitimately carry
@@ -142,6 +144,7 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##order_snapshots_table##` | same |
 | `##position_snapshots_table##` | same |
 | `##cursor_table##` | same |
+| `##ticks_table##` | same |
 | `##trades_history_view##` | same |
 | `##cash_transfers_view##` | same |
 | `##cluster_name##` | same, when not empty |
@@ -160,7 +163,7 @@ A script containing a `##placeholder##` that is not defined is **rejected before
 ```
 20260315_01_add_index.sql uses ##index_name##, which the migrator does not know about.
 Known variables: assembly_version, cursor_table, daily_statements_table, database_name, order_snapshots_table,
-position_snapshots_table, trades_table.
+position_snapshots_table, ticks_table, trades_table.
 Pass any other value with --variables name=value.
 ```
 

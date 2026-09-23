@@ -87,6 +87,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_export"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_order_snapshots"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_position_snapshots"));
+        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "ticks"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "schema_versions"));
 
         // system.tables lists a view alongside the tables
@@ -109,6 +110,32 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         // assert
         AssertSuccessful(forcedRun);
         Assert.True(CountAppliedScripts(forcedRun) > 0, "a forced run should re-apply the post scripts");
+    }
+
+    [Fact(DisplayName = "ClickHouse migration Should set the ticks TTL and re-apply it when the retention changes")]
+    public void ClickHouse_migration_Should_set_the_ticks_TTL_and_re_apply_it_when_the_retention_changes()
+    {
+        // arrange
+        var request = CreateRequest(DatabaseProvider.ClickHouse);
+        var runner = CreateRunner();
+
+        var firstRun = runner.Run(request);
+        var ttlAfterFirstRun = GetClickHouseCreateTableQuery(request.ConnectionString, request.DatabaseName, "ticks");
+
+        // act
+        var changedRun = runner.Run(request with
+        {
+            Variables = new Dictionary<string, string>(request.Variables) { ["ticks_ttl_days"] = "7" }
+        });
+
+        // assert
+        AssertSuccessful(firstRun);
+        AssertSuccessful(changedRun);
+
+        Assert.Contains("TTL toDateTime(created_time) + toIntervalDay(31)", ttlAfterFirstRun);
+        Assert.Contains("ttl_only_drop_parts = 1", ttlAfterFirstRun);
+        Assert.Equal(1, CountAppliedScripts(changedRun));
+        Assert.Contains("TTL toDateTime(created_time) + toIntervalDay(7)", GetClickHouseCreateTableQuery(request.ConnectionString, request.DatabaseName, "ticks"));
     }
 
     [Fact(DisplayName = "ClickHouse migration Should create the users it is given")]
@@ -562,12 +589,14 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["daily_statements_table"] = "daily_statements_export",
                 ["order_snapshots_table"] = "daily_statements_order_snapshots",
                 ["position_snapshots_table"] = "daily_statements_position_snapshots",
+                ["ticks_table"] = "ticks",
                 ["trades_history_view"] = "trades_history",
                 ["cash_transfers_view"] = "cash_transfers",
                 ["cluster_name"] = "",
                 ["cluster_name_suffix"] = "",
                 ["merge_tree_engine"] = "MergeTree",
-                ["replacing_merge_tree_engine"] = "ReplacingMergeTree"
+                ["replacing_merge_tree_engine"] = "ReplacingMergeTree",
+                ["ticks_ttl_days"] = "31"
             },
             false,
             false,
@@ -725,6 +754,16 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         using var command = connection.CreateCommand($"SELECT count() FROM system.tables WHERE database = '{databaseName}' AND name = '{tableName}'");
 
         return Convert.ToInt32(command.ExecuteScalar()) == 1;
+    }
+
+    private static string GetClickHouseCreateTableQuery(string connectionString, string databaseName, string tableName)
+    {
+        using var connection = new ClickHouseConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand($"SELECT create_table_query FROM system.tables WHERE database = '{databaseName}' AND name = '{tableName}'");
+
+        return Convert.ToString(command.ExecuteScalar()) ?? "";
     }
 
     private static bool PostgresIndexExists(string connectionString, string indexName)

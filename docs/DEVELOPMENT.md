@@ -118,12 +118,11 @@ overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`
 
 ```
 trade-server-db/
-├── clickhouse/                         ClickHouse scripts - no table creation, see the note below
+├── clickhouse/                         ClickHouse scripts
+│   ├── 20260922_01_create_ticks.sql        incremental (folder root)
 │   ├── post/run_on_every_build.sql         re-runnable
 │   ├── users/exporter.sql                  re-runnable, one pass per --users entry
-│   ├── users/ro.sql
-│   └── views/                              (empty placeholder - a view over trades ships with the table, see
-│                                            TestScripts/clickhouse/views/ below)
+│   └── users/ro.sql
 ├── psql/                               PostgreSQL scripts
 │   ├── 20260101_01_create_trades.sql       incremental (folder root)
 │   ├── 20260101_02_create_export_cursor.sql
@@ -149,23 +148,18 @@ trade-server-db/
 │   ├── DbUp.PSQL/                      DbUp provider for PostgreSQL
 │   ├── DbUp.ClickHouse/                DbUp provider for ClickHouse
 │   └── Migrator.Tests/                 Unit + integration tests
-│       └── TestScripts/clickhouse/         exported table definitions + views/, test-only (see below)
+│       └── TestScripts/clickhouse/         ClickHouse copies of the PostgreSQL tables and views, test-only (see below)
 ├── .github/workflows/ci.yaml           build, unit tests, integration tests
 ├── docker-compose.yml                  ClickHouse + PostgreSQL for testing
 ├── migrate.sh                          build-and-run wrapper
 └── docs/                               this documentation
 ```
 
-> **Note:** `clickhouse/` deliberately has no table-creation scripts. A ClickHouse deployment provisions the
-> exported tables and the cursor itself; this repository only journals, grants and runs the `post/` phase
-> against them. The
-> definitions the ClickHouse integration tests migrate against live in `src/Migrator.Tests/TestScripts/clickhouse/`
-> and are passed to the runner as an extra `--scripts` folder, so they never ship as a migration.
->
-> Its `views/` subfolder holds the `trades_history` and `cash_transfers` definitions, which follow the table for
-> the same reason: a `CREATE VIEW` resolves the table it reads, so shipping them would make a missing `trades`
-> table fail the migration rather than the export. On PostgreSQL, where this repository does create the tables,
-> both views ship normally in `psql/views/`.
+> **Note:** `src/Migrator.Tests/TestScripts/clickhouse/` holds ClickHouse translations of the PostgreSQL tables
+> and the two views over `trades`. They are not part of any shipped migration — the trade server never writes
+> those entities to ClickHouse — and exist only so the ClickHouse integration tests have a larger schema to
+> migrate against. The tests pass the folder to the runner as an extra `--scripts` folder ahead of
+> `clickhouse/`, which is also why the view-splitting test can run on both engines.
 
 ---
 
