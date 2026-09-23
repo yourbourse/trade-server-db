@@ -14,4 +14,4 @@
 # Migrator output
 logs/
 test-reports/
-.devcontainer/devcontainer.json
+.devcontainer
