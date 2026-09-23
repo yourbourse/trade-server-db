@@ -430,7 +430,6 @@ ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --clus
 PARTITION BY toYYYYMM(created_time)
 PRIMARY KEY (sender_id, short_symbol_name)
 ORDER BY (sender_id, short_symbol_name, created_time, sequence)
-SETTINGS ttl_only_drop_parts = 1
 ```
 
 | Choice | Why |

@@ -133,6 +133,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         AssertSuccessful(changedRun);
 
         Assert.Contains("TTL toDateTime(created_time) + toIntervalDay(31)", ttlAfterFirstRun);
+        Assert.Contains("ttl_only_drop_parts = 1", ttlAfterFirstRun);
         Assert.Equal(1, CountAppliedScripts(changedRun));
         Assert.Contains("TTL toDateTime(created_time) + toIntervalDay(7)", GetClickHouseCreateTableQuery(request.ConnectionString, request.DatabaseName, "ticks"));
     }

@@ -15,10 +15,7 @@
 -- The primary key is the sparse index ClickHouse holds in memory, so it stops at the symbol; the sorting key
 -- goes on to created_time and sequence so that two ticks of one symbol never collapse into each other.
 --
--- Retention: the TTL is not part of the definition. post/ticks_ttl.sql sets it from ##ticks_ttl_days## on every
--- run whose value differs from the last one, so a deployment changes it with --variables rather than by hand.
--- Once a TTL is set, a part is dropped as a whole when every row in it has expired (ttl_only_drop_parts), which
--- the monthly partitioning makes cheap.
+-- Retention is not part of the definition: post/ticks_ttl.sql sets the TTL and ttl_only_drop_parts.
 --
 -- The name is qualified with the database because ON CLUSTER carries the statement to nodes whose default
 -- database is not this one.
@@ -46,5 +43,4 @@ CREATE TABLE IF NOT EXISTS ##database_name##.##ticks_table## ##cluster_name_suff
 ENGINE = ##replacing_merge_tree_engine##
 PARTITION BY toYYYYMM(created_time)
 PRIMARY KEY (sender_id, short_symbol_name)
-ORDER BY (sender_id, short_symbol_name, created_time, sequence)
-SETTINGS ttl_only_drop_parts = 1;
+ORDER BY (sender_id, short_symbol_name, created_time, sequence);
