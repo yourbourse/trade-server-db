@@ -430,7 +430,6 @@ ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --clus
 PARTITION BY toYYYYMM(created_time)
 PRIMARY KEY (sender_id, short_symbol_name)
 ORDER BY (sender_id, short_symbol_name, created_time, sequence)
-TTL toDateTime(created_time) + toIntervalDay(31)
 SETTINGS ttl_only_drop_parts = 1
 ```
 
@@ -439,7 +438,6 @@ SETTINGS ttl_only_drop_parts = 1
 | `ReplacingMergeTree` | Delivery is at-least-once: after a lost connection the server re-sends the batch it could not confirm. Duplicates collapse on the sorting key when the parts merge, and they are identical rows, so no version column is needed |
 | `PRIMARY KEY (sender_id, short_symbol_name)` | The sparse index held in memory stops at the symbol; the sorting key goes on to `created_time` and `sequence` so that two ticks of one symbol never collapse into each other |
 | Monthly partitions | Make the TTL cheap: a part is dropped whole once every row in it has expired |
-| `TTL … 31 days` | The retention the guide ships. Change it on a deployment with `ALTER TABLE … MODIFY TTL`; the migrator does not template it |
 
 **Reading it**
 
@@ -549,7 +547,7 @@ SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
 Every create statement is conditional, so the migrator can be pointed at a database that was provisioned by hand
 from the guide before this repository existed. It adopts what is already there rather than failing — which also
 means it will **not** correct a table whose columns differ from the script. Compare the schema by hand when
-adopting a database you did not create. On ClickHouse that includes the engine and the TTL: a `ticks` table
+adopting a database you did not create. On ClickHouse that includes the engine: a `ticks` table
 created by hand without `--cluster` in mind stays a local table when the flag is added later.
 
 ### Renamed tables

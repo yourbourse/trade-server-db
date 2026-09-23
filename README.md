@@ -314,9 +314,6 @@ Delivery is at-least-once here too, and ClickHouse has no unique index, so the t
 sorted by `(sender_id, short_symbol_name, created_time, sequence)`: a re-sent batch collapses into the original
 when the parts merge. Query with `FINAL` when duplicates must not be visible before that.
 
-Rows older than 31 days are removed by a `TTL` on `created_time`, a whole part at a time. A deployment that
-needs a different retention changes it with `ALTER TABLE … MODIFY TTL`.
-
 ### Roles
 
 The `users/` scripts provision the two roles the guide describes on both engines: `exporter` — on PostgreSQL
