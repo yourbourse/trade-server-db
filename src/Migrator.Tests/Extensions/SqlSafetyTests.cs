@@ -63,6 +63,35 @@ public class SqlSafetyTests
         Assert.Throws<SchemaMigrationException>(() => SqlSafety.ValidateIdentifier(identifier, "test"));
     }
 
+    [Theory(DisplayName = "ValidatePositiveInteger Should accept a whole number greater than zero")]
+    [InlineData("1")]
+    [InlineData("31")]
+    [InlineData("3650")]
+    public void ValidatePositiveInteger_Should_accept_a_whole_number_greater_than_zero(string value)
+    {
+        // act
+        var actual = SqlSafety.ValidatePositiveInteger(value, "test");
+
+        // assert
+        Assert.Equal(value, actual);
+    }
+
+    [Theory(DisplayName = "ValidatePositiveInteger Should reject anything but digits and zero")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("+31")]
+    [InlineData(" 31")]
+    [InlineData("31.5")]
+    [InlineData("31 DAY; DROP TABLE ticks")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ValidatePositiveInteger_Should_reject_anything_but_digits_and_zero(string? value)
+    {
+        // act, assert
+        var exception = Assert.Throws<SchemaMigrationException>(() => SqlSafety.ValidatePositiveInteger(value, "test"));
+        Assert.Contains("not a positive whole number", exception.Message);
+    }
+
     [Fact(DisplayName = "EscapeLiteral Should double a quote for PostgreSQL")]
     public void EscapeLiteral_Should_double_a_quote_for_PostgreSQL()
     {

@@ -1,4 +1,4 @@
--- A read-only role for reporting and support access to the exported data.
+-- A read-only role for reporting and support access to the exported ticks.
 --
 -- Applied once per --users entry with Access=ro, for example:
 --   --users "Access=ro;User=trade_reader;Password=passw0rd"
@@ -16,38 +16,10 @@ CREATE ROLE IF NOT EXISTS role_##database_name##_exporter ##cluster_name_suffix#
 
 ----break----
 
--- trades
+-- ticks
 GRANT ##cluster_name_suffix##
 SELECT
-ON ##database_name##.##trades_table## TO role_##database_name##_ro;
-
-----break----
-
--- daily statements
-GRANT ##cluster_name_suffix##
-SELECT
-ON ##database_name##.##daily_statements_table## TO role_##database_name##_ro;
-
-----break----
-
--- daily statement order snapshots
-GRANT ##cluster_name_suffix##
-SELECT
-ON ##database_name##.##order_snapshots_table## TO role_##database_name##_ro;
-
-----break----
-
--- daily statement position snapshots
-GRANT ##cluster_name_suffix##
-SELECT
-ON ##database_name##.##position_snapshots_table## TO role_##database_name##_ro;
-
-----break----
-
--- export cursor
-GRANT ##cluster_name_suffix##
-SELECT
-ON ##database_name##.##cursor_table## TO role_##database_name##_ro;
+ON ##database_name##.##ticks_table## TO role_##database_name##_ro;
 
 ----break----
 

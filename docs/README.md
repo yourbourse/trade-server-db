@@ -56,7 +56,7 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 | Reference | Description |
 |-----------|-------------|
-| [Schema Reference](SCHEMA_REFERENCE.md) | The trade, daily statement, snapshot, cursor and journal tables on both engines, column by column, with the type mapping |
+| [Schema Reference](SCHEMA_REFERENCE.md) | The PostgreSQL trade, daily statement, snapshot and cursor tables, the ClickHouse ticks table and the journal, column by column |
 | [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
 | [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
 
@@ -109,7 +109,7 @@ is named for the SPEC clause it covers, so the suite reads as a conformance list
 | Path | Purpose |
 |------|---------|
 | `psql/` | PostgreSQL scripts - root is incremental, `views/` `users/` `post/` are re-runnable |
-| `clickhouse/` | ClickHouse scripts - `users/` `post/` only, no table and no view creation |
+| `clickhouse/` | ClickHouse scripts - root is incremental (the ticks table), `users/` `post/` are re-runnable |
 | `src/Migrator/` | The CLI: option parsing, target resolution, phase orchestration |
 | `src/DbUp.PSQL/` | DbUp provider for PostgreSQL |
 | `src/DbUp.ClickHouse/` | DbUp provider for ClickHouse |
@@ -126,6 +126,7 @@ is named for the SPEC clause it covers, so the suite reads as a conformance list
 | Order snapshots table | `daily_statements_order_snapshots` |
 | Position snapshots table | `daily_statements_position_snapshots` |
 | Cursor table | `export_cursor` |
+| Ticks table | `ticks` |
 | Script folder | `psql` or `clickhouse`, after the provider |
 | Connection string | `$TSDB_CONNECTION_STRING` when `--connection-string` is absent |
 | Log file | `logs/migrator.log`, rolling daily, 10 files kept |

@@ -63,10 +63,10 @@ own chunk and is discarded:
 ```sql
 ----break----
 
--- Trades exported by the trade server …
+-- Ticks exported by the trade server …
 -- (never reaches the server)
 
-CREATE TABLE IF NOT EXISTS ##trades_table## ##cluster_name_suffix## ( … );
+CREATE TABLE IF NOT EXISTS ##database_name##.##ticks_table## ##cluster_name_suffix## ( … );
 ```
 
 Comments that *introduce* a statement are kept, because the chunk also contains executable SQL.
@@ -227,7 +227,7 @@ so that path is never reached.
 |------------|-------------|
 | ClickHouse 24.x minimum | `ClickHouse.Driver` 1.3.0 sends settings older servers reject |
 | No transactions | A script failing on its third statement leaves the first two applied — write ClickHouse migrations so each script is independently re-runnable |
-| `Decimal` cannot hold `NaN` | An exporter sending `NaN` gets `DECIMAL_OVERFLOW`; see [Schema Reference](SCHEMA_REFERENCE.md) |
+| `Decimal` cannot hold `NaN` | An exporter sending `NaN` gets `DECIMAL_OVERFLOW`. The ticks columns never carry one — an empty side of the book is written as a zero price and a zero volume |
 | Mutations are asynchronous | Anything relying on a mutation having completed needs `mutations_sync`, as the journal delete does |
 | Access management must be enabled | The `users/` phase needs it — `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1` locally |
 

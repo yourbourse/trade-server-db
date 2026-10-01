@@ -281,12 +281,6 @@ this points at a chunk that looks empty but is not — a stray `;` on its own, f
 Almost always a missing `----break----`: two statements arrived in one request, and ClickHouse accepts exactly
 one per request. Every statement needs its own chunk.
 
-### `DECIMAL_OVERFLOW` while the exporter is writing
-
-`Decimal(38, 18)` cannot represent `NaN`, and non-trading records (Balance, Credit, Fee) may carry `NaN` in
-fields that do not apply. Either make the exporter write `0`, or change those columns to `Float64` and accept the
-loss of exactness. See [Schema Reference](SCHEMA_REFERENCE.md).
-
 ### Settings-related errors on connect
 
 `ClickHouse.Driver` 1.3.0 sends settings that servers older than 24.x reject. Check `SELECT version()`.

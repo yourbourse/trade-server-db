@@ -2,9 +2,10 @@
 
 Schema migrations for the databases the **trade server** exports trading data into.
 
-The trade server writes trades, daily statements, their order and position snapshots, and an export cursor to an
-external database — see the *Export Setup* guide for how the export pipelines are configured. This repository
-owns the other half: creating and evolving the tables, indexes, views and users that export needs.
+The trade server writes trades, daily statements, their order and position snapshots and an export cursor to
+PostgreSQL, and ticks to ClickHouse — see the *Export Setup* guide for how the export pipelines are configured.
+This repository owns the other half: creating and evolving the tables, indexes, views and users that export
+needs.
 
 Two providers are supported:
 
@@ -192,6 +193,7 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##trading_accounts_table##` | `trading_accounts`, unless `--variables` says otherwise |
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless `--variables` says otherwise |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=...` says otherwise |
+| `##ticks_table##` | `ticks`, unless `--variables ticks_table=...` says otherwise |
 | `##assembly_version##` | The version of the migrator that applied the script |
 | `##user_name##`, `##user_password##` | The `users/` phase only, one pass per `--users` entry |
 | `##cluster_name##`, `##cluster_name_suffix##` | ClickHouse only. Empty unless `--cluster` is given |
@@ -202,7 +204,7 @@ Anything else can be passed with `--variables key=value`.
 A script containing a `##name##` that is not in this list and was not passed with `--variables` is **rejected
 before it reaches the database**, naming the placeholder — otherwise the `##` travels through to the server and
 comes back as a syntax error pointing at a character offset. If you want a literal table name, just write it; the
-five table variables are templated only because the trade server's export configuration makes those names
+six table variables are templated only because the trade server's export configuration makes those names
 configurable — a deployment that renamed one passes the name with `--variables`.
 
 ### Statement separators
@@ -251,84 +253,77 @@ happens to contain a quote fails loudly or works correctly, rather than silently
 1. Create the file. Incremental: `psql/20260315_01_add_broker_id.sql`. Re-runnable: drop it in `views/`,
    `users/` or `post/`.
 2. Use the table variables — `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-   `##position_snapshots_table##`, `##cursor_table##` — rather than hard-coded table names. They are all
-   configurable in the trade server's export configuration.
+   `##position_snapshots_table##`, `##cursor_table##` on PostgreSQL, `##ticks_table##` on ClickHouse — rather
+   than hard-coded table names. They are all configurable in the trade server's export configuration.
 3. Check what it would do: `./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run`.
 4. Apply it, then run it a second time and confirm nothing is applied.
-5. Mirror the change in the other provider's folder if it applies to both.
+5. Mirror the change in the other provider's folder if it applies to both — a `users/` or `post/` change
+   usually does, a table definition never does, because each table lives on one engine only.
 
 Never edit a script that has already been applied somewhere: an incremental script will not run again, and the
 deployed database will silently differ from the file. Add a new one.
 
 ## Schema
 
-Both engines carry the same five tables the trade server writes to, matching the *Export Setup* guide — but only
-PostgreSQL has them created here:
+The two engines hold different tables, because the trade server exports each entity to exactly one of them:
+trades, daily statements, their snapshots and the export cursor go to PostgreSQL, ticks go to ClickHouse. The
+*Export Setup* guide is the source of every definition, and the migrator creates all of them:
 
-| Table | Default name | PostgreSQL | ClickHouse |
-|---|---|---|---|
-| Trades | `trades` | created by the migrator | **provisioned by the deployment**, not by this repository |
-| Daily statements | `daily_statements_export` | created by the migrator | provisioned by the deployment |
-| Order snapshots | `daily_statements_order_snapshots` | created by the migrator | provisioned by the deployment |
-| Position snapshots | `daily_statements_position_snapshots` | created by the migrator | provisioned by the deployment |
+| Table | Default name | Engine |
+|---|---|---|
+| Trades | `trades` | PostgreSQL |
+| Daily statements | `daily_statements_export` | PostgreSQL |
+| Order snapshots | `daily_statements_order_snapshots` | PostgreSQL |
+| Position snapshots | `daily_statements_position_snapshots` | PostgreSQL |
 | Trading account events | `trading_account_events` | created by the migrator | not created — out of scope |
 | Trading accounts | `trading_accounts` | created by the migrator, maintained by a trigger | not created — out of scope |
-| Export cursor | `export_cursor` | created by the migrator | provisioned by the deployment |
-| Journal, users and grants | `schema_versions` | created by the migrator | created by the migrator |
+| Export cursor | `export_cursor` | PostgreSQL |
+| Ticks | `ticks` | ClickHouse |
+| Journal | `schema_versions` | both |
 
-ClickHouse grants reference the tables by name, which succeeds whether or not they exist yet. The
-definitions the migrator expects — and the copies the ClickHouse integration tests migrate against, under
-`src/Migrator.Tests/TestScripts/clickhouse/` — are documented in
-[Schema Reference](docs/SCHEMA_REFERENCE.md).
+Column by column: [Schema Reference](docs/SCHEMA_REFERENCE.md).
+
+### PostgreSQL
 
 On top of `trades` there are two views:
 
-| View | Default name | Rows | PostgreSQL | ClickHouse |
-|---|---|---|---|---|
-| Trades history | `trades_history` | the executed and cancelled trades — `trade_type` 0, 1, 14, 15 | created by the migrator | provisioned by the deployment |
-| Cash transfers | `cash_transfers` | every other `trade_type`: balances, credits, fees, commissions, interest, dividends and the rest | created by the migrator | provisioned by the deployment |
+| View | Default name | Rows |
+|---|---|---|
+| Trades history | `trades_history` | the executed and cancelled trades — `trade_type` 0, 1, 14, 15 |
+| Cash transfers | `cash_transfers` | every other `trade_type`: balances, credits, fees, commissions, interest, dividends and the rest |
 
 The two filters are complements, so every row of `trades` is visible through exactly one of them.
-
-They follow the table they read. A `GRANT` tolerates an object that does not exist yet, but a `CREATE VIEW`
-resolves the table it selects from — so shipping the ClickHouse views would turn a missing `trades` table from a
-failing export into a failing migration. Their definitions live beside the ClickHouse table definitions in
-`src/Migrator.Tests/TestScripts/clickhouse/views/`, and the grants on them belong to that deployment too —
-`clickhouse/users/ro.sql` covers the five exported tables, not the views.
 
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
 together.
 
 Every exported table is append-only. Delivery is at-least-once, so the same record can arrive twice after a
-restart:
+restart, and a unique index rejects the second insert: `(sender_id, trade_id)` on trades, and
+`(sender_id, time_statement, …)` on the statement and snapshot tables.
 
-* **PostgreSQL** deduplicates with a unique index: `(sender_id, trade_id)` on trades, and
-  `(sender_id, time_statement, …)` on the statement and snapshot tables. The second insert is rejected.
-* **ClickHouse** has no unique index, so each table is a `ReplacingMergeTree` whose sorting key is that same key
-  — it collapses duplicates when the parts merge, so query with `FINAL` when they must not be visible before
-  that. The primary key stays at `(sender_id)`, since that is the sparse index held in memory.
+`export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
+pipelines share it. The cursor row and the batch of records are written in the same transaction, which is what
+makes the cursor authoritative.
 
-The ClickHouse columns follow the guide's types: `BIGINT` → `Int64`, `SMALLINT` → `Int16`, `NUMERIC` →
-`Decimal(38, 18)`, `VARCHAR` → `String`, `TIMESTAMP WITH TIME ZONE` → `DateTime64(6, 'UTC')`. The guide's
-identity column has no equivalent and is left out — ClickHouse does not generate row ids, and the sorting key
-already identifies a row.
+### ClickHouse
 
-> `Decimal` cannot hold `NaN`, and the guide states that non-trading records (Balance, Credit, Fee and the
-> other accounting types) carry `0` or `NaN` in the fields that do not apply to them. An exporter that sends
-> `NaN` gets `DECIMAL_OVERFLOW` and has to write `0` instead. Switch the `Decimal(38, 18)` columns to `Float64`
-> if the writer cannot be changed. The exception is the snapshot columns the guide marks nullable —
-> `avg_fill_price`, `stop_price`, `limit_price`, `stop_loss`, `take_profit` — where a `NaN` means *not set* and
-> the exporter writes `NULL`.
+`ticks` holds the top of the order book of every symbol — the best bid and the best ask, each with its volume —
+one row per change, written whenever the trade server publishes prices. The definition is the ticks script of
+the guide, column for column; only the table name, the cluster clause and the engine are templated.
 
-`export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all five pipelines
-share it. On PostgreSQL the cursor row and the batch of records are written in the same transaction, which is
-what makes the cursor authoritative. ClickHouse has no `UPDATE`, so the exporter appends a new position and
-`ReplacingMergeTree` collapses the history, using `last_written_position` as the version column so the highest
-position always wins.
+There is no cursor table and no view. A ClickHouse pipeline keeps its export position on disk rather than in the
+database, and the exporter does nothing but insert.
 
-The `users/` scripts provision the two roles the guide describes: `exporter` (INSERT and SELECT on the four
-exported tables, INSERT, SELECT and UPDATE on the cursor) and `ro` (SELECT on all five).
+Delivery is at-least-once here too, and ClickHouse has no unique index, so the table is a `ReplacingMergeTree`
+sorted by `(sender_id, short_symbol_name, created_time, sequence)`: a re-sent batch collapses into the original
+when the parts merge. Query with `FINAL` when duplicates must not be visible before that.
+
+### Roles
+
+The `users/` scripts provision the two roles the guide describes on both engines: `exporter` — on PostgreSQL
+INSERT and SELECT on the four exported tables plus INSERT, SELECT and UPDATE on the cursor, on ClickHouse INSERT
+on `ticks` — and `ro`, with SELECT on everything.
 
 ## Building and testing
 
@@ -354,12 +349,12 @@ second run applies nothing. Connection strings come from
 
 ```
 psql/                  PostgreSQL scripts: root = incremental, views/ users/ post/ = re-runnable
-clickhouse/            ClickHouse scripts: users/ post/ only - no tables and no views, see Schema
+clickhouse/            ClickHouse scripts: root = incremental (the ticks table), users/ post/ = re-runnable
 src/DbUp.ClickHouse/   DbUp provider for ClickHouse (connection manager, journal, executor)
 src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI
 src/Migrator.Tests/    Unit and integration tests
-  TestScripts/clickhouse/  The ClickHouse tables and views this repository does not ship
+  TestScripts/clickhouse/  Test-only ClickHouse copies of the PostgreSQL tables and views, never shipped
 docs/                  Full documentation, indexed in docs/README.md
 migrate.sh             Wrapper over the CLI
 docker-compose.yml     ClickHouse and PostgreSQL for the integration tests

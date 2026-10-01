@@ -14,3 +14,4 @@
 # Migrator output
 logs/
 test-reports/
+.devcontainer
