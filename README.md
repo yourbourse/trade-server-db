@@ -266,8 +266,9 @@ deployed database will silently differ from the file. Add a new one.
 ## Schema
 
 The two engines hold different tables, because the trade server exports each entity to exactly one of them:
-trades, daily statements, their snapshots and the export cursor go to PostgreSQL, ticks go to ClickHouse. The
-*Export Setup* guide is the source of every definition, and the migrator creates all of them:
+trades, daily statements, their snapshots, the trading account events and the export cursor go to PostgreSQL,
+ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and the migrator creates
+all of them — plus `trading_accounts`, which it derives from the event log with a trigger:
 
 | Table | Default name | Engine |
 |---|---|---|
@@ -275,8 +276,8 @@ trades, daily statements, their snapshots and the export cursor go to PostgreSQL
 | Daily statements | `daily_statements_export` | PostgreSQL |
 | Order snapshots | `daily_statements_order_snapshots` | PostgreSQL |
 | Position snapshots | `daily_statements_position_snapshots` | PostgreSQL |
-| Trading account events | `trading_account_events` | created by the migrator | not created — out of scope |
-| Trading accounts | `trading_accounts` | created by the migrator, maintained by a trigger | not created — out of scope |
+| Trading account events | `trading_account_events` | PostgreSQL |
+| Trading accounts | `trading_accounts` | PostgreSQL |
 | Export cursor | `export_cursor` | PostgreSQL |
 | Ticks | `ticks` | ClickHouse |
 | Journal | `schema_versions` | both |

@@ -242,7 +242,7 @@ Now the same against ClickHouse:
 
 > **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ticks are the
 > one entity the trade server exports to ClickHouse, so the run creates the `ticks` table, the journal, the
-> users and their grants, and none of the five PostgreSQL tables. See
+> users and their grants, and none of the PostgreSQL tables or views. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
 ---

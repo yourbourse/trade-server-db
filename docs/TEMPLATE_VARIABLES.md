@@ -150,8 +150,11 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##position_snapshots_table##` | same |
 | `##cursor_table##` | same |
 | `##ticks_table##` | same |
+| `##trading_account_events_table##` | same |
+| `##trading_accounts_table##` | same |
 | `##trades_history_view##` | same |
 | `##cash_transfers_view##` | same |
+| `##trading_accounts_resync_view##` | same |
 | `##cluster_name##` | same, when not empty |
 | `##user_name##` | same |
 

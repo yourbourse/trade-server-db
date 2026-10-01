@@ -173,8 +173,9 @@ Full detail: [Users & Permissions](USERS_AND_PERMISSIONS.md).
 
 Applied **last**, so they override the derived values. Values are substituted verbatim and are **not**
 validated, because they legitimately carry things that are not identifiers — engine names, TTL numbers,
-intervals. Those that name a database object (`database_name`, `cluster_name` and the six table names) are
-validated after the override, so overriding one of them with something that is not an identifier still fails.
+intervals. Those that name a database object (`database_name`, `cluster_name` and every table and view name)
+are validated after the override, so overriding one of them with something that is not an identifier still
+fails.
 
 Full list of what is already defined: [Template Variables](TEMPLATE_VARIABLES.md).
 
