@@ -238,6 +238,9 @@ public class MigrationHandlerTests
     /// does not produce is rejected before it reaches the server, so every place that assembles a variable set -
     /// this list, the integration fixture, and the documentation - has to gain the name at the same time. An
     /// exact assertion is what makes adding one here fail loudly instead of somewhere further away.
+    ///
+    /// <c>ticks_table</c> is listed even though only the ClickHouse scripts use it: it is defined for both
+    /// providers so a script does not have to care which engine it runs on.
     /// </remarks>
     private static readonly string[] postgresVariables =
     [
@@ -251,6 +254,7 @@ public class MigrationHandlerTests
         "trading_account_events_table",
         "trading_accounts_table",
         "trading_accounts_resync_view",
+        "ticks_table",
         "trades_history_view",
         "cash_transfers_view"
     ];

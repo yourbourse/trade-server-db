@@ -46,11 +46,10 @@ The order in which values are decided:
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless overridden | `trading_accounts_resync` |
 | `##assembly_version##` | Version of the migrator binary applying the script | `1.0.0.0` |
 
-The table names are templated because the trade server's export configuration makes them configurable —
-configurable —
-each export pipeline names its own target table, and a deployment that renamed one passes the name on the command
+The table names are templated because the trade server's export configuration makes them configurable — each
+export pipeline names its own target table, and a deployment that renamed one passes the name on the command
 line so the scripts follow. Use the variables instead of hard-coded names in any script that touches those
-tables. The first five name PostgreSQL tables and `##ticks_table##` names the ClickHouse one; all six are
+tables. Six of them name PostgreSQL tables and `##ticks_table##` names the ClickHouse one; all seven are
 defined for both providers, so a script does not have to care which engine it runs on.
 
 ```bash
