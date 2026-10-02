@@ -62,10 +62,7 @@ without the snapshots. Every PostgreSQL pipeline shares the one `export_cursor` 
 > statements, their snapshots, the trading account events and the cursor to PostgreSQL only, and ticks to
 > ClickHouse only; a pipeline that pairs an entity with the other engine is rejected by the trade server. So
 > `psql/` creates those six tables, the `trading_accounts` projection and the three views, `clickhouse/`
-> creates the ticks table, and both create the journal. The ClickHouse
-> translations of the PostgreSQL tables under
-> [`src/Migrator.Tests/TestScripts/clickhouse/`](../src/Migrator.Tests/TestScripts/clickhouse) are test-only and
-> never ship.
+> creates the ticks table, and both create the journal.
 
 Every definition matches the *Export Setup* guide.
 
@@ -370,11 +367,6 @@ Indexes: `(sender_id, trading_account_id, id)` for an account's history, and a p
 > response, nothing here has a use for it, and leaving it out of the schema is what keeps it out of the
 > database — the `ro` role can read every table in here.
 
-### ClickHouse
-
-Out of scope. ClickHouse has no trigger mechanism, so a deployment that ever exports this entity needs its own
-current-state mechanism and its own grants.
-
 ---
 
 ## trading_accounts
@@ -403,10 +395,6 @@ is the one thing this table exists not to do.
 
 No indexes beyond the primary key. The table is bounded at roughly the live account count, so a filter the
 primary key cannot serve is a scan of a small table rather than of a growing one.
-
-### ClickHouse
-
-Out of scope, as above.
 
 ---
 

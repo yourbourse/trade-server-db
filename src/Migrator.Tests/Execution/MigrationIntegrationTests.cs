@@ -82,17 +82,8 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.True(CountAppliedScripts(firstRun) > 0, "the first run should apply the schema");
         Assert.Equal(0, CountAppliedScripts(secondRun));
 
-        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "trades"));
-        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "export_cursor"));
-        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_export"));
-        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_order_snapshots"));
-        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "daily_statements_position_snapshots"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "ticks"));
         Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "schema_versions"));
-
-        // system.tables lists a view alongside the tables
-        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "trades_history"));
-        Assert.True(ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "cash_transfers"));
     }
 
     [Fact(DisplayName = "ClickHouse migration Should re-apply the re-runnable scripts when forced")]
@@ -219,37 +210,6 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         // every index name has to survive PostgreSQL's 63-byte truncation intact, or two of them collide and the
         // second CREATE ... IF NOT EXISTS silently does nothing
         Assert.Empty(PostgresTruncatedIndexNames(request.ConnectionString));
-    }
-
-    [Fact(DisplayName = "ClickHouse views Should split every trade type between trades history and cash transfers")]
-    public void ClickHouse_views_Should_split_every_trade_type_between_trades_history_and_cash_transfers()
-    {
-        // arrange
-        var request = CreateRequest(DatabaseProvider.ClickHouse);
-        var runner = CreateRunner();
-
-        AssertSuccessful(runner.Run(request));
-
-        using var connection = new ClickHouseConnection(request.ConnectionString);
-        connection.Open();
-
-        foreach (var tradeType in AllTradeTypes)
-        {
-            using var insert = connection.CreateCommand(ClickHouseTradeInsert(tradeType));
-            insert.ExecuteNonQuery();
-        }
-
-        // act
-        var history = ClickHouseTradeTypes(connection, "trades_history");
-        var transfers = ClickHouseTradeTypes(connection, "cash_transfers");
-
-        // assert
-        Assert.Equal(TradingTradeTypes, history);
-        Assert.Equal(AllTradeTypes.Except(TradingTradeTypes).ToList(), transfers);
-
-        // the collateral row is the only one carrying a symbol
-        using var collateral = connection.CreateCommand("SELECT trade_type FROM cash_transfers WHERE is_collateral ORDER BY trade_type");
-        Assert.Equal([CollateralTradeType], ReadInts(collateral));
     }
 
     [Fact(DisplayName = "Postgres views Should split every trade type between trades history and cash transfers")]
@@ -439,10 +399,10 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         // assert
         AssertSuccessful(result);
 
-        // the trades table is still standing, so nothing escaped the literal
+        // the schema is still standing, so nothing escaped the literal
         Assert.True(provider == DatabaseProvider.Postgres
             ? PostgresTableExists(request.ConnectionString, "trades")
-            : ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "trades"));
+            : ClickHouseTableExists(request.ConnectionString, request.DatabaseName, "ticks"));
 
         // and the password still authenticates, so escaping preserved the value rather than mangling it
         Assert.True(CanLogIn(provider, request.ConnectionString, userName, hostilePassword));
@@ -545,19 +505,9 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         return new(NullLogger<DbUpRunner>.Instance, new TestDbUpLogProvider(output));
     }
 
-    /// <summary>
-    /// The script folders a migration run is given.
-    /// </summary>
-    /// <remarks>
-    /// The shipped clickhouse folder no longer creates the trades and cursor tables - a ClickHouse deployment
-    /// provisions those itself and this repository only grants on them by name - so the ClickHouse tests add the
-    /// folder holding the table definitions they need to have something to migrate and to grant against.
-    /// </remarks>
     private static IList<ScriptConfig> GetScriptFolders(DatabaseProvider provider)
     {
-        return provider == DatabaseProvider.ClickHouse
-            ? [new(true, Path.Combine("TestScripts", "clickhouse")), new(true, "clickhouse")]
-            : [new(true, "psql")];
+        return [new(true, provider == DatabaseProvider.ClickHouse ? "clickhouse" : "psql")];
     }
 
     private DbMigratorRequest CreateRequest(DatabaseProvider provider)
@@ -687,7 +637,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
     private const int CollateralTradeType = 5;
 
     /// <summary>
-    /// The columns of a trades row, in the order the two INSERT helpers supply their values.
+    /// The columns of a trades row, in the order <see cref="TradeValues"/> supplies their values.
     /// </summary>
     private const string TradeColumns =
         "sender_id, group_name, symbol_name, trade_id, time_created, time_modified, trading_account_id, group_id, " +
@@ -699,7 +649,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
 
     /// <summary>
     /// One trades row per trade type, carrying a symbol only for <see cref="CollateralTradeType"/>. The trade
-    /// type doubles as the trade id, which is what keeps the rows distinct under either engine's deduplication.
+    /// type doubles as the trade id, which is what keeps the rows distinct under deduplication.
     /// </summary>
     private static string TradeValues(int tradeType, string now)
     {
@@ -714,18 +664,8 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                "100";
     }
 
-    private static string ClickHouseTradeInsert(int tradeType) =>
-        $"INSERT INTO trades ({TradeColumns}) VALUES ({TradeValues(tradeType, "now64(6)")})";
-
     private static string PostgresTradeInsert(int tradeType) =>
         $"INSERT INTO trades ({TradeColumns}) VALUES ({TradeValues(tradeType, "now()")})";
-
-    private static List<int> ClickHouseTradeTypes(ClickHouseConnection connection, string viewName)
-    {
-        using var command = connection.CreateCommand($"SELECT trade_type FROM {viewName} ORDER BY trade_type");
-
-        return ReadInts(command);
-    }
 
     private static List<int> PostgresTradeTypes(NpgsqlConnection connection, string viewName)
     {

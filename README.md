@@ -355,7 +355,6 @@ src/DbUp.ClickHouse/   DbUp provider for ClickHouse (connection manager, journal
 src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI
 src/Migrator.Tests/    Unit and integration tests
-  TestScripts/clickhouse/  Test-only ClickHouse copies of the PostgreSQL tables and views, never shipped
 docs/                  Full documentation, indexed in docs/README.md
 migrate.sh             Wrapper over the CLI
 docker-compose.yml     ClickHouse and PostgreSQL for the integration tests

@@ -148,18 +148,11 @@ trade-server-db/
 │   ├── DbUp.PSQL/                      DbUp provider for PostgreSQL
 │   ├── DbUp.ClickHouse/                DbUp provider for ClickHouse
 │   └── Migrator.Tests/                 Unit + integration tests
-│       └── TestScripts/clickhouse/         ClickHouse copies of the PostgreSQL tables and views, test-only (see below)
 ├── .github/workflows/ci.yaml           build, unit tests, integration tests, published results
 ├── docker-compose.yml                  ClickHouse + PostgreSQL for testing
 ├── migrate.sh                          build-and-run wrapper
 └── docs/                               this documentation
 ```
-
-> **Note:** `src/Migrator.Tests/TestScripts/clickhouse/` holds ClickHouse translations of the PostgreSQL tables
-> and the two views over `trades`. They are not part of any shipped migration — the trade server never writes
-> those entities to ClickHouse — and exist only so the ClickHouse integration tests have a larger schema to
-> migrate against. The tests pass the folder to the runner as an extra `--scripts` folder ahead of
-> `clickhouse/`, which is also why the view-splitting test can run on both engines.
 
 ---
 
