@@ -42,6 +42,9 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultTradingAccountEventsTable = "trading_account_events";
     private const string DefaultTradingAccountsTable = "trading_accounts";
     private const string DefaultTradingAccountsResyncView = "trading_accounts_resync";
+    private const string DefaultClientEventsTable = "client_events";
+    private const string DefaultClientsTable = "clients";
+    private const string DefaultClientsResyncView = "clients_resync";
     private const string DefaultTicksTable = "ticks";
     private const string DefaultTicksTtlDays = "31";
     private const string DefaultTradesHistoryView = "trades_history";
@@ -57,6 +60,7 @@ public class MigrationHandler : IMigrationHandler
         "order_snapshots_table",
         "position_snapshots_table",
         "trading_account_events_table",
+        "client_events_table",
         "cursor_table",
         "ticks_table"
     ];
@@ -73,7 +77,8 @@ public class MigrationHandler : IMigrationHandler
     [
         "trades_history_view",
         "cash_transfers_view",
-        "trading_accounts_resync_view"
+        "trading_accounts_resync_view",
+        "clients_resync_view"
     ];
 
     /// <summary>
@@ -87,7 +92,8 @@ public class MigrationHandler : IMigrationHandler
     /// </remarks>
     private static readonly string[] derivedTableVariables =
     [
-        "trading_accounts_table"
+        "trading_accounts_table",
+        "clients_table"
     ];
 
     /// <summary>
@@ -250,6 +256,9 @@ public class MigrationHandler : IMigrationHandler
             ["trading_account_events_table"] = DefaultTradingAccountEventsTable,
             ["trading_accounts_table"] = DefaultTradingAccountsTable,
             ["trading_accounts_resync_view"] = DefaultTradingAccountsResyncView,
+            ["client_events_table"] = DefaultClientEventsTable,
+            ["clients_table"] = DefaultClientsTable,
+            ["clients_resync_view"] = DefaultClientsResyncView,
             ["ticks_table"] = DefaultTicksTable,
             ["trades_history_view"] = DefaultTradesHistoryView,
             ["cash_transfers_view"] = DefaultCashTransfersView

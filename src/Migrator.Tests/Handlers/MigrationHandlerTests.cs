@@ -254,6 +254,9 @@ public class MigrationHandlerTests
         "trading_account_events_table",
         "trading_accounts_table",
         "trading_accounts_resync_view",
+        "client_events_table",
+        "clients_table",
+        "clients_resync_view",
         "ticks_table",
         "trades_history_view",
         "cash_transfers_view"
@@ -308,6 +311,53 @@ public class MigrationHandlerTests
     [InlineData("trading_accounts_table")]
     [InlineData("trading_accounts_resync_view")]
     public void BuildVariables_Should_reject_a_trading_account_object_name_that_is_not_an_identifier(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=not a valid name; DROP TABLE trades"] };
+
+        // act, assert
+        Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
+    }
+
+    [Theory(DisplayName = "BuildVariables Should default the client objects to their documented names")]
+    [InlineData("client_events_table", "client_events")]
+    [InlineData("clients_table", "clients")]
+    [InlineData("clients_resync_view", "clients_resync")]
+    public void BuildVariables_Should_default_the_client_objects_to_their_documented_names(string variable, string expected)
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.Equal(expected, variables[variable]);
+    }
+
+    [Theory(DisplayName = "BuildVariables Should let --variables rename a client object")]
+    [InlineData("client_events_table")]
+    [InlineData("clients_table")]
+    [InlineData("clients_resync_view")]
+    public void BuildVariables_Should_let_variables_rename_a_client_object(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };
+
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
+
+        // assert
+        Assert.Equal("renamed_object", variables[variable]);
+    }
+
+    /// <summary>
+    /// Every one of these names is written into DDL as text, so a name added to the defaults but left out of
+    /// identifierVariables would travel to the server verbatim.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should reject a client object name that is not an identifier")]
+    [InlineData("client_events_table")]
+    [InlineData("clients_table")]
+    [InlineData("clients_resync_view")]
+    public void BuildVariables_Should_reject_a_client_object_name_that_is_not_an_identifier(string variable)
     {
         // arrange
         var options = new CommandLineOptions { Variables = [$"{variable}=not a valid name; DROP TABLE trades"] };

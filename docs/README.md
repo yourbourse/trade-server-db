@@ -76,6 +76,13 @@ the alternatives that were rejected.
 The trading accounts specification is verified by `TradingAccountsProjectionIntegrationTests`, where each test
 is named for the SPEC clause it covers, so the suite reads as a conformance list.
 
+The **client** event log and its `clients` projection are built to the same contract against a different entity:
+the same four event types, the same resync markers, the same end-marker sweep and the same reconcile pass. There
+is no separate SPEC for them — read the one above, substituting *client* for *trading account* — and they are
+verified by `ClientsProjectionIntegrationTests`, which mirrors the suite case for case. Where the two differ is
+recorded in [Schema Reference → client_events](SCHEMA_REFERENCE.md#client_events): the column set, whose order
+and types are fixed by the schema agreed with the trade server team.
+
 ---
 
 ## Architecture & Development
