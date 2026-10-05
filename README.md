@@ -189,6 +189,9 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##daily_statements_table##` | `daily_statements_export`, unless `--variables` says otherwise |
 | `##order_snapshots_table##` | `daily_statements_order_snapshots`, unless `--variables` says otherwise |
 | `##position_snapshots_table##` | `daily_statements_position_snapshots`, unless `--variables` says otherwise |
+| `##trading_account_events_table##` | `trading_account_events`, unless `--variables` says otherwise |
+| `##trading_accounts_table##` | `trading_accounts`, unless `--variables` says otherwise |
+| `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless `--variables` says otherwise |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=...` says otherwise |
 | `##ticks_table##` | `ticks`, unless `--variables ticks_table=...` says otherwise |
 | `##assembly_version##` | The version of the migrator that applied the script |
@@ -263,8 +266,9 @@ deployed database will silently differ from the file. Add a new one.
 ## Schema
 
 The two engines hold different tables, because the trade server exports each entity to exactly one of them:
-trades, daily statements, their snapshots and the export cursor go to PostgreSQL, ticks go to ClickHouse. The
-*Export Setup* guide is the source of every definition, and the migrator creates all of them:
+trades, daily statements, their snapshots, the trading account events and the export cursor go to PostgreSQL,
+ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and the migrator creates
+all of them — plus `trading_accounts`, which it derives from the event log with a trigger:
 
 | Table | Default name | Engine |
 |---|---|---|
@@ -272,6 +276,8 @@ trades, daily statements, their snapshots and the export cursor go to PostgreSQL
 | Daily statements | `daily_statements_export` | PostgreSQL |
 | Order snapshots | `daily_statements_order_snapshots` | PostgreSQL |
 | Position snapshots | `daily_statements_position_snapshots` | PostgreSQL |
+| Trading account events | `trading_account_events` | PostgreSQL |
+| Trading accounts | `trading_accounts` | PostgreSQL |
 | Export cursor | `export_cursor` | PostgreSQL |
 | Ticks | `ticks` | ClickHouse |
 | Journal | `schema_versions` | both |
@@ -349,7 +355,6 @@ src/DbUp.ClickHouse/   DbUp provider for ClickHouse (connection manager, journal
 src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI
 src/Migrator.Tests/    Unit and integration tests
-  TestScripts/clickhouse/  Test-only ClickHouse copies of the PostgreSQL tables and views, never shipped
 docs/                  Full documentation, indexed in docs/README.md
 migrate.sh             Wrapper over the CLI
 docker-compose.yml     ClickHouse and PostgreSQL for the integration tests

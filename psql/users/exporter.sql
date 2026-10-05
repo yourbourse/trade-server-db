@@ -31,4 +31,9 @@ GRANT INSERT, SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
 
 GRANT INSERT, SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
 
+GRANT INSERT, SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
+
+-- the projection trigger runs as the exporter, so it needs to write the derived table
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##trading_accounts_table## TO ##user_name##;
+
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;

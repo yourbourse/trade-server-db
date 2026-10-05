@@ -5,6 +5,11 @@ on:
     branches: [ master ]
   pull_request:
 
+# checks: write is what lets the test report be published as a check run; everything else stays read only
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -47,6 +52,7 @@ jobs:
           global-json-file: global.json
 
       - name: Build
+        id: build
         run: dotnet build TradeServerDb.slnx -c Release --nologo
 
       - name: Unit tests
@@ -63,7 +69,23 @@ jobs:
           --filter "Category=Integration"
           --logger "junit;LogFilePath=../../test-reports/integration-tests.xml"
 
-      - name: Publish test reports
+      # the JUnit XML is otherwise only downloadable from the artefact below, so a failure is invisible on the
+      # run page. This parses both reports into the job summary and into a check run, with an annotation on the
+      # failing test. It runs whether the tests passed or failed, but not when the build never produced a
+      # report - require_tests would then fail on an empty glob and bury the actual error
+      - name: Publish test results
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: mikepenz/action-junit-report@a9170d5795813c01ab4901ffb045b52bab4ab09d # v6.5.0
+        with:
+          report_paths: test-reports/*.xml
+          check_name: Test results
+          detailed_summary: true
+          group_suite: true
+          require_tests: true
+          # dotnet test already fails the job on a failing test; this step only reports
+          fail_on_failure: false
+
+      - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7
         with:

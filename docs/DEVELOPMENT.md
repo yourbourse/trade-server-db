@@ -148,18 +148,11 @@ trade-server-db/
 │   ├── DbUp.PSQL/                      DbUp provider for PostgreSQL
 │   ├── DbUp.ClickHouse/                DbUp provider for ClickHouse
 │   └── Migrator.Tests/                 Unit + integration tests
-│       └── TestScripts/clickhouse/         ClickHouse copies of the PostgreSQL tables and views, test-only (see below)
-├── .github/workflows/ci.yaml           build, unit tests, integration tests
+├── .github/workflows/ci.yaml           build, unit tests, integration tests, published results
 ├── docker-compose.yml                  ClickHouse + PostgreSQL for testing
 ├── migrate.sh                          build-and-run wrapper
 └── docs/                               this documentation
 ```
-
-> **Note:** `src/Migrator.Tests/TestScripts/clickhouse/` holds ClickHouse translations of the PostgreSQL tables
-> and the two views over `trades`. They are not part of any shipped migration — the trade server never writes
-> those entities to ClickHouse — and exist only so the ClickHouse integration tests have a larger schema to
-> migrate against. The tests pass the folder to the runner as an extra `--scripts` folder ahead of
-> `clickhouse/`, which is also why the view-splitting test can run on both engines.
 
 ---
 
@@ -247,10 +240,15 @@ Beyond formatting, the house style in this repository:
 | Build | `dotnet build TradeServerDb.slnx -c Release` |
 | Unit tests | `dotnet test … --filter "Category!=Integration"` |
 | Integration tests | `dotnet test … --filter "Category=Integration"` with `ASPNETCORE_ENVIRONMENT=integration` |
+| Results | Both JUnit reports parsed into the job summary and a **Test results** check run, with an annotation on each failing test |
 | Reports | JUnit XML uploaded as the `test-reports` artefact, always |
 
 Service containers: `clickhouse/clickhouse-server:26.7` on `18223` and `postgres:18` on `15432` — the same ports
 as `docker-compose.yml`, so the integration tests need no separate configuration locally or in CI.
+
+The publishing step is `mikepenz/action-junit-report`, pinned to the commit behind its `v6.5.0` tag rather than
+to a moving major tag. It only reports: `dotnet test` is what fails the job on a failing test. It is skipped
+when the build itself failed, because `require_tests` would then fail on an empty glob and bury the real error.
 
 ---
 

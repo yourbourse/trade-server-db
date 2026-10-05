@@ -39,6 +39,9 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultDailyStatementsTable = "daily_statements_export";
     private const string DefaultOrderSnapshotsTable = "daily_statements_order_snapshots";
     private const string DefaultPositionSnapshotsTable = "daily_statements_position_snapshots";
+    private const string DefaultTradingAccountEventsTable = "trading_account_events";
+    private const string DefaultTradingAccountsTable = "trading_accounts";
+    private const string DefaultTradingAccountsResyncView = "trading_accounts_resync";
     private const string DefaultTicksTable = "ticks";
     private const string DefaultTicksTtlDays = "31";
     private const string DefaultTradesHistoryView = "trades_history";
@@ -53,6 +56,7 @@ public class MigrationHandler : IMigrationHandler
         "daily_statements_table",
         "order_snapshots_table",
         "position_snapshots_table",
+        "trading_account_events_table",
         "cursor_table",
         "ticks_table"
     ];
@@ -68,17 +72,32 @@ public class MigrationHandler : IMigrationHandler
     private static readonly string[] viewVariables =
     [
         "trades_history_view",
-        "cash_transfers_view"
+        "cash_transfers_view",
+        "trading_accounts_resync_view"
+    ];
+
+    /// <summary>
+    /// The variables naming a table this repository derives from an exported table and maintains itself.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="tableVariables"/> for the same reason <see cref="viewVariables"/> is: the
+    /// trade server never writes to one of these, and so has no say in its name. They are templated all the
+    /// same, so a deployment that already owns an object under one of the default names can move ours aside
+    /// with --variables.
+    /// </remarks>
+    private static readonly string[] derivedTableVariables =
+    [
+        "trading_accounts_table"
     ];
 
     /// <summary>
     /// The variables that name a database object and therefore end up in DDL as text.
     /// </summary>
     /// <remarks>
-    /// Every table and view variable belongs here, so the lists are kept as one - adding a table to
-    /// <see cref="tableVariables"/> alone would otherwise leave its name unvalidated.
+    /// Every table, view and derived table variable belongs here, so the lists are kept as one - adding a table
+    /// to <see cref="tableVariables"/> alone would otherwise leave its name unvalidated.
     /// </remarks>
-    private static readonly string[] identifierVariables = ["database_name", "cluster_name", ..tableVariables, ..viewVariables];
+    private static readonly string[] identifierVariables = ["database_name", "cluster_name", ..tableVariables, ..viewVariables, ..derivedTableVariables];
 
     /// <summary>
     /// Splits a user definition only at the semicolons that introduce one of its keys.
@@ -208,7 +227,16 @@ public class MigrationHandler : IMigrationHandler
         }
     }
 
-    private static Dictionary<string, string> BuildVariables(DatabaseProvider provider, string databaseName, string? clusterName, CommandLineOptions options)
+    /// <summary>
+    /// The template variables a run substitutes into the scripts: the derived values, then anything --variables
+    /// adds or overrides, with every name that reaches DDL validated as an identifier afterwards.
+    /// </summary>
+    /// <remarks>
+    /// Public so the tests can assert the full set. A script naming a variable this does not produce is rejected
+    /// before it reaches the server, so adding a variable here without adding it everywhere a variable set is
+    /// assembled - the integration fixture included - fails every migration that touches the script using it.
+    /// </remarks>
+    public static Dictionary<string, string> BuildVariables(DatabaseProvider provider, string databaseName, string? clusterName, CommandLineOptions options)
     {
         var variables = new Dictionary<string, string>
         {
@@ -219,6 +247,9 @@ public class MigrationHandler : IMigrationHandler
             ["daily_statements_table"] = DefaultDailyStatementsTable,
             ["order_snapshots_table"] = DefaultOrderSnapshotsTable,
             ["position_snapshots_table"] = DefaultPositionSnapshotsTable,
+            ["trading_account_events_table"] = DefaultTradingAccountEventsTable,
+            ["trading_accounts_table"] = DefaultTradingAccountsTable,
+            ["trading_accounts_resync_view"] = DefaultTradingAccountsResyncView,
             ["ticks_table"] = DefaultTicksTable,
             ["trades_history_view"] = DefaultTradesHistoryView,
             ["cash_transfers_view"] = DefaultCashTransfersView

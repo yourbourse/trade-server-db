@@ -120,6 +120,8 @@ GRANT INSERT, SELECT ON TABLE ##trades_table## TO ##user_name##;
 GRANT INSERT, SELECT ON TABLE ##daily_statements_table## TO ##user_name##;
 GRANT INSERT, SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
 GRANT INSERT, SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
+GRANT INSERT, SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##trading_accounts_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 ```
 
@@ -131,8 +133,11 @@ GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 | `daily_statements_export` | `INSERT`, `SELECT` | `SELECT` |
 | `daily_statements_order_snapshots` | `INSERT`, `SELECT` | `SELECT` |
 | `daily_statements_position_snapshots` | `INSERT`, `SELECT` | `SELECT` |
+| `trading_account_events` | `INSERT`, `SELECT` | `SELECT` |
+| `trading_accounts` | `INSERT`, `SELECT`, `UPDATE`, `DELETE` | `SELECT` |
 | `export_cursor` | `INSERT`, `SELECT`, `UPDATE` | `SELECT` |
 | `trades_history` (view) | — | `SELECT` |
+| `trading_accounts_resync` (view) | — | `SELECT` |
 | `cash_transfers` (view) | — | `SELECT` |
 
 `UPDATE` is granted on the cursor table alone: it is the only row the export ever rewrites. An exported record is

@@ -229,4 +229,91 @@ public class MigrationHandlerTests
         Assert.Equal(hash, script.GetHash());
         Assert.NotEqual(hash, (script + " ").GetHash());
     }
+
+    /// <summary>
+    /// The exact set a PostgreSQL run substitutes into the scripts.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately an exact comparison rather than a "contains" check. A script naming a variable the migrator
+    /// does not produce is rejected before it reaches the server, so every place that assembles a variable set -
+    /// this list, the integration fixture, and the documentation - has to gain the name at the same time. An
+    /// exact assertion is what makes adding one here fail loudly instead of somewhere further away.
+    ///
+    /// <c>ticks_table</c> is listed even though only the ClickHouse scripts use it: it is defined for both
+    /// providers so a script does not have to care which engine it runs on.
+    /// </remarks>
+    private static readonly string[] postgresVariables =
+    [
+        "assembly_version",
+        "database_name",
+        "trades_table",
+        "cursor_table",
+        "daily_statements_table",
+        "order_snapshots_table",
+        "position_snapshots_table",
+        "trading_account_events_table",
+        "trading_accounts_table",
+        "trading_accounts_resync_view",
+        "ticks_table",
+        "trades_history_view",
+        "cash_transfers_view"
+    ];
+
+    [Fact(DisplayName = "BuildVariables Should produce exactly the documented PostgreSQL variables")]
+    public void BuildVariables_Should_produce_exactly_the_documented_PostgreSQL_variables()
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.Equal(postgresVariables.Order(), variables.Keys.Order());
+    }
+
+    [Theory(DisplayName = "BuildVariables Should default the trading account objects to their documented names")]
+    [InlineData("trading_account_events_table", "trading_account_events")]
+    [InlineData("trading_accounts_table", "trading_accounts")]
+    [InlineData("trading_accounts_resync_view", "trading_accounts_resync")]
+    public void BuildVariables_Should_default_the_trading_account_objects_to_their_documented_names(string variable, string expected)
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.Equal(expected, variables[variable]);
+    }
+
+    [Theory(DisplayName = "BuildVariables Should let --variables rename a trading account object")]
+    [InlineData("trading_account_events_table")]
+    [InlineData("trading_accounts_table")]
+    [InlineData("trading_accounts_resync_view")]
+    public void BuildVariables_Should_let_variables_rename_a_trading_account_object(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };
+
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
+
+        // assert
+        Assert.Equal("renamed_object", variables[variable]);
+    }
+
+    /// <summary>
+    /// Every one of these names is written into DDL as text, so an unchecked value would travel to the server
+    /// verbatim. The guard lives in identifierVariables, and a name added to the defaults but not to that list
+    /// would pass this test only if it were validated - which is the point of covering all three.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should reject a trading account object name that is not an identifier")]
+    [InlineData("trading_account_events_table")]
+    [InlineData("trading_accounts_table")]
+    [InlineData("trading_accounts_resync_view")]
+    public void BuildVariables_Should_reject_a_trading_account_object_name_that_is_not_an_identifier(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=not a valid name; DROP TABLE trades"] };
+
+        // act, assert
+        Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
+    }
 }
