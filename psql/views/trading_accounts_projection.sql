@@ -1,8 +1,11 @@
--- Maintains ##trading_accounts_table## from ##trading_account_events_table##: the projection function,
--- the trigger, and a reconcile pass over the log. All three stay in one file: it is one transaction, and the
--- trigger's lock keeps the exporter out while the reconcile runs.
+-- Maintains ##trading_accounts_table## from ##trading_account_events_table##: the projection function, the
+-- trigger and a reconcile pass. All three stay in one file because it is one transaction, and the trigger's
+-- lock keeps the exporter out while the reconcile runs.
 --
 -- Event types: 0 account state, 1 deletion, 2 resync started, 3 resync finished.
+--
+-- The column lists are long and repeated, so a mismapping is the realistic defect; the guard is the "copy
+-- every field from the event unchanged" test, which compares whole rows as jsonb.
 
 CREATE OR REPLACE FUNCTION project_##trading_accounts_table##()
     RETURNS trigger
@@ -12,8 +15,8 @@ $$
 BEGIN
     CASE NEW.event_type
 
-        -- Account state: upsert, last write wins. No version guard - a resync re-announces an unchanged
-        -- account at the same version, and skipping it would get it swept.
+        -- Account state: upsert, last write wins. A version guard would skip a resync's re-announcement of
+        -- an unchanged account, and the sweep would then delete it.
         WHEN 0 THEN
             INSERT INTO ##trading_accounts_table## (sender_id,
                                                     trading_account_id,
@@ -75,9 +78,9 @@ BEGIN
         WHEN 2 THEN
             NULL;
 
-        -- Resync finished: delete whatever the resync did not re-announce, i.e. rows stamped before the
-        -- sender's newest start marker. marker.id < NEW.id because an AFTER ROW trigger already sees the whole
-        -- batch, which may contain a later start marker. No start marker -> NULL -> nothing deleted.
+        -- Resync finished: delete whatever it did not re-announce, i.e. rows stamped before the sender's
+        -- newest start marker. marker.id < NEW.id because an AFTER ROW trigger already sees the whole batch,
+        -- which may carry a later resync's start marker. No start marker -> NULL -> nothing deleted.
         WHEN 3 THEN
             DELETE
             FROM ##trading_accounts_table##
@@ -184,7 +187,7 @@ ON CONFLICT (sender_id, trading_account_id) DO UPDATE
         source_event_row_id        = excluded.source_event_row_id,
         time_applied               = excluded.time_applied;
 
--- the other half: an account whose newest retained event is a deletion the derived row does not reflect yet
+-- Removal 1 of 2: the account was deleted. A deletion is an event, so look for it directly.
 DELETE
 FROM ##trading_accounts_table## a
     USING (SELECT DISTINCT ON (sender_id, trading_account_id) sender_id, trading_account_id, id, event_type
@@ -195,3 +198,19 @@ WHERE l.sender_id = a.sender_id
   AND l.trading_account_id = a.trading_account_id
   AND l.event_type = 1
   AND l.id > a.source_event_row_id;
+
+-- Removal 2 of 2: a resync did not re-announce the account. That is an absence, not an event, so it is found
+-- by comparing stamps against the newest completed resync's start marker. Only has work to do when the trigger
+-- was absent when that end marker arrived; a later resync would sweep it anyway.
+DELETE
+FROM ##trading_accounts_table## a
+    USING (SELECT started.sender_id, max(started.id) AS watermark
+           FROM ##trading_account_events_table## started
+           WHERE started.event_type = 2
+             AND started.id < (SELECT max(finished.id)
+                               FROM ##trading_account_events_table## finished
+                               WHERE finished.sender_id = started.sender_id
+                                 AND finished.event_type = 3)
+           GROUP BY started.sender_id) w
+WHERE w.sender_id = a.sender_id
+  AND a.source_event_row_id < w.watermark;

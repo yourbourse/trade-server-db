@@ -1,12 +1,9 @@
 -- Client lifecycle events exported by the trade server; ##clients_table## is derived from it.
 --
--- Order by id, not time_inserted: every event of a batch shares one time_inserted.
--- Columns that do not apply carry a zero ('' / 0 / epoch), never NULL. Most of a client's content is
--- conditional on client_type, which is why the text columns default to '' here and not in ##clients_table##.
--- The enum columns hold the trade server's ClientConfig ordinals, as trade_type and side do in ##trades_table##;
--- docs/SCHEMA_REFERENCE.md lists the names.
--- Column order and types follow the schema agreed with the trade server team, so a positional COPY also lines up.
--- No deduplication key: delivery is at-least-once, so a redelivered event lands as a second row.
+-- Order by id, not time_inserted: a whole batch shares one time_inserted. Columns that do not apply carry a
+-- zero ('' / 0 / epoch), never NULL. Enum columns hold the trade server's ClientConfig ordinals.
+-- Column order and types are the schema agreed with the trade server team, so a positional COPY also lines up.
+-- Delivery is at-least-once and there is no deduplication key, so a redelivered event lands as a second row.
 
 CREATE TABLE IF NOT EXISTS ##client_events_table##
 (
@@ -15,7 +12,7 @@ CREATE TABLE IF NOT EXISTS ##client_events_table##
     sender_id                       BIGINT                   NOT NULL,
 
     -- top-level
-    -- 0 client state, 1 deletion, 2 resync started, 3 resync finished; unknown values are stored, not projected
+    -- 0 client state, 1 deletion, 2 resync started, 3 resync finished; anything else is stored, not projected
     event_type                      SMALLINT                 NOT NULL,
     -- 0 on both marker rows
     client_id                       BIGINT                   NOT NULL,
@@ -87,7 +84,7 @@ CREATE TABLE IF NOT EXISTS ##client_events_table##
     company_registration_address    VARCHAR(64)              NOT NULL DEFAULT '',
     company_website                 VARCHAR(64)              NOT NULL DEFAULT '',
 
-    -- contact; messengers and social_media are comma separated lists, stored as the API sends them
+    -- contact; the two lists are stored as the API sends them, comma separated
     email                           VARCHAR(64)              NOT NULL DEFAULT '',
     phone                           VARCHAR(32)              NOT NULL DEFAULT '',
     messengers                      VARCHAR(128)             NOT NULL DEFAULT '',
@@ -105,7 +102,7 @@ CREATE TABLE IF NOT EXISTS ##client_events_table##
     client_external_id              VARCHAR(64)              NOT NULL DEFAULT '',
     comment                         VARCHAR(256)             NOT NULL DEFAULT '',
 
-    -- trading experience, in years; 0 also means not answered, as in the API
+    -- trading experience, in years; 0 also means not answered
     experience_forex                INTEGER                  NOT NULL,
     experience_cfd                  INTEGER                  NOT NULL,
     experience_futures              INTEGER                  NOT NULL,
@@ -115,7 +112,7 @@ CREATE TABLE IF NOT EXISTS ##client_events_table##
 
 -- index names lead with what they cover so 63-byte truncation cannot make two collide
 
--- a client's history; used by the projection's reconcile
+-- a client's history
 CREATE INDEX IF NOT EXISTS idx_client_row_##client_events_table##
     ON ##client_events_table## (sender_id, client_id, id);
 

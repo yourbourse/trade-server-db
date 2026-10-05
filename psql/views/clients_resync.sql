@@ -1,5 +1,6 @@
 -- Per sender: whether a resync is in progress, i.e. whether ##clients_table## may still be converging.
--- Aggregated from the resync markers in ##client_events_table##; there is no table behind it.
+-- Aggregated from the resync markers in ##client_events_table##; there is no table behind it. A sender that
+-- has never resynced is absent entirely.
 
 CREATE OR REPLACE VIEW ##clients_resync_view## AS
 SELECT sender_id,

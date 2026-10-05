@@ -588,11 +588,15 @@ different people, often with different names. See
 [Every id is scoped to its sender](#every-id-is-scoped-to-its-sender).
 
 ```sql
-SELECT c.client_id, c.person_last_name, count(a.trading_account_id) AS accounts
+SELECT c.sender_id, c.client_id, c.person_last_name, count(a.trading_account_id) AS accounts
 FROM clients c
          LEFT JOIN trading_accounts a ON a.sender_id = c.sender_id AND a.client_id = c.client_id
-GROUP BY c.client_id, c.person_last_name;
+GROUP BY c.sender_id, c.client_id, c.person_last_name;
 ```
+
+`sender_id` is in the `GROUP BY` as well as the join. Grouping it away would merge two instances' clients that
+share a `client_id` into one row and add their account counts together — the same mistake as joining without
+it, one step later.
 
 ### PostgreSQL
 

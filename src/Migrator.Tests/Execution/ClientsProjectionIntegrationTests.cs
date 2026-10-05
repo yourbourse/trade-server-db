@@ -144,6 +144,82 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         Assert.Empty(Strings(connectionString, sql));
     }
 
+    /// <summary>
+    /// The column set, the types and the <b>order</b> are the schema agreed with the trade server team, so the
+    /// exporter lines up whether its COPY names its columns or relies on their position.
+    ///
+    /// The list below is written out deliberately rather than read from the database. Every other fixture here
+    /// discovers the live order and then uses that same order for both the column list and the values, so a
+    /// migration that reordered client_events would keep them all green - they are self-consistent by
+    /// construction. This is the one test that would fail.
+    /// </summary>
+    [Fact(DisplayName = "Schema Should carry the agreed columns in the agreed order")]
+    public void Schema_Should_carry_the_agreed_columns_in_the_agreed_order()
+    {
+        // arrange
+        var connectionString = Migrate();
+
+        string[] agreed =
+        [
+            "id", "time_inserted", "sender_id", "event_type", "client_id", "version", "client_type",
+            "client_status", "assigned_manager", "time_created", "time_modified", "compliance_approved_by",
+            "compliance_client_category", "compliance_date_approval", "compliance_date_termination",
+            "lead_campaign", "lead_source", "introducer", "person_title", "person_first_name",
+            "person_middle_name", "person_last_name", "person_birth_date", "person_citizenship",
+            "person_tax_id", "person_document_type", "person_document_number", "person_document_date",
+            "person_document_expiration_date", "person_document_extra", "person_employment", "person_industry",
+            "person_education", "person_wealth_source", "person_annual_income", "person_annual_income_currency",
+            "person_net_assets", "person_gender", "preferred_communication", "preferred_language",
+            "company_name", "company_registration_number", "company_registration_date",
+            "company_registration_authority", "company_vat", "company_lei", "company_license_number",
+            "company_license_authority", "company_country", "company_registration_address", "company_website",
+            "email", "phone", "messengers", "social_media", "last_contact_date", "address_country",
+            "address_postcode", "address_street", "address_state", "address_city", "client_external_id",
+            "comment", "experience_forex", "experience_cfd", "experience_futures", "experience_stocks",
+            "experience_crypto"
+        ];
+
+        // act
+        var actual = Strings(connectionString,
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'client_events'
+            ORDER BY ordinal_position
+            """);
+
+        // assert
+        Assert.Equal(agreed, actual);
+    }
+
+    /// <summary>
+    /// The agreed types, for the columns where the type was decided rather than obvious: the eight enums are
+    /// integer ordinals and the two amounts are double precision, both of which an earlier draft had otherwise.
+    /// </summary>
+    [Fact(DisplayName = "Schema Should carry the agreed types for the enum and amount columns")]
+    public void Schema_Should_carry_the_agreed_types_for_the_enum_and_amount_columns()
+    {
+        // arrange
+        var connectionString = Migrate();
+
+        // act, assert
+        foreach (var column in new[]
+                 {
+                     "client_type", "client_status", "person_employment", "person_industry", "person_education",
+                     "person_wealth_source", "person_gender", "preferred_communication"
+                 })
+        {
+            Assert.Equal("integer", Scalar<string>(connectionString,
+                $"SELECT data_type FROM information_schema.columns WHERE table_name = 'client_events' AND column_name = '{column}'"));
+        }
+
+        foreach (var column in new[] { "person_annual_income", "person_net_assets" })
+        {
+            Assert.Equal("double precision", Scalar<string>(connectionString,
+                $"SELECT data_type FROM information_schema.columns WHERE table_name = 'client_events' AND column_name = '{column}'"));
+        }
+    }
+
     [Fact(DisplayName = "Edge case Should let the last event of a batch win for one client")]
     public void Edge_case_Should_let_the_last_event_of_a_batch_win_for_one_client()
     {
@@ -277,8 +353,10 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         var connectionString = Migrate();
         InsertOneStatement(connectionString, StateEvent(connectionString, Sender, 1002, version: 1, experience: 10));
 
-        // act, an event type a later trade server might add. It must not raise: raising here would abort the
-        // exporting COPY and stall the export of every deployment that had not migrated yet
+        // act, an event_type outside the established set. It is not expected to happen - the four types are a
+        // fixed contract - so this is a bug, a corrupt row or something written by hand. It must still not
+        // raise: a plpgsql CASE with no matching branch and no ELSE raises CASE_NOT_FOUND, which aborts the
+        // whole exporting COPY, so one bad row would take every good row in its batch with it
         InsertOneStatement(connectionString,
             Event(connectionString, Sender, eventType: 99, ("client_id", "1002"), ("version", "7"), ("comment", "'unknown'")));
 
@@ -495,6 +573,46 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         Assert.Equal([(6001L, 1L, 40, "while broken")], ReadClients(connectionString));
         Assert.Equal(1, Scalar<long>(connectionString,
             "SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_project_clients' AND NOT tgisinternal"));
+    }
+
+    /// <summary>
+    /// A regression test, from code review. A resync's sweep happens at the end marker, in the trigger - so if
+    /// the trigger is absent when that marker arrives, nothing ever removes the clients the resync did not
+    /// re-announce. The reconcile used to replay only state events and explicit deletions, so --force refreshed
+    /// what the resync announced and left the rest behind indefinitely, correctly stamped and long dead.
+    ///
+    /// The previous repair test drops the trigger <i>after</i> a resync has completed; this one has it absent
+    /// for the whole resync, which is the case that was wrong.
+    /// </summary>
+    [Fact(DisplayName = "Regression Should apply a resync sweep that happened while the trigger was absent")]
+    public void Regression_Should_apply_a_resync_sweep_that_happened_while_the_trigger_was_absent()
+    {
+        // arrange, two live clients, both projected
+        var request = CreateRequest();
+        AssertSuccessful(CreateRunner().Run(request));
+        var connectionString = request.ConnectionString;
+
+        InsertOneStatement(connectionString,
+            StateEvent(connectionString, Sender, 101, version: 1, comment: "re-announced"),
+            StateEvent(connectionString, Sender, 102, version: 1, comment: "dropped by the resync"));
+
+        Assert.Equal(2, ReadClients(connectionString).Count);
+
+        // act, the trigger is gone for the whole resync, which re-announces 101 only
+        Execute(connectionString, "DROP TRIGGER trg_project_clients ON client_events");
+
+        InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 2));
+        InsertOneStatement(connectionString,
+            StateEvent(connectionString, Sender, 101, version: 1, comment: "re-announced"));
+        InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 3));
+
+        // nothing was projected while it was gone, so the table still shows both
+        Assert.Equal(2, ReadClients(connectionString).Count);
+
+        AssertSuccessful(CreateRunner().Run(request with { FullReload = true }));
+
+        // assert, the reconcile applied the sweep the end marker never got to run
+        Assert.Equal([(101L, 1L, 0, "re-announced")], ReadClients(connectionString));
     }
 
     /// <summary>

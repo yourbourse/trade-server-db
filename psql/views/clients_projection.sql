@@ -1,12 +1,11 @@
--- Maintains ##clients_table## from ##client_events_table##: the projection function, the trigger, and a
--- reconcile pass over the log. All three stay in one file: it is one transaction, and the trigger's lock keeps
--- the exporter out while the reconcile runs.
+-- Maintains ##clients_table## from ##client_events_table##: the projection function, the trigger and a
+-- reconcile pass. All three stay in one file because it is one transaction, and the trigger's lock keeps the
+-- exporter out while the reconcile runs.
 --
 -- Event types: 0 client state, 1 deletion, 2 resync started, 3 resync finished.
 --
--- The function names sixty-five columns four times over, so a mismapping is the realistic defect here. The
--- guard is a test, not care: "Should copy every field from the event unchanged" compares the whole log row
--- against the whole state row as jsonb.
+-- The column lists are long and repeated, so a mismapping is the realistic defect; the guard is the "copy
+-- every field from the event unchanged" test, which compares whole rows as jsonb.
 
 CREATE OR REPLACE FUNCTION project_##clients_table##()
     RETURNS trigger
@@ -16,8 +15,8 @@ $$
 BEGIN
     CASE NEW.event_type
 
-        -- Client state: upsert, last write wins. No version guard - a resync re-announces an unchanged
-        -- client at the same version, and skipping it would get it swept.
+        -- Client state: upsert, last write wins. A version guard would skip a resync's re-announcement of
+        -- an unchanged client, and the sweep would then delete it.
         WHEN 0 THEN
             INSERT INTO ##clients_table## (sender_id,
                                            client_id,
@@ -232,9 +231,9 @@ BEGIN
         WHEN 2 THEN
             NULL;
 
-        -- Resync finished: delete whatever the resync did not re-announce, i.e. rows stamped before the
-        -- sender's newest start marker. marker.id < NEW.id because an AFTER ROW trigger already sees the whole
-        -- batch, which may contain a later start marker. No start marker -> NULL -> nothing deleted.
+        -- Resync finished: delete whatever it did not re-announce, i.e. rows stamped before the sender's
+        -- newest start marker. marker.id < NEW.id because an AFTER ROW trigger already sees the whole batch,
+        -- which may carry a later resync's start marker. No start marker -> NULL -> nothing deleted.
         WHEN 3 THEN
             DELETE
             FROM ##clients_table##
@@ -494,7 +493,7 @@ ON CONFLICT (sender_id, client_id) DO UPDATE
         source_event_row_id             = excluded.source_event_row_id,
         time_applied                    = excluded.time_applied;
 
--- the other half: a client whose newest retained event is a deletion the derived row does not reflect yet
+-- Removal 1 of 2: the client was deleted. A deletion is an event, so look for it directly.
 DELETE
 FROM ##clients_table## c
     USING (SELECT DISTINCT ON (sender_id, client_id) sender_id, client_id, id, event_type
@@ -505,3 +504,19 @@ WHERE l.sender_id = c.sender_id
   AND l.client_id = c.client_id
   AND l.event_type = 1
   AND l.id > c.source_event_row_id;
+
+-- Removal 2 of 2: a resync did not re-announce the client. That is an absence, not an event, so it is found
+-- by comparing stamps against the newest completed resync's start marker. Only has work to do when the trigger
+-- was absent when that end marker arrived; a later resync would sweep it anyway.
+DELETE
+FROM ##clients_table## c
+    USING (SELECT started.sender_id, max(started.id) AS watermark
+           FROM ##client_events_table## started
+           WHERE started.event_type = 2
+             AND started.id < (SELECT max(finished.id)
+                               FROM ##client_events_table## finished
+                               WHERE finished.sender_id = started.sender_id
+                                 AND finished.event_type = 3)
+           GROUP BY started.sender_id) w
+WHERE w.sender_id = c.sender_id
+  AND c.source_event_row_id < w.watermark;

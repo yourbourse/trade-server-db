@@ -1,10 +1,9 @@
 -- Current state of every live client, one row per (sender_id, client_id).
 --
 -- Not written by the trade server: maintained from ##client_events_table## by the trigger in
--- views/clients_projection.sql, in the same transaction as the event.
--- client_id is the identifier ##trading_accounts_table## carries under that name, so the two tables join.
--- Same columns as a state carrying event, in the same order, minus the log's envelope.
--- No foreign key on source_event_row_id: events age out of retention long before the client does.
+-- views/clients_projection.sql, in the same transaction as the event. Same columns as a state carrying event,
+-- in the same order, minus the log's envelope. No foreign key on source_event_row_id: events age out of
+-- retention long before the client does.
 
 CREATE TABLE IF NOT EXISTS ##clients_table##
 (
