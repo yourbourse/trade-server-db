@@ -40,27 +40,30 @@ The order in which values are decided:
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=…` overrides it | `export_cursor` |
 | `##trading_account_events_table##` | `trading_account_events`, unless overridden | `trading_account_events` |
 | `##trading_accounts_table##` | `trading_accounts`, unless overridden | `trading_accounts` |
+| `##symbol_events_table##` | `symbol_events`, unless overridden | `symbol_events` |
+| `##symbols_table##` | `symbols`, unless overridden | `symbols` |
 | `##ticks_table##` | `ticks`, unless `--variables ticks_table=…` overrides it | `ticks` |
 | `##trades_history_view##` | `trades_history`, unless overridden | `trades_history` |
 | `##cash_transfers_view##` | `cash_transfers`, unless overridden | `cash_transfers` |
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless overridden | `trading_accounts_resync` |
+| `##symbols_resync_view##` | `symbols_resync`, unless overridden | `symbols_resync` |
 | `##assembly_version##` | Version of the migrator binary applying the script | `1.0.0.0` |
 
 The table names are templated because the trade server's export configuration makes them configurable — each
 export pipeline names its own target table, and a deployment that renamed one passes the name on the command
 line so the scripts follow. Use the variables instead of hard-coded names in any script that touches those
-tables. Six of them name PostgreSQL tables and `##ticks_table##` names the ClickHouse one; all seven are
+tables. Seven of them name PostgreSQL tables and `##ticks_table##` names the ClickHouse one; all eight are
 defined for both providers, so a script does not have to care which engine it runs on.
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --variables trades_table=trades_export cursor_table=trades_export_cursor
 ```
 
-The view names, and `##trading_accounts_table##`, are templated for a different reason: the trade server never
-writes to any of them and so has no say in their names, but a database that already owns an object called
-`trades_history`, `cash_transfers`, `trading_accounts` or `trading_accounts_resync` needs a way to move ours
-aside. `##trading_accounts_table##` is a real table rather than a view — it is derived from
-`##trading_account_events_table##` by a trigger, not written by the export.
+The view names, `##trading_accounts_table##` and `##symbols_table##` are templated for a different reason: the
+trade server never writes to any of them and so has no say in their names, but a database that already owns an
+object called `trades_history`, `cash_transfers`, `trading_accounts`, `trading_accounts_resync`, `symbols` or
+`symbols_resync` needs a way to move ours aside. `##trading_accounts_table##` and `##symbols_table##` are real
+tables rather than views — each is derived from its event log by a trigger, not written by the export.
 
 > **Note:** Changing a table name changes the processed content of every re-runnable script that mentions it, so
 > its MD5 changes and the script re-runs. That is the intended behaviour, not a side effect.
@@ -152,9 +155,12 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##ticks_table##` | same |
 | `##trading_account_events_table##` | same |
 | `##trading_accounts_table##` | same |
+| `##symbol_events_table##` | same |
+| `##symbols_table##` | same |
 | `##trades_history_view##` | same |
 | `##cash_transfers_view##` | same |
 | `##trading_accounts_resync_view##` | same |
+| `##symbols_resync_view##` | same |
 | `##cluster_name##` | same, when not empty |
 | `##user_name##` | same |
 

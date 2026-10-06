@@ -192,6 +192,9 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##trading_account_events_table##` | `trading_account_events`, unless `--variables` says otherwise |
 | `##trading_accounts_table##` | `trading_accounts`, unless `--variables` says otherwise |
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless `--variables` says otherwise |
+| `##symbol_events_table##` | `symbol_events`, unless `--variables` says otherwise |
+| `##symbols_table##` | `symbols`, unless `--variables` says otherwise |
+| `##symbols_resync_view##` | `symbols_resync`, unless `--variables` says otherwise |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=...` says otherwise |
 | `##ticks_table##` | `ticks`, unless `--variables ticks_table=...` says otherwise |
 | `##assembly_version##` | The version of the migrator that applied the script |
@@ -266,9 +269,10 @@ deployed database will silently differ from the file. Add a new one.
 ## Schema
 
 The two engines hold different tables, because the trade server exports each entity to exactly one of them:
-trades, daily statements, their snapshots, the trading account events and the export cursor go to PostgreSQL,
-ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and the migrator creates
-all of them — plus `trading_accounts`, which it derives from the event log with a trigger:
+trades, daily statements, their snapshots, the trading account events, the symbol events and the export cursor
+go to PostgreSQL, ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and the
+migrator creates all of them — plus `trading_accounts` and `symbols`, which it derives from their event logs
+with a trigger each:
 
 | Table | Default name | Engine |
 |---|---|---|
@@ -278,6 +282,8 @@ all of them — plus `trading_accounts`, which it derives from the event log wit
 | Position snapshots | `daily_statements_position_snapshots` | PostgreSQL |
 | Trading account events | `trading_account_events` | PostgreSQL |
 | Trading accounts | `trading_accounts` | PostgreSQL |
+| Symbol events | `symbol_events` | PostgreSQL |
+| Symbols | `symbols` | PostgreSQL |
 | Export cursor | `export_cursor` | PostgreSQL |
 | Ticks | `ticks` | ClickHouse |
 | Journal | `schema_versions` | both |
@@ -295,13 +301,17 @@ On top of `trades` there are two views:
 
 The two filters are complements, so every row of `trades` is visible through exactly one of them.
 
+Two further views, `trading_accounts_resync` and `symbols_resync`, report whether each sender's picture of the
+live set is settled or still converging, read from the resync markers in the matching event log.
+
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
 together.
 
 Every exported table is append-only. Delivery is at-least-once, so the same record can arrive twice after a
 restart, and a unique index rejects the second insert: `(sender_id, trade_id)` on trades, and
-`(sender_id, time_statement, …)` on the statement and snapshot tables.
+`(sender_id, time_statement, …)` on the statement and snapshot tables. The two event logs are the exception —
+neither carries a per-event id, so a redelivered event lands as a second row and the derived table absorbs it.
 
 `export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
 pipelines share it. The cursor row and the batch of records are written in the same transaction, which is what

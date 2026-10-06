@@ -122,6 +122,8 @@ GRANT INSERT, SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
 GRANT INSERT, SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
 GRANT INSERT, SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##trading_accounts_table## TO ##user_name##;
+GRANT INSERT, SELECT ON TABLE ##symbol_events_table## TO ##user_name##;
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##symbols_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 ```
 
@@ -135,15 +137,22 @@ GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 | `daily_statements_position_snapshots` | `INSERT`, `SELECT` | `SELECT` |
 | `trading_account_events` | `INSERT`, `SELECT` | `SELECT` |
 | `trading_accounts` | `INSERT`, `SELECT`, `UPDATE`, `DELETE` | `SELECT` |
+| `symbol_events` | `INSERT`, `SELECT` | `SELECT` |
+| `symbols` | `INSERT`, `SELECT`, `UPDATE`, `DELETE` | `SELECT` |
 | `export_cursor` | `INSERT`, `SELECT`, `UPDATE` | `SELECT` |
 | `trades_history` (view) | — | `SELECT` |
 | `trading_accounts_resync` (view) | — | `SELECT` |
+| `symbols_resync` (view) | — | `SELECT` |
 | `cash_transfers` (view) | — | `SELECT` |
 
-`UPDATE` is granted on the cursor table alone: it is the only row the export ever rewrites. An exported record is
-never updated or deleted.
+`UPDATE` is granted on the cursor table alone, among the tables the export writes: it is the only row the export
+ever rewrites, and an exported record is never updated or deleted. `trading_accounts` and `symbols` are not
+exported records — each is derived from its event log by a trigger that runs as whoever inserted the event, so
+the exporter needs to write and delete rows in both even though it never reads either. The wider grant gives
+nothing away: a principal that can insert events can already empty the derived table through the trigger, by
+writing a resync marker pair that re-announces nothing.
 
-The two views are granted to `ro` only — the exporter writes rows, it does not read reports. A view carries its
+The views are granted to `ro` only — the exporter writes rows, it does not read reports. A view carries its
 own privileges, so `SELECT` on `trades` does not reach through to a view over it; the grant has to name the view.
 The `views/` phase runs before `users/`, so both exist by the time the grants are applied.
 

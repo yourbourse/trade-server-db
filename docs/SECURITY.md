@@ -73,6 +73,10 @@ the intersection of what both engines accept as an unquoted identifier, capped a
 | `##cluster_name##` | `--cluster` (empty passes) |
 | `##user_name##` | each `--users` entry |
 
+The names of the event logs, the tables derived from them and the views are validated by the same rule and
+from the same sources — they are left out of the table only to keep it short. The complete set is in
+[Template Variables → Validation](TEMPLATE_VARIABLES.md#validation).
+
 Anything else fails the run **before a statement is built**, with an error naming the offending value and the
 rule. The variable-based identifiers are validated *after* `--variables` has been applied, so an override cannot
 smuggle something past the check.
