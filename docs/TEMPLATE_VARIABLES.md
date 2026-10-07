@@ -166,6 +166,28 @@ Some variables name a database object and therefore end up in DDL as text. They 
 
 An empty value passes — that is how `##cluster_name##` collapses on a single instance.
 
+### Table names are capped shorter than 63
+
+The scripts build index, function and trigger names by prefixing a configured table name — `idx_markers_`,
+`project_`, `trg_project_`, `idx_transfers_account_time_`. PostgreSQL truncates an identifier at 63 bytes
+**silently**, so a table name long enough to push the derived name past the limit would be cut, and two
+different configured names that agree up to the cut would produce one object. For an index the second
+`CREATE ... IF NOT EXISTS` then quietly does nothing; for the projection function the second
+`CREATE OR REPLACE FUNCTION` overwrites the first, and one trigger ends up running the other entity's body.
+
+A run is refused before any DDL is built when a name leaves no room:
+
+| Variable | Longest derived prefix | Maximum name |
+|----------|------------------------|--------------|
+| `##trades_table##` | `idx_transfers_account_time_` (27) | 36 |
+| `##position_snapshots_table##` | `idx_sender_stmt_position_` (25) | 38 |
+| `##daily_statements_table##` | `idx_sender_stmt_account_` (24) | 39 |
+| `##order_snapshots_table##` | `idx_sender_stmt_order_` (22) | 41 |
+| `##trading_account_events_table##` | `idx_account_row_` (16) | 47 |
+| `##group_events_table##` | `idx_group_row_` (14) | 49 |
+| `##trading_accounts_table##`, `##groups_table##` | `trg_project_` (12) | 51 |
+| `##cursor_table##`, `##ticks_table##` | none | 63 |
+
 Everything else, including every custom `--variables` value and `##assembly_version##`, is substituted as-is.
 
 ---

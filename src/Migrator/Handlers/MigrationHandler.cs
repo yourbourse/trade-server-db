@@ -34,6 +34,11 @@ public class MigrationHandler : IMigrationHandler
 {
     public const string ConnectionStringEnvironmentVariable = "TSDB_CONNECTION_STRING";
 
+    /// <summary>
+    /// PostgreSQL truncates an identifier at this many bytes, and ClickHouse accepts at least as many.
+    /// </summary>
+    private const int MaxIdentifierLength = 63;
+
     private const string DefaultTradesTable = "trades";
     private const string DefaultCursorTable = "export_cursor";
     private const string DefaultDailyStatementsTable = "daily_statements_export";
@@ -104,6 +109,36 @@ public class MigrationHandler : IMigrationHandler
     /// to <see cref="tableVariables"/> alone would otherwise leave its name unvalidated.
     /// </remarks>
     private static readonly string[] identifierVariables = ["database_name", "cluster_name", ..tableVariables, ..viewVariables, ..derivedTableVariables];
+
+    /// <summary>
+    /// The longest prefix the scripts attach to each table name when they derive another object's name from it.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL truncates an identifier at 63 bytes, silently. The scripts build index, function and trigger
+    /// names by prefixing a configured table name - <c>idx_markers_</c>, <c>project_</c>, <c>trg_project_</c> -
+    /// so a name long enough to push the result past 63 is cut, and two different configured names that agree
+    /// up to the cut produce one object. For an index that means the second CREATE ... IF NOT EXISTS quietly
+    /// does nothing; for the projection function it is worse, because the second CREATE OR REPLACE FUNCTION
+    /// overwrites the first and one of the two triggers then runs the other entity's body against its own NEW
+    /// record.
+    ///
+    /// Checking the derived length here turns all of that into a message before any DDL is built. The values
+    /// are the longest prefix in the scripts for each variable, so they have to be revisited if a longer one is
+    /// introduced - a test asserts every templated table name is covered.
+    /// </remarks>
+    private static readonly Dictionary<string, (int Prefix, string Example)> derivedNamePrefixes = new()
+    {
+        ["trades_table"] = (27, "idx_transfers_account_time_"),
+        ["daily_statements_table"] = (24, "idx_sender_stmt_account_"),
+        ["order_snapshots_table"] = (22, "idx_sender_stmt_order_"),
+        ["position_snapshots_table"] = (25, "idx_sender_stmt_position_"),
+        ["trading_account_events_table"] = (16, "idx_account_row_"),
+        ["trading_accounts_table"] = (12, "trg_project_"),
+        ["group_events_table"] = (14, "idx_group_row_"),
+        ["groups_table"] = (12, "trg_project_"),
+        ["cursor_table"] = (0, ""),
+        ["ticks_table"] = (0, "")
+    };
 
     /// <summary>
     /// Splits a user definition only at the semicolons that introduce one of its keys.
@@ -292,6 +327,21 @@ public class MigrationHandler : IMigrationHandler
             if (variables.TryGetValue(identifierVariable, out var identifier) && identifier.Length > 0)
             {
                 SqlSafety.ValidateIdentifier(identifier, $"##{identifierVariable}##");
+            }
+        }
+
+        // a valid 63 character name is still too long once the scripts prefix it to derive an index, a function
+        // or a trigger, and PostgreSQL truncates the result rather than complaining
+        foreach (var (variable, (prefix, example)) in derivedNamePrefixes)
+        {
+            if (prefix > 0 && variables.TryGetValue(variable, out var name) && name.Length + prefix > MaxIdentifierLength)
+            {
+                throw new SchemaMigrationException(
+                    $"##{variable}## '{name}' is {name.Length} characters, which leaves no room for the names " +
+                    $"derived from it. The scripts prefix it with up to {prefix} characters (for example " +
+                    $"'{example}'), and PostgreSQL truncates an identifier at {MaxIdentifierLength} bytes - so " +
+                    $"the derived object could collide with another one. Use a name of at most " +
+                    $"{MaxIdentifierLength - prefix} characters.");
             }
         }
 
