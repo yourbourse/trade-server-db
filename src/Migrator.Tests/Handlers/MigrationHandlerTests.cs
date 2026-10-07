@@ -254,6 +254,9 @@ public class MigrationHandlerTests
         "trading_account_events_table",
         "trading_accounts_table",
         "trading_accounts_resync_view",
+        "group_events_table",
+        "groups_table",
+        "groups_resync_view",
         "ticks_table",
         "trades_history_view",
         "cash_transfers_view"
@@ -308,6 +311,52 @@ public class MigrationHandlerTests
     [InlineData("trading_accounts_table")]
     [InlineData("trading_accounts_resync_view")]
     public void BuildVariables_Should_reject_a_trading_account_object_name_that_is_not_an_identifier(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=not a valid name; DROP TABLE trades"] };
+
+        // act, assert
+        Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
+    }
+
+    [Theory(DisplayName = "BuildVariables Should default the group objects to their documented names")]
+    [InlineData("group_events_table", "group_events")]
+    [InlineData("groups_table", "groups")]
+    [InlineData("groups_resync_view", "groups_resync")]
+    public void BuildVariables_Should_default_the_group_objects_to_their_documented_names(string variable, string expected)
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.Equal(expected, variables[variable]);
+    }
+
+    [Theory(DisplayName = "BuildVariables Should let --variables rename a group object")]
+    [InlineData("group_events_table")]
+    [InlineData("groups_table")]
+    [InlineData("groups_resync_view")]
+    public void BuildVariables_Should_let_variables_rename_a_group_object(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };
+
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
+
+        // assert
+        Assert.Equal("renamed_object", variables[variable]);
+    }
+
+    /// <summary>
+    /// These names reach DDL as text, so each must be in identifierVariables.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should reject a group object name that is not an identifier")]
+    [InlineData("group_events_table")]
+    [InlineData("groups_table")]
+    [InlineData("groups_resync_view")]
+    public void BuildVariables_Should_reject_a_group_object_name_that_is_not_an_identifier(string variable)
     {
         // arrange
         var options = new CommandLineOptions { Variables = [$"{variable}=not a valid name; DROP TABLE trades"] };
