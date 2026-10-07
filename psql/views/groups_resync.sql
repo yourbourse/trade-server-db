@@ -9,7 +9,7 @@ SELECT sender_id,
 
        max(time_inserted) FILTER (WHERE event_type = 2) AS time_resync_started,
 
-       -- the previous resync's while one is in progress
+       -- belongs to the previous resync while a new one is in progress
        max(time_inserted) FILTER (WHERE event_type = 3) AS time_resync_finished,
 
        -- a start marker with no end marker after it
