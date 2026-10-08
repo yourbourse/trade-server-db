@@ -689,7 +689,22 @@ created by hand without `--cluster` in mind stays a local table when the flag is
 If the trade server's export configuration uses non-default table names, every run must pass the same
 `--variables trades_table=… daily_statements_table=… order_snapshots_table=… position_snapshots_table=…
 cursor_table=…` on PostgreSQL, or `--variables ticks_table=…` on ClickHouse. Nothing records the names on the
-database side, so a run without them creates and grants on a second set of tables under the default names.
+database side, so a run without them falls back to the default names. It does not create a second set of tables:
+the create scripts are journalled by file name and never run again. Instead the first re-runnable script that names
+a default table fails, and the run with it:
+
+| Engine | Fails in | Left behind |
+|--------|----------|-------------|
+| PostgreSQL | the first view or users script that names a default table, e.g. `relation "trades" does not exist` | nothing: the failing script rolls back in its own transaction, and the run stops there |
+| ClickHouse | `post/ticks_ttl.sql`, `UNKNOWN_TABLE` | grants on a `ticks` table that does not exist, `INSERT` for the exporter role and `SELECT` for the read-only one, because the users phase runs first |
+
+Run again with the variables to recover. On ClickHouse that run does not take the stray grants back, so revoke them
+by hand:
+
+```sql
+REVOKE INSERT ON trading.ticks FROM role_trading_exporter;
+REVOKE SELECT ON trading.ticks FROM role_trading_ro;
+```
 
 ---
 

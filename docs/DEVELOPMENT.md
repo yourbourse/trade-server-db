@@ -106,11 +106,17 @@ what a previous run left behind; the database is dropped again on the way out. W
 - Rotating a user whose name is a prefix of another user's (`reader` and `reader2`) rewrites only its own journal
   entry.
 
+| Test file | Covers |
+|-----------|--------|
+| `Execution/MigrationIntegrationTests.cs` | The list above, on both engines |
+| `Execution/TradingAccountsProjectionIntegrationTests.cs` | The trigger that maintains `trading_accounts` from the event log |
+| `Execution/TicksIntegrationTests.cs` | The ClickHouse ticks table as ClickHouse 26.7 behaves under its DDL: columns and engine clause, re-sent batches before and after a merge and across a month end, the sorting key, partitioning and retention by `created_time`, `ttl_only_drop_parts`, the limits of the decimal, `UInt64` and `DateTime64` columns, index use, dry runs and a forgotten `ticks_table`, and what `exporter` and `ro` may do |
+
 Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
 overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`.
 
-> **Warning:** `ASPNETCORE_ENVIRONMENT=integration` selects that settings file. Without it no settings file is
-> loaded at all and the tests find no server.
+> **Note:** That file is loaded on every run, so the integration tests also run from an IDE (Rider, Visual Studio)
+> as they are. `ASPNETCORE_ENVIRONMENT=<env>` only layers an `appsettings.<env>.json` of your own on top of it.
 
 ---
 

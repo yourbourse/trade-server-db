@@ -28,6 +28,8 @@ public class ConfigBuilder
         var env = EnvironmentHelper.GetAspNetCoreEnvironmentNameOrDefault();
 
         Configuration = new ConfigurationBuilder()
+            // the docker-compose databases underneath, so a run from an IDE needs no ASPNETCORE_ENVIRONMENT
+            .AddJsonFile("appsettings.integration.json", true, false)
             .AddJsonFile($"appsettings.{env}.json", true, false)
             .AddEnvironmentVariables()
             .Build();

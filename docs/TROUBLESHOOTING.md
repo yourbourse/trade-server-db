@@ -405,7 +405,9 @@ docker compose up -d
 ASPNETCORE_ENVIRONMENT=integration dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
 ```
 
-Without `ASPNETCORE_ENVIRONMENT=integration` no settings file is loaded at all, so the tests find no server.
+The tests read the compose ports from `appsettings.integration.json` on every run, from the command line or an IDE
+alike. A connection error means the containers are not up yet (wait for `healthy` in `docker compose ps`), or a
+`ClickHouse__ConnectionString` / `Postgres__ConnectionString` variable points somewhere else.
 
 ### `Unable to locate the repository root`
 
