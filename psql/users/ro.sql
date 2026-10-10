@@ -42,6 +42,12 @@ REVOKE ALL PRIVILEGES ON TABLE ##symbols_table## FROM ##user_name##;
 
 REVOKE ALL PRIVILEGES ON TABLE ##symbols_resync_view## FROM ##user_name##;
 
+REVOKE ALL PRIVILEGES ON TABLE ##group_events_table## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##groups_table## FROM ##user_name##;
+
+REVOKE ALL PRIVILEGES ON TABLE ##groups_resync_view## FROM ##user_name##;
+
 REVOKE ALL PRIVILEGES ON TABLE ##cursor_table## FROM ##user_name##;
 
 -- a view carries its own privileges, so SELECT on the trades table does not reach through to them. The views
@@ -69,6 +75,12 @@ GRANT SELECT ON TABLE ##symbol_events_table## TO ##user_name##;
 GRANT SELECT ON TABLE ##symbols_table## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##symbols_resync_view## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##group_events_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##groups_table## TO ##user_name##;
+
+GRANT SELECT ON TABLE ##groups_resync_view## TO ##user_name##;
 
 GRANT SELECT ON TABLE ##cursor_table## TO ##user_name##;
 

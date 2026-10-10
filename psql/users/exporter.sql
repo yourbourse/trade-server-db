@@ -41,4 +41,9 @@ GRANT INSERT, SELECT ON TABLE ##symbol_events_table## TO ##user_name##;
 -- likewise for the symbol projection
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##symbols_table## TO ##user_name##;
 
+GRANT INSERT, SELECT ON TABLE ##group_events_table## TO ##user_name##;
+
+-- likewise for the group projection
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##groups_table## TO ##user_name##;
+
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;

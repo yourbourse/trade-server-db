@@ -84,6 +84,15 @@ recorded in [Schema Reference → symbol_events](SCHEMA_REFERENCE.md#symbol_even
 [→ symbols](SCHEMA_REFERENCE.md#symbols): the column set, whose order and types are fixed by the schema agreed
 with the trade server team, and the absence of a unique key on the symbol name.
 
+The **group** event log and its `groups` projection are built to the same contract against a different entity:
+the same four event types, the same resync markers, the same end-marker sweep and the same reconcile pass. There
+is no separate SPEC for them — read the one above, substituting *group* for *trading account* — and they are
+verified by `GroupsProjectionIntegrationTests`, which mirrors the suite case for case. Where the two differ is
+recorded in [Schema Reference → group_events](SCHEMA_REFERENCE.md#group_events) and
+[→ groups](SCHEMA_REFERENCE.md#groups): the column set, whose order and types are fixed by the schema agreed
+with the trade server team, the one nullable column, `email_service_id`, and the absence of a unique key on the
+group name.
+
 ---
 
 ## Architecture & Development
