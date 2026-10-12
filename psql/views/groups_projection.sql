@@ -251,7 +251,7 @@ ON CONFLICT (sender_id, group_id) DO UPDATE
         source_event_row_id           = excluded.source_event_row_id,
         time_applied                  = excluded.time_applied;
 
--- deletions the row does not reflect
+-- deleted: the newest event is a deletion the row does not reflect
 DELETE
 FROM ##groups_table## g
     USING (SELECT DISTINCT ON (sender_id, group_id) sender_id, group_id, id, event_type
@@ -263,7 +263,7 @@ WHERE l.sender_id = g.sender_id
   AND l.event_type = 1
   AND l.id > g.source_event_row_id;
 
--- resync sweeps missed while the trigger was absent
+-- swept: a finished resync skipped the row while the trigger was absent, and a sweep leaves no event
 DELETE
 FROM ##groups_table## g
     USING (SELECT started.sender_id, max(started.id) AS watermark

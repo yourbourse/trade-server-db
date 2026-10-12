@@ -407,6 +407,41 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     }
 
     /// <summary>
+    /// A regression test, from code review of the client projection, which shares this one's shape and had the
+    /// same defect. A resync's sweep happens at the end marker, in the trigger, so a trigger that is absent for
+    /// the whole resync means nothing ever removes the accounts it did not re-announce - and the reconcile
+    /// replayed only state events and explicit deletions, leaving them behind indefinitely.
+    /// </summary>
+    [Fact(DisplayName = "Regression Should apply a resync sweep that happened while the trigger was absent")]
+    public void Regression_Should_apply_a_resync_sweep_that_happened_while_the_trigger_was_absent()
+    {
+        // arrange
+        var request = CreateRequest();
+        AssertSuccessful(CreateRunner().Run(request));
+        var connectionString = request.ConnectionString;
+
+        InsertOneStatement(connectionString,
+            StateEvent(Sender, 101, version: 1, comment: "re-announced"),
+            StateEvent(Sender, 102, version: 1, comment: "dropped by the resync"));
+
+        Assert.Equal(2, ReadAccounts(connectionString).Count);
+
+        // act, the trigger is gone for the whole resync, which re-announces 101 only
+        Execute(connectionString, "DROP TRIGGER trg_project_trading_accounts ON trading_account_events");
+
+        InsertOneStatement(connectionString, Marker(Sender, eventType: 2));
+        InsertOneStatement(connectionString, StateEvent(Sender, 101, version: 1, comment: "re-announced"));
+        InsertOneStatement(connectionString, Marker(Sender, eventType: 3));
+
+        Assert.Equal(2, ReadAccounts(connectionString).Count);
+
+        AssertSuccessful(CreateRunner().Run(request with { FullReload = true }));
+
+        // assert
+        Assert.Equal([(101L, 1L, 100, "re-announced")], ReadAccounts(connectionString));
+    }
+
+    /// <summary>
     /// The sender dies partway through a resync, so no end marker ever arrives and the sweep never runs.
     /// </summary>
     [Fact(DisplayName = "Edge case Should leave the table converging when a resync never finishes")]

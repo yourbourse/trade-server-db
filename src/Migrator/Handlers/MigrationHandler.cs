@@ -47,6 +47,9 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultTradingAccountEventsTable = "trading_account_events";
     private const string DefaultTradingAccountsTable = "trading_accounts";
     private const string DefaultTradingAccountsResyncView = "trading_accounts_resync";
+    private const string DefaultClientEventsTable = "client_events";
+    private const string DefaultClientsTable = "clients";
+    private const string DefaultClientsResyncView = "clients_resync";
     private const string DefaultSymbolEventsTable = "symbol_events";
     private const string DefaultSymbolsTable = "symbols";
     private const string DefaultSymbolsResyncView = "symbols_resync";
@@ -68,6 +71,7 @@ public class MigrationHandler : IMigrationHandler
         "order_snapshots_table",
         "position_snapshots_table",
         "trading_account_events_table",
+        "client_events_table",
         "symbol_events_table",
         "group_events_table",
         "cursor_table",
@@ -87,6 +91,7 @@ public class MigrationHandler : IMigrationHandler
         "trades_history_view",
         "cash_transfers_view",
         "trading_accounts_resync_view",
+        "clients_resync_view",
         "symbols_resync_view",
         "groups_resync_view"
     ];
@@ -103,6 +108,7 @@ public class MigrationHandler : IMigrationHandler
     private static readonly string[] derivedTableVariables =
     [
         "trading_accounts_table",
+        "clients_table",
         "symbols_table",
         "groups_table"
     ];
@@ -140,6 +146,10 @@ public class MigrationHandler : IMigrationHandler
         ["position_snapshots_table"] = (25, "idx_sender_stmt_position_"),
         ["trading_account_events_table"] = (16, "idx_account_row_"),
         ["trading_accounts_table"] = (12, "trg_project_"),
+        ["client_events_table"] = (15, "idx_client_row_"),
+        ["clients_table"] = (12, "trg_project_"),
+        ["symbol_events_table"] = (15, "idx_symbol_row_"),
+        ["symbols_table"] = (12, "trg_project_"),
         ["group_events_table"] = (14, "idx_group_row_"),
         ["groups_table"] = (12, "trg_project_"),
         ["cursor_table"] = (0, ""),
@@ -297,6 +307,9 @@ public class MigrationHandler : IMigrationHandler
             ["trading_account_events_table"] = DefaultTradingAccountEventsTable,
             ["trading_accounts_table"] = DefaultTradingAccountsTable,
             ["trading_accounts_resync_view"] = DefaultTradingAccountsResyncView,
+            ["client_events_table"] = DefaultClientEventsTable,
+            ["clients_table"] = DefaultClientsTable,
+            ["clients_resync_view"] = DefaultClientsResyncView,
             ["symbol_events_table"] = DefaultSymbolEventsTable,
             ["symbols_table"] = DefaultSymbolsTable,
             ["symbols_resync_view"] = DefaultSymbolsResyncView,
