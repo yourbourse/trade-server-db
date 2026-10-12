@@ -104,10 +104,10 @@ anything. The migrator logs a warning and reports everything as pending rather t
 
 ### Which tables does the migrator own?
 
-Seven on PostgreSQL that the trade server writes to — `trades`, `daily_statements_export`,
+Eight on PostgreSQL that the trade server writes to — `trades`, `daily_statements_export`,
 `daily_statements_order_snapshots`, `daily_statements_position_snapshots`, `trading_account_events`,
 `symbol_events` and `export_cursor` — one on ClickHouse — `ticks` — plus the two tables the migrator creates and
-a trigger maintains from an event log, `trading_accounts` and `symbols`, and its own `schema_versions` journal
+a trigger maintains from an event log, `trading_accounts`, `symbols` and `groups`, and its own `schema_versions` journal
 on each engine. Each exported table matches one export pipeline in the trade server's `export_config.json`, and
 the PostgreSQL pipelines share the one cursor table. Column by column: [Schema Reference](SCHEMA_REFERENCE.md).
 
