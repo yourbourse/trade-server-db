@@ -65,22 +65,6 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 ---
 
-## Specifications
-
-What a piece of behaviour has to do, and why it was built the way it was. A spec is the contract — it outlives
-the implementation and is what the tests are written against; the design beside it records the decisions and
-the alternatives that were rejected.
-
-| Specification | Description |
-|---------------|-------------|
-| [Trading accounts — SPEC](specs/trading-accounts/SPEC.md) | The trading account event log and the current-state table derived from it by trigger: workflows, edge cases and invariants |
-| [Trading accounts — design](specs/trading-accounts/design.md) | How the projection works, the decisions behind it, and what the backend team still has to confirm |
-
-The trading accounts specification is verified by `TradingAccountsProjectionIntegrationTests`, where each test
-is named for the SPEC clause it covers, so the suite reads as a conformance list.
-
----
-
 ## Architecture & Development
 
 | Document | Description |
@@ -128,6 +112,7 @@ is named for the SPEC clause it covers, so the suite reads as a conformance list
 | Daily statements table | `daily_statements_export` |
 | Order snapshots table | `daily_statements_order_snapshots` |
 | Position snapshots table | `daily_statements_position_snapshots` |
+| Event log tables | `trading_account_events`, `client_events`, `symbol_events`, `group_events` |
 | Cursor table | `export_cursor` |
 | Ticks table | `ticks` |
 | Script folder | `psql` or `clickhouse`, after the provider |

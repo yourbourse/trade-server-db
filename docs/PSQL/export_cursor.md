@@ -56,7 +56,7 @@ CREATE TABLE export_cursor
 |--------|------|-------------|
 | `sender_id` | `BIGINT` | The trade server instance, from the pipeline's `sender_id`. Each instance writing into the database must use its own value. Part of the primary key |
 | `table_name` | `TEXT` | The exported table, exactly as given in the pipeline's `table` field — `trades`, `daily_statements_export`, … Part of the primary key |
-| `last_written_position` | `BIGINT` | Position of the last record committed to that table. Internal to the export buffer: it counts the records through that one pipeline from `0`, is **not** a `trade_id` or any other business identifier, and restarts at `0` whenever the pipeline's data folder is cleared |
+| `last_written_position` | `BIGINT` | How many records the pipeline has committed to that table — the position the next record takes. Internal to the export buffer: it counts the records through that one pipeline from `0`, is **not** a `trade_id` or any other business identifier, and restarts at `0` whenever the pipeline's data folder is cleared |
 
 Every column is `NOT NULL`.
 
@@ -77,8 +77,9 @@ The exporter upserts its row with `INSERT ... ON CONFLICT (sender_id, table_name
 | reads its position on every connection | `SELECT` |
 | upserts it with every batch | `INSERT`, `UPDATE` |
 
-`UPDATE` is granted on this table alone. It is the only row the export ever rewrites — an exported record is never
-updated or deleted.
+Among the tables the trade server exports to, `UPDATE` is granted on this one alone. It is the only row the export
+ever rewrites — an exported record is never updated or deleted. The derived tables get `UPDATE` and `DELETE` as well,
+but for their triggers, not for the export — see [Users & Permissions](../USERS_AND_PERMISSIONS.md).
 
 ---
 
@@ -98,7 +99,8 @@ ends, not only a restart.
 The last case is the one that reaches the data tables' unique keys. Every batch that re-sends a row the database
 already holds is rejected whole and **dropped**, any new records in it included, with `failed to send batch ...
 dropping` logged until the re-sent range is past. Treat the overlapping range as needing verification rather than
-assuming the unique index cleaned it up — see [`trades`](trades.md#indexes).
+assuming the unique index cleaned it up — see [`trades`](trades.md#indexes). The event logs have no unique key, so
+there the re-sent events are stored a second time instead, and the derived tables absorb them.
 
 ---
 

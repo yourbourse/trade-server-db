@@ -41,6 +41,9 @@ FROM trades t
 
 `LEFT JOIN`, because a trade outlives its symbol: once a symbol is deleted it has no row here.
 
+[`ticks`](../ClickHouse/ticks.md) carries `symbol_id` and `short_symbol_name` too, but it is on ClickHouse, which has no
+`symbols` table: putting a symbol's configuration beside its ticks means joining outside the database.
+
 > **Important:** This is the symbol's **current** configuration, not the one in force when a trade executed. A lot
 > size, tick value or margin rate changed since then shows as it is now. The trade row already carries the values
 > that mattered at execution — `contract_size`, `tick_value`, `tick_size`, `price_decimal_places` — and those are
@@ -264,8 +267,8 @@ because it was absent when the end marker arrived — see
 [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
 > **Note:** The projection names over a hundred columns in four places — the `INSERT` and the `ON CONFLICT` `SET` in
-> the function, then both again in the reconcile. The guard is a test: *Should copy every field from the event
-> unchanged on all four write paths* in `SymbolsProjectionIntegrationTests` drives each of the four in turn and
+> the function, then both again in the reconcile. The guard is a test: *Invariant Should copy every field from the
+> event unchanged on all four write paths* in `SymbolsProjectionIntegrationTests` drives each of the four in turn and
 > compares the whole log row against the whole state row as `jsonb`.
 
 ---

@@ -172,8 +172,8 @@ and a default would only mask one it had forgotten. The column descriptions, the
 experience columns are on [`client_events`](client_events.md#columns).
 
 > **Note:** If the `tags` column the *Export Setup* guide lists is added to `client_events` — see its
-> [open points](client_events.md#open-points) — it has to be added here too, and to the projection's four column
-> lists, or the copy-every-field test fails.
+> [open points](client_events.md#open-points) — it has to be added here too, at the same position, and to every
+> column list in the projection, or `ClientsProjectionIntegrationTests` fails.
 
 There is deliberately **no foreign key** on `source_event_row_id`, for the same reason as on
 [`trading_accounts`](trading_accounts.md#columns): an event ages out of the retention window long before the client
@@ -213,11 +213,11 @@ The script is re-runnable and ends with the same reconcile pass, which also appl
 because it was absent when the end marker arrived — see
 [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
-> **Note:** The projection names sixty-five columns four times over — the `VALUES` list and the `ON CONFLICT` `SET`
-> list in the function, then both again in the reconcile. Reading those four lists against each other is not a
-> realistic review, so the guard is a test: *Should copy every field from the event unchanged* in
-> `ClientsProjectionIntegrationTests` compares the whole log row against the whole state row as `jsonb`, and so fails
-> on any column the file crosses, drops or leaves behind.
+> **Note:** The projection names sixty-five columns in four places — the `INSERT` and the `ON CONFLICT` `SET` in the
+> function, then both again in the reconcile. Reading those lists against each other is not a realistic review, so
+> the guard is a test: *Invariant Should copy every field from the event unchanged on all four write paths* in
+> `ClientsProjectionIntegrationTests` drives each of the four in turn and compares the whole log row against the whole
+> state row as `jsonb`, and so fails on any column the file crosses, drops or leaves behind.
 
 ---
 

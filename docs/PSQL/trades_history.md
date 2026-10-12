@@ -102,7 +102,8 @@ a PostgreSQL storage detail with no meaning to a reader.
 - Every column of a Buy or Sell is populated, so the `NaN` that non-trading records carry in their trading columns
   does not reach this view — `sum(profit)` here is safe where on the table it is not. See
   [NaN, not NULL](trades.md#nan-not-null).
-- The column meanings and the `entry_type`, `reason` and `side` values are on [`trades`](trades.md#values).
+- The column meanings, `side` included, are on [`trades`](trades.md#columns), and the `trade_type`, `entry_type` and
+  `reason` values under its [Values](trades.md#values).
 - A view carries its own privileges. `SELECT` on `trades` does not reach through to it, which is why `ro` is granted
   the view by name and `exporter` — which writes rows and does not read reports — is not granted it at all.
 

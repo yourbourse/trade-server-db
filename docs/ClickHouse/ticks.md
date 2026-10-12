@@ -38,8 +38,8 @@ exporter does nothing but insert.
 
 ## Final SQL
 
-The table as it stands once both scripts under [Scripts](#scripts) have run, on a single instance with the default
-name and the default 31-day retention. The `CREATE TABLE` comes from the incremental script; the `TTL` and
+The table as it stands once the two scripts that build it have run, on a single instance with the default name and
+the default 31-day retention. The `CREATE TABLE` comes from the incremental script; the `TTL` and
 `ttl_only_drop_parts` are laid on afterwards by the re-runnable `post/ticks_ttl.sql`, so that a deployment can
 change the retention without a new script.
 
@@ -116,7 +116,8 @@ sequence)` are one tick whatever their prices, and the merge keeps the copy inse
 exporting into one database needs its own `sender_id`.
 
 ClickHouse has no unique index, so unlike PostgreSQL a duplicate is not rejected on insert: both copies exist until
-a background merge collapses them. See [Deduplication](../SCHEMA_REFERENCE.md#deduplication).
+a background merge collapses them. With `--cluster`, the replicated engine may already drop a re-sent batch whose
+insert block is identical to one it has seen. See [Deduplication](../SCHEMA_REFERENCE.md#deduplication).
 
 ---
 

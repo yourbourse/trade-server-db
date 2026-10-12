@@ -183,9 +183,8 @@ migrator adds both.
 | [`psql/users/exporter.sql`](../../psql/users/exporter.sql), [`psql/users/ro.sql`](../../psql/users/ro.sql) | users | The grants |
 
 Column descriptions and the event type names follow the *Export Setup* guide's Trading Account Events section and
-the Admin REST API's `TradingAccount`. The
-design behind the log and its projection — workflows, edge cases, invariants and the decisions taken — is in the
-[trading accounts specification](../specs/trading-accounts/SPEC.md) and its [design](../specs/trading-accounts/design.md).
+the Admin REST API's `TradingAccount`. The workflows and edge cases the log and its projection must handle are
+pinned down by `TradingAccountsProjectionIntegrationTests` — see [`trading_accounts`](trading_accounts.md#scripts).
 
 ---
 

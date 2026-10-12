@@ -324,7 +324,9 @@ together.
 Every exported table is append-only. The export cursor commits with each batch, so in normal operation a record is
 written once; a unique index guards the case that bypasses the cursor — `(sender_id, trade_id)` on trades, and
 `(sender_id, time_statement, …)` on the statement and snapshot tables. A batch that hits one is rejected whole and
-dropped by the exporter, so the index guards against duplicates but does not repair them.
+dropped by the exporter, so the index guards against duplicates but does not repair them. The four event logs have
+no such key — none carries a per-event id — so a re-sent event lands as a second row and the derived table absorbs
+it.
 
 `export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
 pipelines share it. The cursor row and the batch of records are written in the same transaction, which is what

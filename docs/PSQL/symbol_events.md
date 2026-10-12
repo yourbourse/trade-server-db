@@ -30,8 +30,8 @@ modification carries the symbol's full configuration, a deletion carries none of
 resync. Reducing this log to "which symbols are live and how is each configured" is the job of
 [`symbols`](symbols.md) — see [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
-The column set, the types and the **column order** are the schema agreed with the trade server team, so the
-exporter lines up whether its `COPY` names its columns or relies on their position.
+The column set, the types and the column order are the schema agreed with the trade server team, and *Schema Should
+carry the agreed columns and types in the agreed order* in `SymbolsProjectionIntegrationTests` pins them.
 
 ---
 
@@ -227,9 +227,11 @@ also what the Admin API's `POST /admin/export/snapshot` with `"entityType": "Sym
 
 111 columns: three service columns, the event type, the symbol's id and 106 configuration fields, in the order the
 table declares them. Every column is `NOT NULL`, and the exporter writes every one of them on every row — a field
-that does not apply carries a type-appropriate zero (`''`, `0`, `false`, the epoch). A delete row and both marker
-rows carry those zeros throughout, `version` and `symbol_id` included, which is why a delete row cannot be ordered
-into a symbol's history by its `version`. Use `id`.
+that does not apply carries a type-appropriate zero (`''`, `0`, `false`, the epoch). A delete row carries those zeros
+in every content column, `version` included, while `symbol_id` still names the symbol; both marker rows carry them in
+`symbol_id` too — see
+[Event types](#event-types). That is why a delete row cannot be ordered into a symbol's history by its `version`. Use
+`id`.
 
 The configuration fields are the trade server's symbol configuration, as the Admin REST API's `Symbol` resource
 carries it; the descriptions are the API's. Where a column is not simply the snake case of its API field, the field
@@ -370,8 +372,9 @@ the API's maximum length.
 
 ## Values
 
-Seven columns hold the trade server's enum **ordinal**; the Admin API sends the member's name. The members and their
-meanings below are the API's. Their numbers are left out on purpose: the API's order is no proof of the ordinal — its
+Seven columns hold the trade server's `SymbolConfig` enum **ordinal**; the Admin API sends the member's name. The
+members and their meanings below are the API's. Their numbers are left out on purpose: the API's order is no proof of
+the ordinal — its
 client enums omit the `Unspecified` member the export numbers `0`, and its transfer types are listed in a different
 order from `trade_type` — so they are to be confirmed against the trade server's enums.
 

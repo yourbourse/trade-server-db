@@ -32,8 +32,8 @@ are exported — there are no monthly ones here.
 
 ## Final SQL
 
-The table as it stands once both scripts under [Scripts](#scripts) have run, with the default names substituted.
-On an empty database it creates the same table, indexes and constraints the migrator does.
+The table as it stands once both incremental scripts under [Scripts](#scripts) have run, with the default names
+substituted. On an empty database it creates the same table, indexes and constraints the migrator does.
 
 ```sql
 CREATE TABLE daily_statements_export

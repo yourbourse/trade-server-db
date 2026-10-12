@@ -156,7 +156,9 @@ A consumer reading the log directly treats a resync the same way as on
 68 columns: three service columns and 65 data columns, every one `NOT NULL`. On a Delete and on both markers every
 content column carries a type-appropriate zero — `0`, `''`, the epoch — rather than `NULL`, so check `event_type`
 before reading any of them. The data columns are the trade server's client record as the Admin REST API's `Client`
-resource carries it; the descriptions combine the API's and the *Export Setup* guide's.
+resource carries it; the descriptions combine the API's and the *Export Setup* guide's. The column set, the types and
+the column order are the schema agreed with the trade server team, and *Schema Should carry the agreed columns and
+types in the agreed order* in `ClientsProjectionIntegrationTests` pins them.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -241,23 +243,21 @@ resource carries it; the descriptions combine the API's and the *Export Setup* g
 On a Delete and on both markers the experience columns are `0`, not `-1`. The API takes the experience fields as
 optional and never below `0`; the `-1` is how the export writes one the client left out.
 
-The text columns carry `DEFAULT ''`, which `clients` does not. Most of a client's content is conditional — the
-`person_` columns are populated for an individual and the `company_` ones for a corporate client — so a row written
-into the log by hand legitimately leaves most of them alone, whereas the projection always writes every column and a
-default there would only mask one it had forgotten. Each `VARCHAR` is one wider than the API's maximum length: a
-field capped at 63 characters gets `VARCHAR(64)`.
+The text columns carry `DEFAULT ''`, as the agreed schema declares them; `clients` does not, because the projection
+always writes every column and a default there would only mask one it had forgotten. Each `VARCHAR` is one wider than
+the API's maximum length: a field capped at 63 characters gets `VARCHAR(64)`.
 
 `person_annual_income` and `person_net_assets` are `DOUBLE PRECISION` — the one place an amount is not `NUMERIC` in
 this schema. They are client-declared figures rather than ledger amounts, and the type is the one the exporter
-writes.
+writes, so a value can come back with floating-point rounding in its last digits.
 
 > **Note:** **There is no deduplication key**, as with `trading_account_events`. An event that reaches the database
 > twice lands as a second row rather than being rejected. `clients` absorbs that — a re-applied change leaves the
 > same state — but a consumer reading this log directly can see one logical change twice.
 
 > **Note:** The API's `phonePassword` is not exported, and leaving it out of the schema is what keeps it out of the
-> database — the `ro` reporting role can read every table here. It matches the trading account password, which
-> `trading_account_events` omits for the same reason.
+> database — the `ro` reporting role can read every table here. The trading account password stays out of
+> `trading_account_events` for the same reason.
 
 ---
 

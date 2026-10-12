@@ -30,8 +30,9 @@ modification carries the group's full configuration, a deletion carries none of 
 resync. Reducing this log to "which groups are live and how is each configured" is the job of [`groups`](groups.md)
 — see [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
-The column set, the types, the nullability and the **column order** are the schema agreed with the trade server
-team, so the exporter lines up whether its `COPY` names its columns or relies on their position.
+The column set, the types, the nullability and the column order are the schema agreed with the trade server team,
+and *Schema Should carry the agreed columns and types in the agreed order* in `GroupsProjectionIntegrationTests` pins
+them.
 
 ---
 
@@ -144,9 +145,11 @@ and the descriptions are the API's.
 | `commission_profile_count` | `BIGINT` | How many entries the group's `commissionProfiles` list has |
 
 Every column but `email_service_id` is `NOT NULL`, and the exporter writes every one of them on every row — a field
-that does not apply carries a type-appropriate zero (`''`, `0`, `false`). A delete row and both marker rows carry
-those zeros throughout, `version` and `group_id` included, which is why a delete row cannot be ordered into a
-group's history by its `version`. Use `id`.
+that does not apply carries a type-appropriate zero (`''`, `0`, `false`). A delete row carries those zeros in every
+content column, `version` included, while `group_id` still names the group; both marker rows carry them in `group_id`
+too — see
+[Event types](#event-types). That is why a delete row cannot be ordered into a group's history by its `version`. Use
+`id`.
 
 `email_service_id` is nullable because the API's `emailServiceId` is optional. The trade server treats `NULL` and
 `0` alike — no email service, so no emails — and a reader asking whether a group sends reports has to test for both.

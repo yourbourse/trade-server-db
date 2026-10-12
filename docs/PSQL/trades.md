@@ -46,9 +46,9 @@ exactly once; the unique index on `(sender_id, trade_id)` is a guard for the one
 
 ## Final SQL
 
-The table as it stands once both scripts under [Scripts](#scripts) have run, with the default names substituted.
-On an empty database it creates the same table, indexes and constraints the migrator does. A deployment that
-renamed the table renames every index with it — each index name ends in the table name.
+The table as it stands once both incremental scripts under [Scripts](#scripts) have run, with the default names
+substituted. On an empty database it creates the same table, indexes and constraints the migrator does. A deployment
+that renamed the table renames every index with it — each index name carries the table name.
 
 ```sql
 CREATE TABLE trades
@@ -313,7 +313,7 @@ configured table name would otherwise leave two indexes with the same truncated 
 ## Reading it
 
 - Filter on `trading_account_id` and a `time_created` range — the shape of nearly every report, and the one the
-  indexes serve. Pair the account with `sender_id` when more than one trade server exports into the database —
+  indexes serve. Always pair the account with `sender_id`, even while one trade server exports into the database —
   see [Every id is scoped to its sender](../SCHEMA_REFERENCE.md#every-id-is-scoped-to-its-sender).
 - `time_inserted` is when the row reached PostgreSQL. Use `time_created` for when the trade happened.
 - The values that mattered at execution — `contract_size`, `tick_value`, `tick_size`, `price_decimal_places`,

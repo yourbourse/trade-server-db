@@ -201,7 +201,9 @@ can move ours aside.
 Index, function and trigger names lead with what they cover and end with the table name —
 `idx_account_time_trades`, `trg_project_trading_accounts`. PostgreSQL truncates identifiers to 63 bytes, so a long
 configured table name would otherwise leave two objects with the same truncated name, and the second
-`CREATE … IF NOT EXISTS` would quietly do nothing.
+`CREATE … IF NOT EXISTS` would quietly do nothing. For the same reason the migrator refuses a table name too long
+for its longest prefix — 36 characters for `trades`, for example; see
+[Table names are capped shorter than 63](TEMPLATE_VARIABLES.md#table-names-are-capped-shorter-than-63).
 
 ---
 
@@ -249,8 +251,17 @@ client logs:
 - **There is no foreign key** from a derived row to its source event: events age out of retention long before the
   entity does, and a foreign key would make that purge fail or cascade.
 
-The full specification, with workflows, edge cases and the decisions behind them, is
-[trading accounts — SPEC](specs/trading-accounts/SPEC.md) and its [design](specs/trading-accounts/design.md).
+Beyond their columns, the four differ only in this:
+
+| Entity | Pages | Verified by | Also differs in |
+|--------|-------|-------------|-----------------|
+| Trading account | [trading_account_events](PSQL/trading_account_events.md), [trading_accounts](PSQL/trading_accounts.md) | `TradingAccountsProjectionIntegrationTests` | — |
+| Client | [client_events](PSQL/client_events.md), [clients](PSQL/clients.md) | `ClientsProjectionIntegrationTests` | Two amounts are `DOUBLE PRECISION`, not `NUMERIC` |
+| Symbol | [symbol_events](PSQL/symbol_events.md), [symbols](PSQL/symbols.md) | `SymbolsProjectionIntegrationTests` | No unique key on the symbol name |
+| Group | [group_events](PSQL/group_events.md), [groups](PSQL/groups.md) | `GroupsProjectionIntegrationTests` | The one nullable column, `email_service_id`; no unique key on the group name |
+
+The client, symbol and group suites repeat the trading account one's cases and add those their differences call for.
+Each test is named for the workflow, edge case or invariant it covers, so a suite reads as a conformance list.
 
 ---
 

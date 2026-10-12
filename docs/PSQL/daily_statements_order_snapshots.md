@@ -28,15 +28,15 @@ Each row captures the order's state at the moment the statement was generated an
 `time_statement`, so orders join to their statement on `(sender_id, time_statement, trading_account_id)` — see
 [the statement family](daily_statements_export.md#the-statement-family).
 
-Only **working** orders are included. An order that has already reached a final state — filled, cancelled, rejected
-or expired — is not part of the snapshot.
+Only **working** orders are included, in the broad sense of not yet final — see [`order_status`](#order_status). An
+order that has already reached a final state — filled, cancelled, rejected or expired — is not part of the snapshot.
 
 ---
 
 ## Final SQL
 
-The table as it stands once both scripts under [Scripts](#scripts) have run, with the default names substituted.
-On an empty database it creates the same table, indexes and constraints the migrator does.
+The table as it stands once both incremental scripts under [Scripts](#scripts) have run, with the default names
+substituted. On an empty database it creates the same table, indexes and constraints the migrator does.
 
 ```sql
 CREATE TABLE daily_statements_order_snapshots
@@ -125,7 +125,7 @@ Three service columns and 36 data columns. Every column is `NOT NULL` except the
 | `liquidity_connection_id` | `BIGINT` | The liquidity provider connection. `0` for an internal (house) order |
 | **Volume and prices** | | |
 | `volume` | `NUMERIC` | The order quantity, in lots |
-| `remaining_volume` | `NUMERIC` | The unfilled quantity, in lots: `volume` less what has filled. `0` once fully filled |
+| `remaining_volume` | `NUMERIC` | The unfilled quantity, in lots: `volume` less what has filled. Never `0` here — a filled order is not snapshotted |
 | `avg_fill_price` | `NUMERIC`, **nullable** | Average price of the order's fills. `NULL` when nothing has filled |
 | `stop_price` | `NUMERIC`, **nullable** | Stop price, on a stop or stop-limit order. `NULL` otherwise |
 | `limit_price` | `NUMERIC`, **nullable** | Limit price, on a limit or stop-limit order. `NULL` otherwise |

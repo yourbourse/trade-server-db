@@ -19,7 +19,9 @@ ClickHouse · written by the migrator · [Schema Reference](../SCHEMA_REFERENCE.
 | Engine | ClickHouse. PostgreSQL keeps the same journal — [its page](../PSQL/schema_versions.md) |
 | Default name | `schema_versions` — renamed with `--journal-table …` |
 | Written by | The migrator, never the trade server |
-| One row per | Applied script — exactly one per re-runnable script |
+| Created by | The migrator's journal ([`ClickHouseTableJournal`](../../src/DbUp.ClickHouse/ClickHouseTableJournal.cs)), in the connection string's database — no script under `clickhouse/` touches it |
+| One row per | Applied script — one per re-runnable script, and one per account for a users script |
+| Key | `PRIMARY KEY (script_name)`, `ORDER BY (script_name, applied_at)` — not unique; deleting the previous entry before each insert keeps one row per script |
 | Engine clause | `MergeTree`, or `ReplicatedMergeTree` with `--cluster` |
 | Grants | None for `exporter` or `ro` — only the account that runs migrations reads it |
 
@@ -60,11 +62,13 @@ ORDER BY (script_name, applied_at);
 | Kind | Journal entry | Re-runs when |
 |------|---------------|--------------|
 | Incremental | `[clickhouse] 20260922_01_create_ticks.sql` | never |
-| Re-runnable | `[clickhouse/post] ticks_ttl.sql::a1b2…` | its processed content changes — a new `ticks_ttl_days` included |
+| Re-runnable (`pre/`, `views/`, `post/`) | `[clickhouse/post] ticks_ttl.sql::a1b2…` | its processed content changes — a new `ticks_ttl_days` included |
 | Users | `[clickhouse/users] exporter.sql for trade_exporter::7f3c…` | its content, name or password changes |
 
 The `::` suffix is the MD5 of the processed script. Before writing a new entry the migrator deletes every previous
-entry for the same script, so exactly one row per re-runnable script survives.
+entry for the same script, so one row per re-runnable script — per account, for a users script — survives.
+`--force` re-applies the re-runnable phases without reading or writing the journal — see
+[Journalling](../ARCHITECTURE.md#journalling).
 
 ```sql
 SELECT script_name, applied_at FROM schema_versions ORDER BY applied_at;

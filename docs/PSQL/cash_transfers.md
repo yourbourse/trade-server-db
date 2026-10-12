@@ -134,8 +134,8 @@ column is the trade server code each value was traced to when the view was built
 > **Note:** Two values disagree with the *Export Setup* guide. The guide gives `entry_type` as always `0` In on a
 > non-trading record, where the source mapping above has `In` or `Out` by direction; and it gives `reason` as `1`
 > Admin **or `11` AgentCommission**, where the transfer pipeline writes `kAdmin` — so the AgentCommission records
-> are not the transfer pipeline's. Confirm `entry_type` with the trade server team before relying on it; the sign
-> of the amount always tells a deposit from a withdrawal.
+> are not the transfer pipeline's, and may populate columns this view does not expose. Confirm `entry_type` with the
+> trade server team before relying on it; the sign of the amount always tells a deposit from a withdrawal.
 
 ---
 

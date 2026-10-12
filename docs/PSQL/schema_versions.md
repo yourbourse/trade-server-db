@@ -19,7 +19,8 @@ PostgreSQL · written by the migrator · [Schema Reference](../SCHEMA_REFERENCE.
 | Engine | PostgreSQL. ClickHouse keeps the same journal — [its page](../ClickHouse/schema_versions.md) |
 | Default name | `schema_versions` — renamed with `--journal-table …` |
 | Written by | The migrator, never the trade server |
-| One row per | Applied script — exactly one per re-runnable script |
+| Created by | The migrator's journal ([`PostgresTableJournal`](../../src/DbUp.PSQL/PostgresTableJournal.cs)), in the `public` schema — no script under `psql/` touches it |
+| One row per | Applied script — one per re-runnable script, and one per account for a users script |
 | Key | `PRIMARY KEY (script_name)` |
 | Grants | None for `exporter` or `ro` — only the account that runs migrations reads it |
 
@@ -57,11 +58,13 @@ CREATE TABLE schema_versions
 | Kind | Journal entry | Re-runs when |
 |------|---------------|--------------|
 | Incremental | `[psql] 20260101_01_create_trades.sql` | never |
-| Re-runnable | `[psql/post] run_on_every_build.sql::a1b2…` | its processed content changes |
+| Re-runnable (`pre/`, `views/`, `post/`) | `[psql/post] run_on_every_build.sql::a1b2…` | its processed content changes |
 | Users | `[psql/users] exporter.sql for trade_exporter::7f3c…` | its content, name or password changes |
 
 The `::` suffix is the MD5 of the processed script. Before writing a new entry the migrator deletes every previous
-entry for the same script, so exactly one row per re-runnable script survives.
+entry for the same script, so one row per re-runnable script — per account, for a users script — survives.
+`--force` re-applies the re-runnable phases without reading or writing the journal — see
+[Journalling](../ARCHITECTURE.md#journalling).
 
 ```sql
 SELECT script_name, applied_at FROM schema_versions ORDER BY applied_at;

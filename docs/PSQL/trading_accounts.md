@@ -179,12 +179,12 @@ FROM trading_accounts a
 | [`psql/views/trading_accounts_resync.sql`](../../psql/views/trading_accounts_resync.sql) | views | The `trading_accounts_resync` view |
 | [`psql/users/exporter.sql`](../../psql/users/exporter.sql), [`psql/users/ro.sql`](../../psql/users/ro.sql) | users | The grants |
 
-The specification the projection is tested against is [trading accounts — SPEC](../specs/trading-accounts/SPEC.md);
-`TradingAccountsProjectionIntegrationTests` names each test for the clause it covers.
+`TradingAccountsProjectionIntegrationTests` pins the projection's behaviour down: each test is named for the
+workflow, edge case or invariant it covers, so the suite reads as a conformance list.
 
 ---
 
 ## See also
 
 [Schema Reference](../SCHEMA_REFERENCE.md) · [`trading_account_events`](trading_account_events.md) ·
-[Trading accounts — design](../specs/trading-accounts/design.md)
+[Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections)
