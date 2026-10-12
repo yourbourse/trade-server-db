@@ -440,16 +440,6 @@ public class MigrationHandlerTests
     {
         // arrange
         var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };
-        // act
-        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
-
-        // assert
-        Assert.Equal("renamed_object", variables[variable]);
-    }
-
-    {
-        // arrange
-        var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };
 
         // act
         var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
