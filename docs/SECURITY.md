@@ -73,8 +73,8 @@ the intersection of what both engines accept as an unquoted identifier, capped a
 | `##cluster_name##` | `--cluster` (empty passes) |
 | `##user_name##` | each `--users` entry |
 
-The names of the two event logs, the two tables derived from them and the four views are validated by the same
-rule and from the same sources — they are left out of the table only to keep it short. The complete set is in
+The names of the event logs, the tables derived from them and the views are validated by the same rule and
+from the same sources — they are left out of the table only to keep it short. The complete set is in
 [Template Variables → Validation](TEMPLATE_VARIABLES.md#validation).
 
 Anything else fails the run **before a statement is built**, with an error naming the offending value and the

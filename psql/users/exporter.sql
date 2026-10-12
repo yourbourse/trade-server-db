@@ -37,8 +37,12 @@ GRANT INSERT, SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##trading_accounts_table## TO ##user_name##;
 
 GRANT INSERT, SELECT ON TABLE ##client_events_table## TO ##user_name##;
-
--- likewise for the client projection
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##clients_table## TO ##user_name##;
+
+GRANT INSERT, SELECT ON TABLE ##symbol_events_table## TO ##user_name##;
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##symbols_table## TO ##user_name##;
+
+GRANT INSERT, SELECT ON TABLE ##group_events_table## TO ##user_name##;
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##groups_table## TO ##user_name##;
 
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
