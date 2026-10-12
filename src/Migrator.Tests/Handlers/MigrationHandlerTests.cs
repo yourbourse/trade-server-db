@@ -326,102 +326,6 @@ public class MigrationHandlerTests
             () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
     }
 
-    [Theory(DisplayName = "BuildVariables Should default the symbol objects to their documented names")]
-    [InlineData("symbol_events_table", "symbol_events")]
-    [InlineData("symbols_table", "symbols")]
-    [InlineData("symbols_resync_view", "symbols_resync")]
-    public void BuildVariables_Should_default_the_symbol_objects_to_their_documented_names(string variable, string expected)
-    {
-        // act
-        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
-
-        // assert
-        Assert.Equal(expected, variables[variable]);
-    }
-
-    /// <summary>
-    /// A name that is a legal 63 character identifier is still too long once the scripts prefix it to derive an
-    /// index, a function or a trigger: PostgreSQL truncates the result at 63 bytes without complaining, and two
-    /// configured names that agree up to the cut then produce one object. For the projection function that
-    /// means one trigger running the other entity's body.
-    /// </summary>
-    [Theory(DisplayName = "BuildVariables Should reject a table name too long for the names derived from it")]
-    [InlineData("clients_table", 52)]
-    [InlineData("trading_accounts_table", 52)]
-    [InlineData("client_events_table", 49)]
-    [InlineData("trading_account_events_table", 48)]
-    [InlineData("trades_table", 37)]
-    public void BuildVariables_Should_reject_a_table_name_too_long_for_the_names_derived_from_it(string variable, int tooLong)
-    {
-        // arrange, the shortest name that overflows once prefixed
-        var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', tooLong)}"] };
-
-        // act, assert
-        var exception = Assert.Throws<SchemaMigrationException>(
-            () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
-
-        Assert.Contains("leaves no room for the names derived from it", exception.Message);
-    }
-
-    /// <summary>
-    /// And one character shorter is accepted, so the check is a boundary rather than a blanket refusal of long
-    /// names.
-    /// </summary>
-    [Theory(DisplayName = "BuildVariables Should accept the longest table name that still fits")]
-    [InlineData("clients_table", 51)]
-    [InlineData("trading_accounts_table", 51)]
-    [InlineData("client_events_table", 48)]
-    [InlineData("trading_account_events_table", 47)]
-    [InlineData("trades_table", 36)]
-    public void BuildVariables_Should_accept_the_longest_table_name_that_still_fits(string variable, int longest)
-    {
-        // arrange
-        var name = new string('a', longest);
-        var options = new CommandLineOptions { Variables = [$"{variable}={name}"] };
-
-        // act
-        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
-
-        // assert
-        Assert.Equal(name, variables[variable]);
-    }
-
-    /// <summary>
-    /// The prefix table is maintained by hand, so a table variable added without an entry would silently lose
-    /// the guard. Every variable naming a table the scripts derive another name from has to appear.
-    /// </summary>
-    [Fact(DisplayName = "BuildVariables Should know the derived name prefix of every table variable")]
-    public void BuildVariables_Should_know_the_derived_name_prefix_of_every_table_variable()
-    {
-        // arrange, the table and derived-table variables, which are the ones the scripts prefix
-        string[] prefixed =
-        [
-            "trades_table", "daily_statements_table", "order_snapshots_table", "position_snapshots_table",
-            "trading_account_events_table", "trading_accounts_table", "client_events_table", "clients_table",
-            "cursor_table", "ticks_table"
-        ];
-
-        // act, assert, a name one character too long for its prefix must be refused for every one that has a
-        // derived name; cursor_table and ticks_table have none, so they take the full 63
-        foreach (var variable in prefixed)
-        {
-            var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', 63)}"] };
-
-            var exception = Record.Exception(
-                () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
-
-            if (variable is "cursor_table" or "ticks_table")
-            {
-                Assert.Null(exception);
-            }
-            else
-            {
-                Assert.NotNull(exception);
-                Assert.Contains("leaves no room", exception.Message);
-            }
-        }
-    }
-
     [Theory(DisplayName = "BuildVariables Should default the client objects to their documented names")]
     [InlineData("client_events_table", "client_events")]
     [InlineData("clients_table", "clients")]
@@ -452,8 +356,7 @@ public class MigrationHandlerTests
     }
 
     /// <summary>
-    /// Every one of these names is written into DDL as text, so a name added to the defaults but left out of
-    /// identifierVariables would travel to the server verbatim.
+    /// These names reach DDL as text, so each must be in identifierVariables.
     /// </summary>
     [Theory(DisplayName = "BuildVariables Should reject a client object name that is not an identifier")]
     [InlineData("client_events_table")]
@@ -468,94 +371,12 @@ public class MigrationHandlerTests
         Assert.Throws<SchemaMigrationException>(
             () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
     }
-    /// <summary>
-    /// A name that is a legal 63 character identifier is still too long once the scripts prefix it to derive an
-    /// index, a function or a trigger: PostgreSQL truncates the result at 63 bytes without complaining, and two
-    /// configured names that agree up to the cut then produce one object. For the projection function that
-    /// means one trigger running the other entity's body.
-    /// </summary>
-    [Theory(DisplayName = "BuildVariables Should reject a table name too long for the names derived from it")]
-    [InlineData("groups_table", 52)]
-    [InlineData("trading_accounts_table", 52)]
-    [InlineData("group_events_table", 50)]
-    [InlineData("trading_account_events_table", 48)]
-    [InlineData("trades_table", 37)]
-    public void BuildVariables_Should_reject_a_table_name_too_long_for_the_names_derived_from_it(string variable, int tooLong)
-    {
-        // arrange, the shortest name that overflows once prefixed
-        var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', tooLong)}"] };
 
-        // act, assert
-        var exception = Assert.Throws<SchemaMigrationException>(
-            () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
-
-        Assert.Contains("leaves no room for the names derived from it", exception.Message);
-    }
-
-    /// <summary>
-    /// And one character shorter is accepted, so the check is a boundary rather than a blanket refusal of long
-    /// names.
-    /// </summary>
-    [Theory(DisplayName = "BuildVariables Should accept the longest table name that still fits")]
-    [InlineData("groups_table", 51)]
-    [InlineData("trading_accounts_table", 51)]
-    [InlineData("group_events_table", 49)]
-    [InlineData("trading_account_events_table", 47)]
-    [InlineData("trades_table", 36)]
-    public void BuildVariables_Should_accept_the_longest_table_name_that_still_fits(string variable, int longest)
-    {
-        // arrange
-        var name = new string('a', longest);
-        var options = new CommandLineOptions { Variables = [$"{variable}={name}"] };
-
-        // act
-        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
-
-        // assert
-        Assert.Equal(name, variables[variable]);
-    }
-
-    /// <summary>
-    /// The prefix table is maintained by hand, so a table variable added without an entry would silently lose
-    /// the guard. Every variable naming a table the scripts derive another name from has to appear.
-    /// </summary>
-    [Fact(DisplayName = "BuildVariables Should know the derived name prefix of every table variable")]
-    public void BuildVariables_Should_know_the_derived_name_prefix_of_every_table_variable()
-    {
-        // arrange, the table and derived-table variables, which are the ones the scripts prefix
-        string[] prefixed =
-        [
-            "trades_table", "daily_statements_table", "order_snapshots_table", "position_snapshots_table",
-            "trading_account_events_table", "trading_accounts_table", "group_events_table", "groups_table",
-            "cursor_table", "ticks_table"
-        ];
-
-        // act, assert, a name one character too long for its prefix must be refused for every one that has a
-        // derived name; cursor_table and ticks_table have none, so they take the full 63
-        foreach (var variable in prefixed)
-        {
-            var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', 63)}"] };
-
-            var exception = Record.Exception(
-                () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
-
-            if (variable is "cursor_table" or "ticks_table")
-            {
-                Assert.Null(exception);
-            }
-            else
-            {
-                Assert.NotNull(exception);
-                Assert.Contains("leaves no room", exception.Message);
-            }
-        }
-    }
-
-    [Theory(DisplayName = "BuildVariables Should default the group objects to their documented names")]
-    [InlineData("group_events_table", "group_events")]
-    [InlineData("groups_table", "groups")]
-    [InlineData("groups_resync_view", "groups_resync")]
-    public void BuildVariables_Should_default_the_group_objects_to_their_documented_names(string variable, string expected)
+    [Theory(DisplayName = "BuildVariables Should default the symbol objects to their documented names")]
+    [InlineData("symbol_events_table", "symbol_events")]
+    [InlineData("symbols_table", "symbols")]
+    [InlineData("symbols_resync_view", "symbols_resync")]
+    public void BuildVariables_Should_default_the_symbol_objects_to_their_documented_names(string variable, string expected)
     {
         // act
         var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
@@ -597,6 +418,19 @@ public class MigrationHandlerTests
             () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
     }
 
+    [Theory(DisplayName = "BuildVariables Should default the group objects to their documented names")]
+    [InlineData("group_events_table", "group_events")]
+    [InlineData("groups_table", "groups")]
+    [InlineData("groups_resync_view", "groups_resync")]
+    public void BuildVariables_Should_default_the_group_objects_to_their_documented_names(string variable, string expected)
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.Equal(expected, variables[variable]);
+    }
+
     [Theory(DisplayName = "BuildVariables Should let --variables rename a group object")]
     [InlineData("group_events_table")]
     [InlineData("groups_table")]
@@ -628,5 +462,97 @@ public class MigrationHandlerTests
         // act, assert
         Assert.Throws<SchemaMigrationException>(
             () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
+    }
+
+    /// <summary>
+    /// A name that is a legal 63 character identifier is still too long once the scripts prefix it to derive an
+    /// index, a function or a trigger: PostgreSQL truncates the result at 63 bytes without complaining, and two
+    /// configured names that agree up to the cut then produce one object. For the projection function that
+    /// means one trigger running the other entity's body.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should reject a table name too long for the names derived from it")]
+    [InlineData("trading_accounts_table", 52)]
+    [InlineData("clients_table", 52)]
+    [InlineData("symbols_table", 52)]
+    [InlineData("groups_table", 52)]
+    [InlineData("trading_account_events_table", 48)]
+    [InlineData("client_events_table", 49)]
+    [InlineData("symbol_events_table", 49)]
+    [InlineData("group_events_table", 50)]
+    [InlineData("trades_table", 37)]
+    public void BuildVariables_Should_reject_a_table_name_too_long_for_the_names_derived_from_it(string variable, int tooLong)
+    {
+        // arrange, the shortest name that overflows once prefixed
+        var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', tooLong)}"] };
+
+        // act, assert
+        var exception = Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
+
+        Assert.Contains("leaves no room for the names derived from it", exception.Message);
+    }
+
+    /// <summary>
+    /// And one character shorter is accepted, so the check is a boundary rather than a blanket refusal of long
+    /// names.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should accept the longest table name that still fits")]
+    [InlineData("trading_accounts_table", 51)]
+    [InlineData("clients_table", 51)]
+    [InlineData("symbols_table", 51)]
+    [InlineData("groups_table", 51)]
+    [InlineData("trading_account_events_table", 47)]
+    [InlineData("client_events_table", 48)]
+    [InlineData("symbol_events_table", 48)]
+    [InlineData("group_events_table", 49)]
+    [InlineData("trades_table", 36)]
+    public void BuildVariables_Should_accept_the_longest_table_name_that_still_fits(string variable, int longest)
+    {
+        // arrange
+        var name = new string('a', longest);
+        var options = new CommandLineOptions { Variables = [$"{variable}={name}"] };
+
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
+
+        // assert
+        Assert.Equal(name, variables[variable]);
+    }
+
+    /// <summary>
+    /// The prefix table is maintained by hand, so a table variable added without an entry would silently lose
+    /// the guard. Every variable naming a table the scripts derive another name from has to appear.
+    /// </summary>
+    [Fact(DisplayName = "BuildVariables Should know the derived name prefix of every table variable")]
+    public void BuildVariables_Should_know_the_derived_name_prefix_of_every_table_variable()
+    {
+        // arrange, the table and derived-table variables, which are the ones the scripts prefix
+        string[] prefixed =
+        [
+            "trades_table", "daily_statements_table", "order_snapshots_table", "position_snapshots_table",
+            "trading_account_events_table", "trading_accounts_table", "client_events_table", "clients_table",
+            "symbol_events_table", "symbols_table", "group_events_table", "groups_table",
+            "cursor_table", "ticks_table"
+        ];
+
+        // act, assert, a name one character too long for its prefix must be refused for every one that has a
+        // derived name; cursor_table and ticks_table have none, so they take the full 63
+        foreach (var variable in prefixed)
+        {
+            var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', 63)}"] };
+
+            var exception = Record.Exception(
+                () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
+
+            if (variable is "cursor_table" or "ticks_table")
+            {
+                Assert.Null(exception);
+            }
+            else
+            {
+                Assert.NotNull(exception);
+                Assert.Contains("leaves no room", exception.Message);
+            }
+        }
     }
 }

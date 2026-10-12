@@ -1,9 +1,5 @@
--- Current state of every live client, one row per (sender_id, client_id).
---
--- Not written by the trade server: maintained from ##client_events_table## by the trigger in
--- views/clients_projection.sql, in the same transaction as the event. Same columns as a state carrying event,
--- in the same order, minus the log's envelope. No foreign key on source_event_row_id: events age out of
--- retention long before the client does.
+-- Current state of every live client, kept by the trigger in views/clients_projection.sql.
+-- No FK on source_event_row_id: events age out first.
 
 CREATE TABLE IF NOT EXISTS ##clients_table##
 (
@@ -86,10 +82,8 @@ CREATE TABLE IF NOT EXISTS ##clients_table##
     experience_stocks               INTEGER                  NOT NULL,
     experience_crypto               INTEGER                  NOT NULL,
 
-    -- the event row this state came from
     source_event_row_id             BIGINT                   NOT NULL,
-    -- when the projection last wrote the row
-    time_applied                    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    time_applied                   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
 
     PRIMARY KEY (sender_id, client_id)
 );

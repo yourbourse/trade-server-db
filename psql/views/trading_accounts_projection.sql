@@ -1,11 +1,7 @@
--- Maintains ##trading_accounts_table## from ##trading_account_events_table##: the projection function, the
--- trigger and a reconcile pass. All three stay in one file because it is one transaction, and the trigger's
--- lock keeps the exporter out while the reconcile runs.
---
--- Event types: 0 account state, 1 deletion, 2 resync started, 3 resync finished.
---
--- The column lists are long and repeated, so a mismapping is the realistic defect; the guard is the "copy
--- every field from the event unchanged" test, which compares whole rows as jsonb.
+-- Maintains ##trading_accounts_table## from ##trading_account_events_table##; function, trigger and reconcile
+-- share one transaction.
+-- Event types: 0 state, 1 deletion, 2 resync started, 3 resync finished.
+-- The column lists are guarded by the "copy every field" test.
 
 CREATE OR REPLACE FUNCTION project_##trading_accounts_table##()
     RETURNS trigger
@@ -15,8 +11,7 @@ $$
 BEGIN
     CASE NEW.event_type
 
-        -- Account state: upsert, last write wins. A version guard would skip a resync's re-announcement of
-        -- an unchanged account, and the sweep would then delete it.
+        -- Upsert, last write wins; a version guard would let the sweep delete re-announced accounts.
         WHEN 0 THEN
             INSERT INTO ##trading_accounts_table## (sender_id,
                                                     trading_account_id,
@@ -66,21 +61,17 @@ BEGIN
                     source_event_row_id        = excluded.source_event_row_id,
                     time_applied               = excluded.time_applied;
 
-        -- Deletion.
         WHEN 1 THEN
             DELETE
             FROM ##trading_accounts_table##
             WHERE sender_id = NEW.sender_id
               AND trading_account_id = NEW.trading_account_id;
 
-        -- Resync started: nothing to do. Clearing here would publish an empty table for the whole resync;
-        -- the end marker sweeps instead, using this row's id as the watermark.
+        -- Nothing: this row's id is the end marker's watermark.
         WHEN 2 THEN
             NULL;
 
-        -- Resync finished: delete whatever it did not re-announce, i.e. rows stamped before the sender's
-        -- newest start marker. marker.id < NEW.id because an AFTER ROW trigger already sees the whole batch,
-        -- which may carry a later resync's start marker. No start marker -> NULL -> nothing deleted.
+        -- Sweep rows older than this resync's start marker; marker.id < NEW.id skips the next resync's.
         WHEN 3 THEN
             DELETE
             FROM ##trading_accounts_table##
@@ -91,35 +82,31 @@ BEGIN
                                            AND marker.event_type = 2
                                            AND marker.id < NEW.id);
 
-        -- Unknown event type: kept in the log, not projected. ELSE is required - without it plpgsql raises
-        -- CASE_NOT_FOUND and the export stalls.
+        -- Unknown type: stored, not projected. ELSE stops CASE_NOT_FOUND stalling the export.
         ELSE
             NULL;
 
     END CASE;
 
-    -- an AFTER trigger's return value is discarded
     RETURN NULL;
 END;
 $$;
 
--- DROP + CREATE rather than CREATE OR REPLACE TRIGGER, which needs PostgreSQL 14
+-- CREATE OR REPLACE TRIGGER needs PostgreSQL 14
 DROP TRIGGER IF EXISTS trg_project_##trading_accounts_table## ON ##trading_account_events_table##;
 
--- name leads with what it does, so 63-byte truncation cannot make two collide
 CREATE TRIGGER trg_project_##trading_accounts_table##
     AFTER INSERT
     ON ##trading_account_events_table##
     FOR EACH ROW
 EXECUTE FUNCTION project_##trading_accounts_table##();
 
--- Reconcile: apply, per account, the newest retained event the derived row does not reflect yet.
--- The newest event is picked before its type is checked, so a deleted account is not resurrected.
+-- Reconcile: replay each account's newest event the row does not reflect; newest first, so deletions stick.
 WITH latest AS (SELECT DISTINCT ON (sender_id, trading_account_id) *
                 FROM ##trading_account_events_table##
                 WHERE event_type IN (0, 1)
                 ORDER BY sender_id, trading_account_id, id DESC),
-     -- each sender's watermark from the newest resync that finished
+     -- per sender, the start marker of the newest finished resync
      completed_resync AS (SELECT started.sender_id, max(started.id) AS watermark
                           FROM ##trading_account_events_table## started
                           WHERE started.event_type = 2
@@ -164,12 +151,12 @@ SELECT l.sender_id,
 FROM latest l
          LEFT JOIN completed_resync w ON w.sender_id = l.sender_id
 WHERE l.event_type = 0
-  -- >= so that re-applying this file also repairs rows the projection itself wrote wrongly
+  -- >= also repairs rows the projection wrote wrongly
   AND l.id >= COALESCE((SELECT a.source_event_row_id
                         FROM ##trading_accounts_table## a
                         WHERE a.sender_id = l.sender_id
                           AND a.trading_account_id = l.trading_account_id), -1)
-  -- and not already swept by a completed resync (a sweep leaves no event, so it would come back)
+  -- not swept by a finished resync (a sweep leaves no event)
   AND l.id > COALESCE(w.watermark, -1)
 ON CONFLICT (sender_id, trading_account_id) DO UPDATE
     SET version                    = excluded.version,
@@ -187,7 +174,7 @@ ON CONFLICT (sender_id, trading_account_id) DO UPDATE
         source_event_row_id        = excluded.source_event_row_id,
         time_applied               = excluded.time_applied;
 
--- Removal 1 of 2: the account was deleted. A deletion is an event, so look for it directly.
+-- deleted: the newest event is a deletion the row does not reflect
 DELETE
 FROM ##trading_accounts_table## a
     USING (SELECT DISTINCT ON (sender_id, trading_account_id) sender_id, trading_account_id, id, event_type
@@ -199,9 +186,7 @@ WHERE l.sender_id = a.sender_id
   AND l.event_type = 1
   AND l.id > a.source_event_row_id;
 
--- Removal 2 of 2: a resync did not re-announce the account. That is an absence, not an event, so it is found
--- by comparing stamps against the newest completed resync's start marker. Only has work to do when the trigger
--- was absent when that end marker arrived; a later resync would sweep it anyway.
+-- swept: a finished resync skipped the row while the trigger was absent, and a sweep leaves no event
 DELETE
 FROM ##trading_accounts_table## a
     USING (SELECT started.sender_id, max(started.id) AS watermark

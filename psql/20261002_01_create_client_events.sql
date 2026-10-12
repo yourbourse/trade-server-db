@@ -1,9 +1,6 @@
--- Client lifecycle events exported by the trade server; ##clients_table## is derived from it.
---
--- Order by id, not time_inserted: a whole batch shares one time_inserted. Columns that do not apply carry a
--- zero ('' / 0 / epoch), never NULL. Enum columns hold the trade server's ClientConfig ordinals.
--- Column order and types are the schema agreed with the trade server team, so a positional COPY also lines up.
--- Delivery is at-least-once and there is no deduplication key, so a redelivered event lands as a second row.
+-- Client events from the trade server; ##clients_table## is derived from it.
+-- Order by id (a batch shares one time_inserted). Unused columns hold '' / 0 / epoch, never NULL.
+-- Enums are ClientConfig ordinals. Column order is the agreed schema. No dedup key: redeliveries add rows.
 
 CREATE TABLE IF NOT EXISTS ##client_events_table##
 (
@@ -12,11 +9,11 @@ CREATE TABLE IF NOT EXISTS ##client_events_table##
     sender_id                       BIGINT                   NOT NULL,
 
     -- top-level
-    -- 0 client state, 1 deletion, 2 resync started, 3 resync finished; anything else is stored, not projected
+    -- 0 state, 1 deletion, 2 resync started, 3 resync finished
     event_type                      SMALLINT                 NOT NULL,
-    -- 0 on both marker rows
+    -- 0 on markers
     client_id                       BIGINT                   NOT NULL,
-    -- the client's version as of this event; 0 on a deletion and on both marker rows
+    -- 0 on deletions and markers
     version                         BIGINT                   NOT NULL,
     client_type                     INTEGER                  NOT NULL,
     client_status                   INTEGER                  NOT NULL,
@@ -110,13 +107,11 @@ CREATE TABLE IF NOT EXISTS ##client_events_table##
     experience_crypto               INTEGER                  NOT NULL
 );
 
--- index names lead with what they cover so 63-byte truncation cannot make two collide
-
--- a client's history
+-- prefix first, so 63-byte truncation cannot make two names collide
 CREATE INDEX IF NOT EXISTS idx_client_row_##client_events_table##
     ON ##client_events_table## (sender_id, client_id, id);
 
--- resync markers only, for the watermark lookup at the end of a resync
+-- the end marker's watermark lookup
 CREATE INDEX IF NOT EXISTS idx_markers_##client_events_table##
     ON ##client_events_table## (sender_id, event_type, id)
     WHERE event_type IN (2, 3);

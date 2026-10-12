@@ -91,7 +91,7 @@ public class MigrationHandler : IMigrationHandler
         "trades_history_view",
         "cash_transfers_view",
         "trading_accounts_resync_view",
-        "clients_resync_view"
+        "clients_resync_view",
         "symbols_resync_view",
         "groups_resync_view"
     ];
@@ -108,7 +108,7 @@ public class MigrationHandler : IMigrationHandler
     private static readonly string[] derivedTableVariables =
     [
         "trading_accounts_table",
-        "clients_table"
+        "clients_table",
         "symbols_table",
         "groups_table"
     ];
@@ -148,6 +148,8 @@ public class MigrationHandler : IMigrationHandler
         ["trading_accounts_table"] = (12, "trg_project_"),
         ["client_events_table"] = (15, "idx_client_row_"),
         ["clients_table"] = (12, "trg_project_"),
+        ["symbol_events_table"] = (15, "idx_symbol_row_"),
+        ["symbols_table"] = (12, "trg_project_"),
         ["group_events_table"] = (14, "idx_group_row_"),
         ["groups_table"] = (12, "trg_project_"),
         ["cursor_table"] = (0, ""),

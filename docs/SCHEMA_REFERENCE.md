@@ -4,7 +4,7 @@
 
 **The tables and views the export uses, on both engines, column by column**
 
-[Overview](#overview) · [trades](#trades) · [daily_statements_export](#daily_statements_export) · [order snapshots](#daily_statements_order_snapshots) · [position snapshots](#daily_statements_position_snapshots) · [export_cursor](#export_cursor) · [trading_account_events](#trading_account_events) · [trading_accounts](#trading_accounts) · [symbol_events](#symbol_events) · [symbols](#symbols) · [group_events](#group_events) · [groups](#groups) · [Views](#views) · [ticks](#ticks) · [schema_versions](#schema_versions) · [Deduplication](#deduplication) · [Caveats](#caveats)
+[Overview](#overview) · [trades](#trades) · [daily_statements_export](#daily_statements_export) · [order snapshots](#daily_statements_order_snapshots) · [position snapshots](#daily_statements_position_snapshots) · [export_cursor](#export_cursor) · [trading_account_events](#trading_account_events) · [trading_accounts](#trading_accounts) · [client_events](#client_events) · [clients](#clients) · [symbol_events](#symbol_events) · [symbols](#symbols) · [group_events](#group_events) · [groups](#groups) · [Views](#views) · [ticks](#ticks) · [schema_versions](#schema_versions) · [Deduplication](#deduplication) · [Caveats](#caveats)
 
 </div>
 
@@ -23,6 +23,8 @@ of them is created by the migrator, in the database named by the connection stri
 | Position snapshots | `daily_statements_position_snapshots` | PostgreSQL | trade server | The account's open positions at the statement time |
 | Trading account events | `trading_account_events` | PostgreSQL | trade server | Every trading account change, as an ordered log |
 | Trading accounts | `trading_accounts` | PostgreSQL | **migrator, by trigger** | The current state of every live trading account |
+| Client events | `client_events` | PostgreSQL | trade server | Every client change, as an ordered log |
+| Clients | `clients` | PostgreSQL | **migrator, by trigger** | The current state of every live client |
 | Symbol events | `symbol_events` | PostgreSQL | trade server | Every symbol configuration change, as an ordered log |
 | Symbols | `symbols` | PostgreSQL | **migrator, by trigger** | The current configuration of every live symbol |
 | Group events | `group_events` | PostgreSQL | trade server | Every group configuration change, as an ordered log |
@@ -31,23 +33,25 @@ of them is created by the migrator, in the database named by the connection stri
 | Ticks | `ticks` | ClickHouse | trade server | The top of the order book of every symbol, one row per change |
 | Journal | `schema_versions` | both | migrator | Which scripts have been applied |
 
-…and five views, on PostgreSQL:
+…and six views, on PostgreSQL:
 
 | View | Default name | Purpose |
 |------|--------------|---------|
 | Trades history | `trades_history` | The executed and cancelled trades, without the accounting records |
 | Cash transfers | `cash_transfers` | The cash movements, over the columns a transfer actually populates |
 | Trading accounts resync | `trading_accounts_resync` | Whether a resync is in progress, per sender, read from the log's markers |
+| Clients resync | `clients_resync` | The same answer for the client export, read from `client_events`' markers |
 | Symbols resync | `symbols_resync` | The same answer for the symbol export, read from `symbol_events`' markers |
 | Groups resync | `groups_resync` | The same answer for the group export, read from `group_events`' markers |
 
-The nine names the trade server writes to are configurable — they mirror its export configuration and are
+The ten names the trade server writes to are configurable — they mirror its export configuration and are
 templated as `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-`##position_snapshots_table##`, `##trading_account_events_table##`, `##symbol_events_table##`,
-`##group_events_table##`, `##cursor_table##` and `##ticks_table##`. The journal name comes from
-`--journal-table`. The derived tables `trading_accounts`, `symbols` and `groups` are templated too, as
-`##trading_accounts_table##`, `##symbols_table##` and `##groups_table##`, even though the trade
-server never writes to either — a deployment may already own an object under one of those names.
+`##position_snapshots_table##`, `##trading_account_events_table##`, `##client_events_table##`,
+`##symbol_events_table##`, `##group_events_table##`, `##cursor_table##` and `##ticks_table##`. The journal name
+comes from `--journal-table`. The derived tables `trading_accounts`, `clients`, `symbols` and `groups` are
+templated too, as `##trading_accounts_table##`, `##clients_table##`, `##symbols_table##` and `##groups_table##`,
+even though the trade server never writes to any of them — a deployment may already own an object under one of
+those names.
 
 The three daily statement tables are produced by one export: when a statement is generated the trade server
 publishes the statement row, a snapshot of every **working** order and a snapshot of every open position, all
@@ -66,12 +70,42 @@ without the snapshots. Every PostgreSQL pipeline shares the one `export_cursor` 
 `(sender_id, table_name)`.
 
 > **Important:** **The engines are not mirrors of each other.** The *Export Setup* guide sends trades, daily
-> statements, their snapshots, the trading account events, the symbol and group events and the cursor to PostgreSQL only,
-> and ticks to ClickHouse only; a pipeline that pairs an entity with the other engine is rejected by the trade
-> server. So `psql/` creates those eight tables, the `trading_accounts`, `symbols` and `groups` projections and the five
-> views, `clickhouse/` creates the ticks table, and both create the journal.
+> statements, their snapshots, the trading account, client, symbol and group events and the cursor to PostgreSQL
+> only, and ticks to ClickHouse only; a pipeline that pairs an entity with the other engine is rejected by the
+> trade server. So `psql/` creates those nine tables, the `trading_accounts`, `clients`, `symbols` and `groups`
+> projections and the six views, `clickhouse/` creates the ticks table, and both create the journal.
 
 Every definition matches the *Export Setup* guide.
+
+---
+
+## Every id is scoped to its sender
+
+`sender_id` identifies the trade server instance that produced a row. A deployment may run **several
+instances**, each exporting into the same database, and **each numbers its own records**. So every id in this
+schema — `client_id`, `trading_account_id`, `symbol_id`, `group_id`, `trade_id`, `order_id`, `position_id` — is
+unique only **within a sender**. Two instances can legitimately hold the same `client_id` for two unrelated
+clients, with different names.
+
+> **Warning:** **Never filter or join on an id alone.** Always pair it with `sender_id`. A query that omits it
+> silently mixes records belonging to different instances, and it will look correct on a single-instance
+> deployment right up until a second instance is added.
+
+```sql
+-- WRONG: attributes one instance's accounts to another instance's client
+FROM clients c JOIN trading_accounts a ON a.client_id = c.client_id
+
+-- RIGHT
+FROM clients c JOIN trading_accounts a ON a.sender_id = c.sender_id
+                                      AND a.client_id = c.client_id
+```
+
+The same applies to counting: over two instances that each hold a client numbered `1002`,
+`count(*) FROM clients` is `2` — two clients — while `count(DISTINCT client_id)` is `1`, which is simply wrong.
+`GROUP BY sender_id, client_id`, never `GROUP BY client_id`.
+
+Every exported and derived table carries `sender_id`, and every key and index that finds a record by its id
+leads with it, so the correct query is also the one the indexes serve.
 
 ---
 
@@ -424,10 +458,200 @@ restarts its version sequence, and deletions and markers carry `version 0` anywa
 A resync sweeps at the **end** marker rather than the start, so the table stays complete and readable for the
 whole resync — which matters because a resync runs on every trade server startup that has it enabled.
 
-The script is re-runnable and ends with a reconcile pass that replays the newest retained event per account, so
-`--force` repairs a dropped trigger, and corrects rows an earlier, buggy version of the projection wrote. It
-cannot recover what the retention window has
-dropped; the authoritative repair for that is a resync from the trade server.
+The script is re-runnable and ends with a reconcile pass that replays the newest retained event per account and
+applies any resync sweep the trigger missed because it was absent when the end marker arrived. So `--force`
+repairs a dropped trigger and corrects rows an earlier, buggy version of the projection wrote. It cannot recover
+what the retention window has dropped; the authoritative repair for that is a resync from the trade server.
+
+---
+
+## client_events
+
+Every change to a client, as an ordered log. A creation or a modification carries the client's full state; a
+deletion carries none of it; and two marker types bracket a resync and are not about a client at all. The same
+shape as [`trading_account_events`](#trading_account_events), for a different entity.
+
+Reducing this log to "which clients are live" is the job of [`clients`](#clients), which a trigger maintains
+from it — see [Client projection](#client-projection).
+
+The column set, the types and the **column order** are the schema agreed with the trade server team, so the
+exporter lines up whether its `COPY` names its columns or relies on their position.
+
+### PostgreSQL
+
+68 columns: a four-column envelope, the client's id, and 63 content fields, in the groups the table declares them
+in.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. The recorded order, and the only column that orders events |
+| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | When the row reached PostgreSQL. Transaction start time, so a whole batch shares one — it cannot order events |
+| `sender_id` | `BIGINT` | The trade server instance that produced the event |
+| `event_type` | `SMALLINT` | `0` client state, `1` deletion, `2` resync started, `3` resync finished |
+| `client_id` | `BIGINT` | `0` on both marker rows. The identifier `trading_accounts` carries under that name |
+| `version` | `BIGINT` | The client's version as of this event. `0` on a deletion and on both markers |
+| `client_type` | `INTEGER` | Enum ordinal — see [Client enum columns](#client-enum-columns) |
+| `client_status` | `INTEGER` | Enum ordinal |
+| `assigned_manager` | `BIGINT` | The trading account id of the assigned manager. `0` when unassigned |
+| `time_created`, `time_modified` | `TIMESTAMP WITH TIME ZONE` | |
+| `compliance_approved_by` | `BIGINT` | The trading account id of the approving compliance officer |
+| `compliance_client_category` | `VARCHAR(64)` | |
+| `compliance_date_approval`, `compliance_date_termination` | `TIMESTAMP WITH TIME ZONE` | |
+| `lead_campaign`, `lead_source` | `VARCHAR(64)` | |
+| `introducer` | `BIGINT` | The introducing broker's trading account id. `0` means none |
+| `person_title`, `person_first_name`, `person_last_name` | `VARCHAR(32)` | Empty throughout for a corporate client |
+| `person_middle_name`, `person_citizenship` | `VARCHAR(64)` | |
+| `person_birth_date` | `TIMESTAMP WITH TIME ZONE` | |
+| `person_tax_id` | `VARCHAR(64)` | |
+| `person_document_type`, `person_document_number` | `VARCHAR(32)` | |
+| `person_document_date`, `person_document_expiration_date` | `TIMESTAMP WITH TIME ZONE` | |
+| `person_document_extra` | `VARCHAR(64)` | |
+| `person_employment`, `person_industry`, `person_education`, `person_wealth_source` | `INTEGER` | Enum ordinals |
+| `person_annual_income`, `person_net_assets` | `DOUBLE PRECISION` | |
+| `person_annual_income_currency` | `VARCHAR(16)` | Applies to both amounts above |
+| `person_gender` | `INTEGER` | Enum ordinal |
+| `preferred_communication` | `INTEGER` | Enum ordinal |
+| `preferred_language` | `VARCHAR(16)` | |
+| `company_name`, `company_registration_number`, `company_registration_authority`, `company_license_authority`, `company_registration_address`, `company_website` | `VARCHAR(64)` | Empty throughout for an individual |
+| `company_registration_date` | `TIMESTAMP WITH TIME ZONE` | |
+| `company_vat`, `company_lei`, `company_license_number`, `company_country` | `VARCHAR(32)` | |
+| `email` | `VARCHAR(64)` | |
+| `phone` | `VARCHAR(32)` | |
+| `messengers`, `social_media` | `VARCHAR(128)` | Comma-separated lists, stored as the API sends them |
+| `last_contact_date` | `TIMESTAMP WITH TIME ZONE` | |
+| `address_country` | `VARCHAR(32)` | |
+| `address_postcode` | `VARCHAR(16)` | |
+| `address_street` | `VARCHAR(128)` | |
+| `address_state`, `address_city` | `VARCHAR(64)` | |
+| `client_external_id` | `VARCHAR(64)` | The client's id in the external trading system |
+| `comment` | `VARCHAR(256)` | |
+| `experience_forex`, `experience_cfd`, `experience_futures`, `experience_stocks`, `experience_crypto` | `INTEGER` | Years of experience. `0` also means "not answered" — the API cannot tell the two apart either |
+
+Every column is `NOT NULL`, and the exporter writes every one of them on every row — a field that does not
+apply carries a type-appropriate zero (`''`, `0`, the epoch). A delete row and both marker rows carry those zeros
+throughout, `version` and `client_id` included, which is why a delete row cannot be ordered into a client's
+history by its `version`. Use `id`.
+
+The two amounts are `DOUBLE PRECISION`, as the agreed schema declares them, rather than the `NUMERIC` that the
+prices and rates of `trades`, `symbol_events` and `group_events` use: a value can come back with floating-point
+rounding in its last digits.
+
+The text columns carry `DEFAULT ''`, as the agreed schema declares them; `clients` does not, because the
+projection always writes every column and a default there would only mask one it had forgotten. The `VARCHAR`
+widths follow the documented API lengths, so a field capped at 63 characters gets `VARCHAR(64)`.
+
+Indexes: `(sender_id, client_id, id)` for a client's history, and a partial
+`(sender_id, event_type, id) WHERE event_type IN (2, 3)` for the resync markers.
+
+#### Client enum columns
+
+Eight columns hold the trade server's `ClientConfig` enum **ordinal**, not its name — the same convention as
+`trade_type`, `side`, `entry_type` and `reason` in [`trades`](#trades). The members below are listed in the
+order the API declares them, which is the order the ordinals follow:
+
+| Column | Members, in ordinal order |
+|--------|---------------------------|
+| `client_type` | `Individual`, `Corporate` |
+| `client_status` | `Registered`, `NotInterested`, `NeedMoreInfo`, `Active`, `Suspended`, `Rejected`, `Closed`, `Terminated` |
+| `person_gender` | `Male`, `Female`, `Other` |
+| `person_employment` | `Unemployed`, `Employed`, `SelfEmployed`, `Retired`, `Student`, `Other` |
+| `person_industry` | `Agriculture`, `Construction`, `Management`, `Communication`, `Education`, `Government`, `Healthcare`, `Tourism`, `Financial`, `IT`, `Security`, `Manufacturing`, `Entertainment`, `Science`, `Transportation`, `Engineering`, `Trade`, `Other` |
+| `person_education` | `Secondary`, `Bachelor`, `Master`, `PhD`, `Other` |
+| `person_wealth_source` | `Employment`, `Business`, `Savings`, `Inheritance`, `Other` |
+| `preferred_communication` | `Email`, `Phone`, `SMS`, `Messenger` |
+
+> **Note:** The names above come from the client API documentation; the trade server's enum definition is the
+> authority on the ordinals. A value this table does not list is stored like any other integer — nothing
+> validates the range, so a member added later cannot fail the export.
+
+> **Note:** **There is no deduplication key**, as with `trading_account_events`. Delivery is at-least-once, so a
+> redelivered event lands as a second row rather than being rejected. `clients` absorbs that — a re-applied
+> change leaves the same state — but a consumer reading this log directly can see one logical change twice.
+
+> **Note:** The client API carries two fields this table does not: `phonePassword` and `tags`. Both are out of
+> the agreed export. Leaving `phonePassword` out of the schema is what keeps it out of the database — the `ro`
+> reporting role can read every table in here — and it matches the trading account password, which
+> `trading_account_events` omits for the same reason.
+
+### ClickHouse
+
+Out of scope: nothing on ClickHouse carries a client, and ClickHouse has no trigger mechanism to maintain a
+current-state table with.
+
+---
+
+## clients
+
+The current state of every live client: one row per `(sender_id, client_id)`, so "which clients are live and
+what do we hold on each" is a single read.
+
+**Not written by the trade server.** It is derived from `client_events` by a trigger, inside the same
+transaction as the event that caused the change — so it cannot lag behind the log, and a batch that fails to
+commit leaves no trace in it.
+
+`client_id` is the identifier [`trading_accounts`](#trading_accounts) carries under that name, so a client's
+accounts are the `trading_accounts` rows whose `sender_id` **and** `client_id` match. Both halves are required:
+client `1002` on one instance and client `1002` on another are different people, often with different names.
+See [Every id is scoped to its sender](#every-id-is-scoped-to-its-sender).
+
+```sql
+SELECT c.sender_id, c.client_id, c.person_last_name, count(a.trading_account_id) AS accounts
+FROM clients c
+         LEFT JOIN trading_accounts a ON a.sender_id = c.sender_id AND a.client_id = c.client_id
+GROUP BY c.sender_id, c.client_id, c.person_last_name;
+```
+
+`sender_id` is in the `GROUP BY` as well as the join. Grouping it away would merge two instances' clients that
+share a `client_id` into one row and add their account counts together — the same mistake as joining without
+it, one step later.
+
+### PostgreSQL
+
+Every client column of `client_events`, with the same types, in the same order and with the same meanings, minus
+the log's own envelope (`id`, `time_inserted`, `event_type`) and plus:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `sender_id`, `client_id` | `BIGINT` | `PRIMARY KEY (sender_id, client_id)` |
+| `source_event_row_id` | `BIGINT` | The `client_events.id` this state came from. Traceability, and what a resync's end marker compares against |
+| `time_applied` | `TIMESTAMP WITH TIME ZONE` | When the projection last wrote the row, as against `time_modified`, when the client last changed |
+
+There is deliberately **no foreign key** on `source_event_row_id`, for the same reason as `trading_accounts`: an
+event ages out of the retention window long before the client does.
+
+No indexes beyond the primary key. The table is bounded at the live client count — fewer rows than there are
+trading accounts, since a client may hold several — so a filter the primary key cannot serve, by `email` or
+`client_status` say, is a scan of a small table.
+
+### ClickHouse
+
+Out of scope, as above.
+
+---
+
+## Client projection
+
+`psql/views/clients_projection.sql` creates the function `project_clients()` and the trigger
+`trg_project_clients`, an `AFTER INSERT … FOR EACH ROW` trigger on `client_events`. It behaves exactly as
+[the trading account projection](#trading-account-projection) does, against the client tables:
+
+| `event_type` | What the trigger does |
+|--------------|-----------------------|
+| `0` client state | Upserts the client's row, stamped with the event's `id` |
+| `1` deletion | Deletes the client's row |
+| `2` resync started | **Nothing.** The row's own `id` is the watermark the end marker reads back out of the log |
+| `3` resync finished | Deletes that sender's rows stamped older than the newest `2` before it |
+| anything else | Nothing — stored in the log, not projected, and no batch fails |
+
+Ordering is by arrival, never by `version`, and a resync sweeps at the **end** marker rather than the start —
+the reasoning is identical to the trading account projection's.
+
+The script is re-runnable and ends with the same reconcile pass, so `--force` repairs a dropped trigger, applies a
+resync sweep the trigger missed, and corrects rows an earlier, buggy version of the projection wrote.
+
+> **Note:** The projection names sixty-five columns in four places — the `INSERT` and the `ON CONFLICT` `SET` in
+> the function, then both again in the reconcile. `ClientsProjectionIntegrationTests` compares the complete event
+> and state rows as `jsonb` on all four write paths.
 
 ---
 
@@ -557,6 +781,89 @@ its own grants.
 
 ---
 
+## symbols
+
+The current configuration of every live symbol: one row per `(sender_id, symbol_id)`, so "which symbols are
+live and how is each configured" is a single read.
+
+**Not written by the trade server.** It is derived from `symbol_events` by a trigger, inside the same
+transaction as the event that caused the change — so it cannot lag behind the log, and a batch that fails to
+commit leaves no trace in it.
+
+`symbol_id` is the identifier [`trades`](#trades), [order snapshots](#daily_statements_order_snapshots) and
+[position snapshots](#daily_statements_position_snapshots) carry under that name, so a trade joins to its symbol
+directly — on `sender_id` **and** `symbol_id`. Both halves are required: each trade server instance numbers its
+own symbols, so symbol `25` on one instance and symbol `25` on another can be two different instruments.
+
+```sql
+SELECT t.sender_id, t.trade_id, t.symbol_name, s.profit_currency, s.margin_calc_mode
+FROM trades t
+         LEFT JOIN symbols s ON s.sender_id = t.sender_id AND s.symbol_id = t.symbol_id;
+```
+
+`LEFT JOIN`, because a trade outlives its symbol: once a symbol is deleted it has no row here.
+
+> **Important:** This is the symbol's **current** configuration, not the one in force when a trade executed. A
+> lot size, tick value or margin rate changed since then shows as it is now. The trade row already carries the
+> values that mattered at execution — `contract_size`, `tick_value`, `tick_size`, `price_decimal_places` — and
+> those are the ones to use for that trade. For the configuration at an earlier time, read `symbol_events`,
+> within its retention.
+
+Join on the id, not on `symbol_name`. There is deliberately **no unique key** on `(sender_id, symbol_name)`:
+between a resync's start and end markers, a symbol deleted while the sender was down and a new one created
+under its name both hold a row, and a unique index would turn the re-announcement of the new one into a
+constraint violation that stalls the export.
+
+### PostgreSQL
+
+Every symbol column of `symbol_events`, with the same types, in the same order and with the same meanings, minus
+the log's own envelope (`id`, `time_inserted`, `event_type`) and plus:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `sender_id`, `symbol_id` | `BIGINT` | `PRIMARY KEY (sender_id, symbol_id)` |
+| `source_event_row_id` | `BIGINT` | The `symbol_events.id` this state came from. Traceability, and what a resync's end marker compares against |
+| `time_applied` | `TIMESTAMP WITH TIME ZONE` | When the projection last wrote the row |
+
+There is deliberately **no foreign key** on `source_event_row_id`, for the same reason as `trading_accounts`: an
+event ages out of the retention window long before the symbol does.
+
+No indexes beyond the primary key. The table is bounded at the live symbol count — hundreds, low thousands at
+most — so a filter the primary key cannot serve, by `symbol_name` or `symbol_path` say, is a scan of a small
+table.
+
+### ClickHouse
+
+Out of scope, as above.
+
+---
+
+## Symbol projection
+
+`psql/views/symbols_projection.sql` creates the function `project_symbols()` and the trigger
+`trg_project_symbols`, an `AFTER INSERT … FOR EACH ROW` trigger on `symbol_events`. It behaves exactly as
+[the trading account projection](#trading-account-projection) does, against the symbol tables:
+
+| `event_type` | What the trigger does |
+|--------------|-----------------------|
+| `0` symbol state | Upserts the symbol's row, stamped with the event's `id` |
+| `1` deletion | Deletes the symbol's row |
+| `2` resync started | **Nothing.** The row's own `id` is the watermark the end marker reads back out of the log |
+| `3` resync finished | Deletes that sender's rows stamped older than the newest `2` before it |
+| anything else | Nothing — stored in the log, not projected, and no batch fails |
+
+Ordering is by arrival, never by `version`, and a resync sweeps at the **end** marker rather than the start —
+the reasoning is identical to the trading account projection's.
+
+The script is re-runnable and ends with the same reconcile pass, so `--force` repairs a dropped trigger, applies a
+resync sweep the trigger missed, and corrects rows an earlier, buggy version of the projection wrote.
+
+> **Note:** The projection names over a hundred columns in four places — the `INSERT` and the `ON CONFLICT` `SET`
+> in the function, then both again in the reconcile. `SymbolsProjectionIntegrationTests` compares the complete
+> event and state rows as `jsonb` on all four write paths.
+
+---
+
 ## group_events
 
 Every change to a group's configuration, as an ordered log. A creation or a modification carries the group's
@@ -659,61 +966,10 @@ Every other field is the snake case of its API name — `freeMarginMode` is `fre
 > tiers. Neither the log nor `groups` records their content, so which symbols a group trades on what terms, and
 > what it is charged, cannot be answered from here — only how many entries each list had.
 
-### Group ClickHouse
+### ClickHouse
 
 Out of scope: nothing on ClickHouse carries a group, and ClickHouse has no trigger mechanism to maintain a
 current-state table with.
-
-## symbols
-
-The current configuration of every live symbol: one row per `(sender_id, symbol_id)`, so "which symbols are
-live and how is each configured" is a single read.
-
-**Not written by the trade server.** It is derived from `symbol_events` by a trigger, inside the same
-transaction as the event that caused the change — so it cannot lag behind the log, and a batch that fails to
-commit leaves no trace in it.
-
-`symbol_id` is the identifier [`trades`](#trades), [order snapshots](#daily_statements_order_snapshots) and
-[position snapshots](#daily_statements_position_snapshots) carry under that name, so a trade joins to its symbol
-directly — on `sender_id` **and** `symbol_id`. Both halves are required: each trade server instance numbers its
-own symbols, so symbol `25` on one instance and symbol `25` on another can be two different instruments.
-
-```sql
-SELECT t.sender_id, t.trade_id, t.symbol_name, s.profit_currency, s.margin_calc_mode
-FROM trades t
-         LEFT JOIN symbols s ON s.sender_id = t.sender_id AND s.symbol_id = t.symbol_id;
-```
-
-`LEFT JOIN`, because a trade outlives its symbol: once a symbol is deleted it has no row here.
-
-> **Important:** This is the symbol's **current** configuration, not the one in force when a trade executed. A
-> lot size, tick value or margin rate changed since then shows as it is now. The trade row already carries the
-> values that mattered at execution — `contract_size`, `tick_value`, `tick_size`, `price_decimal_places` — and
-> those are the ones to use for that trade. For the configuration at an earlier time, read `symbol_events`,
-> within its retention.
-
-Join on the id, not on `symbol_name`. There is deliberately **no unique key** on `(sender_id, symbol_name)`:
-between a resync's start and end markers, a symbol deleted while the sender was down and a new one created
-under its name both hold a row, and a unique index would turn the re-announcement of the new one into a
-constraint violation that stalls the export.
-
-### PostgreSQL
-
-Every symbol column of `symbol_events`, with the same types, in the same order and with the same meanings, minus
-the log's own envelope (`id`, `time_inserted`, `event_type`) and plus:
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `sender_id`, `symbol_id` | `BIGINT` | `PRIMARY KEY (sender_id, symbol_id)` |
-| `source_event_row_id` | `BIGINT` | The `symbol_events.id` this state came from. Traceability, and what a resync's end marker compares against |
-| `time_applied` | `TIMESTAMP WITH TIME ZONE` | When the projection last wrote the row |
-
-There is deliberately **no foreign key** on `source_event_row_id`, for the same reason as `trading_accounts`: an
-event ages out of the retention window long before the symbol does.
-
-No indexes beyond the primary key. The table is bounded at the live symbol count — hundreds, low thousands at
-most — so a filter the primary key cannot serve, by `symbol_name` or `symbol_path` say, is a scan of a small
-table.
 
 ---
 
@@ -777,17 +1033,6 @@ Out of scope, as above.
 
 ---
 
-## Symbol projection
-
-`psql/views/symbols_projection.sql` creates the function `project_symbols()` and the trigger
-`trg_project_symbols`, an `AFTER INSERT … FOR EACH ROW` trigger on `symbol_events`. It behaves exactly as
-[the trading account projection](#trading-account-projection) does, against the symbol tables:
-
-| `event_type` | What the trigger does |
-|--------------|-----------------------|
-| `0` symbol state | Upserts the symbol's row, stamped with the event's `id` |
-| `1` deletion | Deletes the symbol's row |
-
 ## Group projection
 
 `psql/views/groups_projection.sql` creates the function `project_groups()` and the trigger
@@ -803,25 +1048,20 @@ Out of scope, as above.
 | anything else | Nothing — stored in the log, not projected, and no batch fails |
 
 Ordering is by arrival, never by `version`, and a resync sweeps at the **end** marker rather than the start —
-the reasoning is identical for the symbol and group projections.
+the reasoning is identical to the trading account projection's.
 
-The script is re-runnable and ends with the same reconcile pass, which also applies a resync sweep the trigger
-missed because it was absent when the end marker arrived. So `--force` repairs a dropped trigger and corrects
-rows an earlier, buggy version of the projection wrote.
+The script is re-runnable and ends with the same reconcile pass, so `--force` repairs a dropped trigger, applies a
+resync sweep the trigger missed, and corrects rows an earlier, buggy version of the projection wrote.
 
-> **Note:** The symbol projection names over a hundred columns in four places — the `INSERT` and the `ON CONFLICT`
-> `SET` in the function, then both again in the reconcile. `SymbolsProjectionIntegrationTests` compares the
-> complete event and state rows as `jsonb` on all four write paths.
-
-> **Note:** The group projection names every column in four places — the `INSERT` and the `ON CONFLICT` `SET` in
-> the function, then both again in the reconcile. `GroupsProjectionIntegrationTests` compares the complete event
-> and state rows as `jsonb` on all four write paths. `email_service_id` turns from a value to `NULL` and back.
+> **Note:** The projection names every column in four places — the `INSERT` and the `ON CONFLICT` `SET` in the
+> function, then both again in the reconcile. `GroupsProjectionIntegrationTests` compares the complete event and
+> state rows as `jsonb` on all four write paths. `email_service_id` turns from a value to `NULL` and back.
 
 ---
 
 ## Views
 
-Five views, on PostgreSQL. Two are over `trades`, and exist because the trades table holds two unrelated kinds
+Six views, on PostgreSQL. Two are over `trades`, and exist because the trades table holds two unrelated kinds
 of record — an executed trade and a cash movement on the account — and a reader almost always wants one or the
 other.
 
@@ -836,9 +1076,9 @@ already owns an object under one of them moves ours aside with `--variables`.
 The two filters are complements, so **the views partition the table**: every row is visible through exactly one
 of them, and a trade type the trade server gains later surfaces in `cash_transfers` rather than in neither.
 
-The other three are over the event logs rather than over `trades` — see
-`[trading_accounts_resync](#trading_accounts_resync)`, `[symbols_resync](#symbols_resync)` and
-`[groups_resync](#groups_resync)` below.
+The other four are over the event logs rather than over `trades` — see
+[trading_accounts_resync](#trading_accounts_resync), [clients_resync](#clients_resync),
+[symbols_resync](#symbols_resync) and [groups_resync](#groups_resync) below.
 
 ClickHouse has no views: the ticks table is the only one there, and nothing reads it through a view.
 
@@ -916,6 +1156,13 @@ the resync has re-announced are current, accounts it has not reached yet still c
 and accounts deleted while the sender was down survive until the end marker sweeps them. Bounded and plausible
 rather than wrong — and a reader that cares can tell the two situations apart here.
 
+### clients_resync
+
+The same answer for the client export, aggregated from the resync markers in [`client_events`](#client_events),
+with the same columns and the same meanings as [`trading_accounts_resync`](#trading_accounts_resync) above. It
+is a separate view rather than a column on that one because the two exports are separate pipelines: a sender
+can be mid-resync on clients while its trading account picture is settled, and vice versa.
+
 ### symbols_resync
 
 The same answer for the symbol export, aggregated from the resync markers in
@@ -933,7 +1180,7 @@ can be mid-resync on groups while its trading account picture is settled, and vi
 
 ### Reading a view needs `SELECT` on the view itself
 
-A grant on the underlying table does not reach through. `psql/users/ro.sql` grants all five views; `exporter`
+A grant on the underlying table does not reach through. `psql/users/ro.sql` grants all six views; `exporter`
 gets none of them, because it writes rows and does not read reports.
 
 ---
@@ -1055,9 +1302,9 @@ SELECT count() FROM ticks FINAL;
 `FINAL` costs more than a plain read. For aggregate reporting over large ranges, consider deduplicating in the
 query (`argMax` by the key) or accepting the small window of duplication instead.
 
-The two event logs are the exception: neither carries a per-event id, so there is no key to deduplicate on and
+The four event logs are the exception: none carries a per-event id, so there is no key to deduplicate on and
 a redelivered event lands as a second row. Its derived table absorbs that — a re-applied change leaves the same
-state — but a consumer reading either log directly can see one logical change twice. Adding a per-event id and a
+state — but a consumer reading a log directly can see one logical change twice. Adding a per-event id and a
 unique index on `(sender_id, event_id)` later would be purely additive.
 
 ---

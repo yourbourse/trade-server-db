@@ -56,7 +56,7 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 | Reference | Description |
 |-----------|-------------|
-| [Schema Reference](SCHEMA_REFERENCE.md) | The PostgreSQL trade, daily statement, snapshot and cursor tables, the ClickHouse ticks table and the journal, column by column |
+| [Schema Reference](SCHEMA_REFERENCE.md) | The PostgreSQL trade, daily statement, snapshot, cursor and event log tables, the tables derived from the logs and the views, the ClickHouse ticks table and the journal, column by column |
 | [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
 | [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
 
@@ -76,22 +76,18 @@ the alternatives that were rejected.
 The trading accounts specification is verified by `TradingAccountsProjectionIntegrationTests`, where each test
 is named for the SPEC clause it covers, so the suite reads as a conformance list.
 
-The **symbol** event log and its `symbols` projection are built to the same contract against a different entity:
-the same four event types, the same resync markers, the same end-marker sweep and the same reconcile pass. There
-is no separate SPEC for them — read the one above, substituting *symbol* for *trading account* — and they are
-verified by `SymbolsProjectionIntegrationTests`, which mirrors the suite case for case. Where the two differ is
-recorded in [Schema Reference → symbol_events](SCHEMA_REFERENCE.md#symbol_events) and
-[→ symbols](SCHEMA_REFERENCE.md#symbols): the column set, whose order and types are fixed by the schema agreed
-with the trade server team, and the absence of a unique key on the symbol name.
+The **client**, **symbol** and **group** event logs and their projections are built to the same contract against
+a different entity: the same four event types, the same resync markers, the same end-marker sweep and the same
+reconcile pass. There is no separate SPEC for them — read the one above, substituting the entity for *trading
+account* — and each is verified by its own suite, which mirrors the trading account one case for case. Where
+each differs is recorded in the Schema Reference; in every case the column set, whose order and types are fixed
+by the schema agreed with the trade server team, plus:
 
-The **group** event log and its `groups` projection are built to the same contract against a different entity:
-the same four event types, the same resync markers, the same end-marker sweep and the same reconcile pass. There
-is no separate SPEC for them — read the one above, substituting *group* for *trading account* — and they are
-verified by `GroupsProjectionIntegrationTests`, which mirrors the suite case for case. Where the two differ is
-recorded in [Schema Reference → group_events](SCHEMA_REFERENCE.md#group_events) and
-[→ groups](SCHEMA_REFERENCE.md#groups): the column set, whose order and types are fixed by the schema agreed
-with the trade server team, the one nullable column, `email_service_id`, and the absence of a unique key on the
-group name.
+| Entity | Suite | Schema Reference | Also differs in |
+|--------|-------|------------------|-----------------|
+| Client | `ClientsProjectionIntegrationTests` | [client_events](SCHEMA_REFERENCE.md#client_events), [clients](SCHEMA_REFERENCE.md#clients) | — |
+| Symbol | `SymbolsProjectionIntegrationTests` | [symbol_events](SCHEMA_REFERENCE.md#symbol_events), [symbols](SCHEMA_REFERENCE.md#symbols) | No unique key on the symbol name |
+| Group | `GroupsProjectionIntegrationTests` | [group_events](SCHEMA_REFERENCE.md#group_events), [groups](SCHEMA_REFERENCE.md#groups) | The one nullable column, `email_service_id`; no unique key on the group name |
 
 ---
 

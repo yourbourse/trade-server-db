@@ -192,6 +192,9 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##trading_account_events_table##` | `trading_account_events`, unless `--variables` says otherwise |
 | `##trading_accounts_table##` | `trading_accounts`, unless `--variables` says otherwise |
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless `--variables` says otherwise |
+| `##client_events_table##` | `client_events`, unless `--variables` says otherwise |
+| `##clients_table##` | `clients`, unless `--variables` says otherwise |
+| `##clients_resync_view##` | `clients_resync`, unless `--variables` says otherwise |
 | `##symbol_events_table##` | `symbol_events`, unless `--variables` says otherwise |
 | `##symbols_table##` | `symbols`, unless `--variables` says otherwise |
 | `##symbols_resync_view##` | `symbols_resync`, unless `--variables` says otherwise |
@@ -210,7 +213,7 @@ Anything else can be passed with `--variables key=value`.
 A script containing a `##name##` that is not in this list and was not passed with `--variables` is **rejected
 before it reaches the database**, naming the placeholder — otherwise the `##` travels through to the server and
 comes back as a syntax error pointing at a character offset. If you want a literal table name, just write it; the
-six table variables are templated only because the trade server's export configuration makes those names
+exported table variables are templated only because the trade server's export configuration makes those names
 configurable — a deployment that renamed one passes the name with `--variables`.
 
 ### Statement separators
@@ -258,9 +261,9 @@ happens to contain a quote fails loudly or works correctly, rather than silently
 
 1. Create the file. Incremental: `psql/20260315_01_add_broker_id.sql`. Re-runnable: drop it in `views/`,
    `users/` or `post/`.
-2. Use the table variables — `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-   `##position_snapshots_table##`, `##cursor_table##` on PostgreSQL, `##ticks_table##` on ClickHouse — rather
-   than hard-coded table names. They are all configurable in the trade server's export configuration.
+2. Use the table variables — `##trades_table##`, `##cursor_table##`, the event log tables and the rest on
+   PostgreSQL, `##ticks_table##` on ClickHouse — rather than hard-coded table names. The exported ones are all
+   configurable in the trade server's export configuration.
 3. Check what it would do: `./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run`.
 4. Apply it, then run it a second time and confirm nothing is applied.
 5. Mirror the change in the other provider's folder if it applies to both — a `users/` or `post/` change
@@ -272,12 +275,10 @@ deployed database will silently differ from the file. Add a new one.
 ## Schema
 
 The two engines hold different tables, because the trade server exports each entity to exactly one of them:
-trades, daily statements, their snapshots, the trading account events, the symbol events and the export cursor
-go to PostgreSQL, ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and the
-migrator creates all of them — plus `trading_accounts` and `symbols`, which it derives from their event logs
-with a trigger each:
-trades, daily statements, their snapshots, the trading account events, the group events and the export cursor
-migrator creates all of them — plus `trading_accounts` and `groups`, which it derives from their event logs with
+trades, daily statements, their snapshots, the trading account, client, symbol and group events and the export
+cursor go to PostgreSQL, ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and
+the migrator creates all of them — plus `trading_accounts`, `clients`, `symbols` and `groups`, which it derives
+from their event logs with a trigger each:
 
 | Table | Default name | Engine |
 |---|---|---|
@@ -287,6 +288,8 @@ migrator creates all of them — plus `trading_accounts` and `groups`, which it 
 | Position snapshots | `daily_statements_position_snapshots` | PostgreSQL |
 | Trading account events | `trading_account_events` | PostgreSQL |
 | Trading accounts | `trading_accounts` | PostgreSQL |
+| Client events | `client_events` | PostgreSQL |
+| Clients | `clients` | PostgreSQL |
 | Symbol events | `symbol_events` | PostgreSQL |
 | Symbols | `symbols` | PostgreSQL |
 | Group events | `group_events` | PostgreSQL |
@@ -308,8 +311,9 @@ On top of `trades` there are two views:
 
 The two filters are complements, so every row of `trades` is visible through exactly one of them.
 
-Two further views, `trading_accounts_resync` and `symbols_resync`, report whether each sender's picture of the
-live set is settled or still converging, read from the resync markers in the matching event log.
+Four further views, `trading_accounts_resync`, `clients_resync`, `symbols_resync` and `groups_resync`, report
+whether each sender's picture of the live set is settled or still converging, read from the resync markers in the
+matching event log.
 
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
@@ -317,8 +321,8 @@ together.
 
 Every exported table is append-only. Delivery is at-least-once, so the same record can arrive twice after a
 restart, and a unique index rejects the second insert: `(sender_id, trade_id)` on trades, and
-`(sender_id, time_statement, …)` on the statement and snapshot tables. The two event logs are the exception —
-neither carries a per-event id, so a redelivered event lands as a second row and the derived table absorbs it.
+`(sender_id, time_statement, …)` on the statement and snapshot tables. The four event logs are the exception —
+none carries a per-event id, so a redelivered event lands as a second row and the derived table absorbs it.
 
 `export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
 pipelines share it. The cursor row and the batch of records are written in the same transaction, which is what

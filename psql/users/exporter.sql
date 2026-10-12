@@ -1,8 +1,8 @@
 -- The role the trade server authenticates as.
 --
 -- Per the Export Setup guide the exporter needs INSERT and SELECT on every exported table, and INSERT, SELECT
--- and UPDATE on the cursor table - the cursor row is the only thing the export ever rewrites. Nothing else: an
--- exported record is never updated or deleted.
+-- and UPDATE on the cursor table - the cursor row is the only thing the export ever rewrites. An exported record
+-- is never updated or deleted; only the tables the projection triggers derive also get UPDATE and DELETE.
 --
 -- Applied once per --users entry with Access=exporter, for example:
 --   --users "Access=exporter;User=trade_exporter;Password=passw0rd"
@@ -31,9 +31,8 @@ GRANT INSERT, SELECT ON TABLE ##order_snapshots_table## TO ##user_name##;
 
 GRANT INSERT, SELECT ON TABLE ##position_snapshots_table## TO ##user_name##;
 
+-- each projection trigger runs as the exporter, so it needs to write the table it derives
 GRANT INSERT, SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
-
--- the projection trigger runs as the exporter, so it needs to write the derived table
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##trading_accounts_table## TO ##user_name##;
 
 GRANT INSERT, SELECT ON TABLE ##client_events_table## TO ##user_name##;

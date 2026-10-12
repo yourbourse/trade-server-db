@@ -30,19 +30,8 @@ namespace YB.TradeServer.Db.Migrator.Tests.Execution;
 /// The trigger that maintains the clients table from the client event log.
 /// </summary>
 /// <remarks>
-/// The same shape as <see cref="TradingAccountsProjectionIntegrationTests"/>, against the same projection
-/// written for a different entity, and integration tests for the same reason: the projection is a plpgsql
-/// trigger, so its behaviour - insertion order, ON CONFLICT, the resync sweep - is PostgreSQL's rather than this
-/// repository's C#.
-///
-/// One thing is done differently, and the column count is why. A client carries sixty-five projected columns
-/// against a trading account's fourteen, so the fixtures here build their rows from the live schema - every
-/// column of the event table, in ordinal order, filled with a type-appropriate zero unless the test names it -
-/// rather than from a positional list somebody has to keep in step. A column added to the log and forgotten
-/// here would otherwise be sent as NULL and fail every test with a constraint violation pointing nowhere near
-/// the cause.
-///
-/// Every test provisions its own database and drops it again on the way out, as MigrationIntegrationTests does.
+/// Mirrors <see cref="TradingAccountsProjectionIntegrationTests"/>. Rows are built from the live schema, so no
+/// column list is kept by hand. Each test gets its own database.
 /// </remarks>
 [Trait("Category", "Integration")]
 public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLifetime
@@ -103,9 +92,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// The trigger copies the client columns across by name, so the two tables have to keep the same set with
-    /// the same types. A column added to one and not the other fails the migration; a type changed on one and
-    /// not the other would not, and would silently truncate or round instead.
+    /// A type or nullability drift would not fail the migration; it would round, truncate or stall the export.
     /// </summary>
     [Fact(DisplayName = "Schema Should carry the same client columns in the log and the state table")]
     public void Schema_Should_carry_the_same_client_columns_in_the_log_and_the_state_table()
@@ -113,14 +100,12 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         // arrange
         var connectionString = Migrate();
 
-        // act, the columns each table holds that the other does not, ignoring the ones that are by design
-        // local to one of them
-        // format_type, not information_schema.data_type: the latter reports VARCHAR(32) and VARCHAR(512) alike
-        // as "character varying", so a width that had drifted between the two tables would pass unnoticed
+        // act, format_type and attnotnull so width and nullability drifts show
         const string sql = """
-                           WITH cols AS (SELECT c.relname                            AS table_name,
-                                                a.attname                            AS column_name,
-                                                format_type(a.atttypid, a.atttypmod) AS column_type
+                           WITH cols AS (SELECT c.relname                                           AS table_name,
+                                                a.attname                                           AS column_name,
+                                                format_type(a.atttypid, a.atttypmod) ||
+                                                CASE WHEN a.attnotnull THEN ' not null' ELSE '' END AS column_type
                                          FROM pg_attribute a
                                                   JOIN pg_class c ON c.oid = a.attrelid
                                                   JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -145,79 +130,62 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// The column set, the types and the <b>order</b> are the schema agreed with the trade server team, so the
-    /// exporter lines up whether its COPY names its columns or relies on their position.
-    ///
-    /// The list below is written out deliberately rather than read from the database. Every other fixture here
-    /// discovers the live order and then uses that same order for both the column list and the values, so a
-    /// migration that reordered client_events would keep them all green - they are self-consistent by
-    /// construction. This is the one test that would fail.
+    /// The agreed schema, written out: the only test that fails if client_events is reordered or retyped.
     /// </summary>
-    [Fact(DisplayName = "Schema Should carry the agreed columns in the agreed order")]
-    public void Schema_Should_carry_the_agreed_columns_in_the_agreed_order()
+    [Fact(DisplayName = "Schema Should carry the agreed columns and types in the agreed order")]
+    public void Schema_Should_carry_the_agreed_columns_and_types_in_the_agreed_order()
     {
         // arrange
         var connectionString = Migrate();
 
         string[] agreed =
         [
-            "id", "time_inserted", "sender_id", "event_type", "client_id", "version", "client_type",
-            "client_status", "assigned_manager", "time_created", "time_modified", "compliance_approved_by",
-            "compliance_client_category", "compliance_date_approval", "compliance_date_termination",
-            "lead_campaign", "lead_source", "introducer", "person_title", "person_first_name",
-            "person_middle_name", "person_last_name", "person_birth_date", "person_citizenship",
-            "person_tax_id", "person_document_type", "person_document_number", "person_document_date",
-            "person_document_expiration_date", "person_document_extra", "person_employment", "person_industry",
-            "person_education", "person_wealth_source", "person_annual_income", "person_annual_income_currency",
-            "person_net_assets", "person_gender", "preferred_communication", "preferred_language",
-            "company_name", "company_registration_number", "company_registration_date",
-            "company_registration_authority", "company_vat", "company_lei", "company_license_number",
-            "company_license_authority", "company_country", "company_registration_address", "company_website",
-            "email", "phone", "messengers", "social_media", "last_contact_date", "address_country",
-            "address_postcode", "address_street", "address_state", "address_city", "client_external_id",
-            "comment", "experience_forex", "experience_cfd", "experience_futures", "experience_stocks",
-            "experience_crypto"
+            "id bigint", "time_inserted timestamp with time zone", "sender_id bigint", "event_type smallint",
+            "client_id bigint", "version bigint", "client_type integer", "client_status integer",
+            "assigned_manager bigint", "time_created timestamp with time zone",
+            "time_modified timestamp with time zone", "compliance_approved_by bigint",
+            "compliance_client_category character varying(64)", "compliance_date_approval timestamp with time zone",
+            "compliance_date_termination timestamp with time zone", "lead_campaign character varying(64)",
+            "lead_source character varying(64)", "introducer bigint", "person_title character varying(32)",
+            "person_first_name character varying(32)", "person_middle_name character varying(64)",
+            "person_last_name character varying(32)", "person_birth_date timestamp with time zone",
+            "person_citizenship character varying(64)", "person_tax_id character varying(64)",
+            "person_document_type character varying(32)", "person_document_number character varying(32)",
+            "person_document_date timestamp with time zone",
+            "person_document_expiration_date timestamp with time zone", "person_document_extra character varying(64)",
+            "person_employment integer", "person_industry integer", "person_education integer",
+            "person_wealth_source integer", "person_annual_income double precision",
+            "person_annual_income_currency character varying(16)", "person_net_assets double precision",
+            "person_gender integer", "preferred_communication integer", "preferred_language character varying(16)",
+            "company_name character varying(64)", "company_registration_number character varying(64)",
+            "company_registration_date timestamp with time zone",
+            "company_registration_authority character varying(64)", "company_vat character varying(32)",
+            "company_lei character varying(32)", "company_license_number character varying(32)",
+            "company_license_authority character varying(64)", "company_country character varying(32)",
+            "company_registration_address character varying(64)", "company_website character varying(64)",
+            "email character varying(64)", "phone character varying(32)", "messengers character varying(128)",
+            "social_media character varying(128)", "last_contact_date timestamp with time zone",
+            "address_country character varying(32)", "address_postcode character varying(16)",
+            "address_street character varying(128)", "address_state character varying(64)",
+            "address_city character varying(64)", "client_external_id character varying(64)",
+            "comment character varying(256)", "experience_forex integer", "experience_cfd integer",
+            "experience_futures integer", "experience_stocks integer", "experience_crypto integer"
         ];
 
         // act
         var actual = Strings(connectionString,
             """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'client_events'
-            ORDER BY ordinal_position
+            SELECT a.attname || ' ' || format_type(a.atttypid, a.atttypmod) ||
+                   CASE WHEN a.attnotnull THEN '' ELSE ' null' END
+            FROM pg_attribute a
+            WHERE a.attrelid = 'client_events'::regclass
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            ORDER BY a.attnum
             """);
 
         // assert
         Assert.Equal(agreed, actual);
-    }
-
-    /// <summary>
-    /// The agreed types, for the columns where the type was decided rather than obvious: the eight enums are
-    /// integer ordinals and the two amounts are double precision, both of which an earlier draft had otherwise.
-    /// </summary>
-    [Fact(DisplayName = "Schema Should carry the agreed types for the enum and amount columns")]
-    public void Schema_Should_carry_the_agreed_types_for_the_enum_and_amount_columns()
-    {
-        // arrange
-        var connectionString = Migrate();
-
-        // act, assert
-        foreach (var column in new[]
-                 {
-                     "client_type", "client_status", "person_employment", "person_industry", "person_education",
-                     "person_wealth_source", "person_gender", "preferred_communication"
-                 })
-        {
-            Assert.Equal("integer", Scalar<string>(connectionString,
-                $"SELECT data_type FROM information_schema.columns WHERE table_name = 'client_events' AND column_name = '{column}'"));
-        }
-
-        foreach (var column in new[] { "person_annual_income", "person_net_assets" })
-        {
-            Assert.Equal("double precision", Scalar<string>(connectionString,
-                $"SELECT data_type FROM information_schema.columns WHERE table_name = 'client_events' AND column_name = '{column}'"));
-        }
     }
 
     [Fact(DisplayName = "Edge case Should let the last event of a batch win for one client")]
@@ -266,8 +234,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// The reason the sweep runs at the end marker rather than the start: a resync spans several transactions,
-    /// and the table has no way to hide a half-finished one from a reporting query.
+    /// Why the sweep runs at the end marker: a resync spans several transactions.
     /// </summary>
     [Fact(DisplayName = "Workflow Should keep the table complete while a resync is running")]
     public void Workflow_Should_keep_the_table_complete_while_a_resync_is_running()
@@ -320,12 +287,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// A regression test, carried over from the trading account projection this one was derived from. An AFTER
-    /// ROW trigger fires once the whole statement has landed, so when a batch carries one resync's end marker
-    /// followed by the next resync's start marker, every row of it - the later start marker included - is
-    /// already in the table by the time the end marker's trigger runs. Reading the watermark as an unbounded
-    /// max(id) therefore swept against the wrong resync and deleted everything the finishing one had just
-    /// re-announced.
+    /// An AFTER ROW trigger sees the whole batch, so an unbounded max(id) found the next resync's start marker.
     /// </summary>
     [Fact(DisplayName = "Regression Should sweep against its own start marker when a batch carries two resyncs")]
     public void Regression_Should_sweep_against_its_own_start_marker_when_a_batch_carries_two_resyncs()
@@ -342,7 +304,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             Marker(connectionString, Sender, eventType: 3),
             Marker(connectionString, Sender, eventType: 2));
 
-        // assert, both clients were re-announced under the resync that just finished, so both survive
+        // assert, both were re-announced by the finished resync, so both survive
         Assert.Equal([100L, 200L], ReadClients(connectionString).Select(client => client.ClientId));
     }
 
@@ -353,10 +315,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         var connectionString = Migrate();
         InsertOneStatement(connectionString, StateEvent(connectionString, Sender, 1002, version: 1, experience: 10));
 
-        // act, an event_type outside the established set. It is not expected to happen - the four types are a
-        // fixed contract - so this is a bug, a corrupt row or something written by hand. It must still not
-        // raise: a plpgsql CASE with no matching branch and no ELSE raises CASE_NOT_FOUND, which aborts the
-        // whole exporting COPY, so one bad row would take every good row in its batch with it
+        // act, raising here would abort the whole exporting COPY
         InsertOneStatement(connectionString,
             Event(connectionString, Sender, eventType: 99, ("client_id", "1002"), ("version", "7"), ("comment", "'unknown'")));
 
@@ -366,8 +325,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// There is no deduplication key on the log, so a redelivered event lands as a second row. The state table
-    /// has to absorb that rather than double-apply it.
+    /// No dedup key on the log, so the state table has to absorb a redelivery.
     /// </summary>
     [Fact(DisplayName = "Edge case Should leave the same state when an event is redelivered")]
     public void Edge_case_Should_leave_the_same_state_when_an_event_is_redelivered()
@@ -385,9 +343,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// Ids are reused after deletion, so a reused id restarts its version sequence. This is why the projection
-    /// applies whatever arrives last instead of comparing versions: a guard would reject every event of the new
-    /// client and leave the row showing the previous holder's data with nothing to heal it.
+    /// A reused id restarts its version, so a version guard would keep showing the old client.
     /// </summary>
     [Fact(DisplayName = "Edge case Should show the new client when an id is reused after deletion")]
     public void Edge_case_Should_show_the_new_client_when_an_id_is_reused_after_deletion()
@@ -395,7 +351,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         // arrange
         var connectionString = Migrate();
 
-        // act, the old client reaches version 3, is deleted, and the id is taken by a different person
+        // act, the old client reaches version 3, is deleted, and a new one takes the id
         InsertOneStatement(connectionString,
             StateEvent(connectionString, Sender, 800, version: 1, manager: 11, experience: 10, comment: "old"),
             StateEvent(connectionString, Sender, 800, version: 3, manager: 11, experience: 30, comment: "old"),
@@ -408,9 +364,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// The same thing, but the deletion never reaches PostgreSQL: the sender was down while the old client was
-    /// deleted and the id reused, so the reuse is first seen as a re-announcement inside a resync, at a lower
-    /// version than the row already holds.
+    /// The same, with the deletion missed while the sender was down.
     /// </summary>
     [Fact(DisplayName = "Edge case Should show the new client when a reused id is first seen in a resync")]
     public void Edge_case_Should_show_the_new_client_when_a_reused_id_is_first_seen_in_a_resync()
@@ -440,7 +394,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             StateEvent(connectionString, Sender, 1002, version: 1),
             StateEvent(connectionString, OtherSender, 5001, version: 1));
 
-        // act, a complete resync for one sender that re-announces nothing at all
+        // act, one sender completes a resync that re-announces nothing
         InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 2));
         InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 3));
 
@@ -449,13 +403,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// The sender is part of the key, not merely a column: two trade servers exporting into one database may
-    /// each hold a client under the same id, with different content. The composite primary key is what makes
-    /// that structural, and every write path in the projection - the upsert, the deletion and the resync sweep -
-    /// is scoped by sender_id.
-    ///
-    /// The test above uses two different client ids, so it would pass even if the key were client_id alone.
-    /// This one would not.
+    /// Unlike the test above, this one fails if any write path is keyed on client_id alone.
     /// </summary>
     [Fact(DisplayName = "Edge case Should keep the same client id independent across senders")]
     public void Edge_case_Should_keep_the_same_client_id_independent_across_senders()
@@ -479,25 +427,18 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 2));
         InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 3));
 
-        // assert, the other sender's client of the same id survives all of it, unchanged
+        // assert, the other sender's client survives unchanged
         Assert.Equal(0, Scalar<long>(connectionString, $"SELECT count(*) FROM clients WHERE sender_id = {Sender}"));
         Assert.Equal([(1002L, 9L, 20, "sender 8")], ReadClients(connectionString));
     }
 
     /// <summary>
-    /// Two trade server instances each number their own clients, so the same client_id on two senders is two
-    /// unrelated people - often with different names. A reporting query therefore has to join on sender_id as
-    /// well as client_id; one that does not silently attributes one instance's trading accounts to the other
-    /// instance's client.
-    ///
-    /// This pins the rule stated in docs/SCHEMA_REFERENCE.md, "Every id is scoped to its sender". The wrong
-    /// join is asserted too, so the test fails if it ever stops being wrong - which would mean the fixture no
-    /// longer reproduces the collision it exists to describe.
+    /// Each sender numbers its own clients. The wrong join is asserted too, so the fixture keeps reproducing it.
     /// </summary>
     [Fact(DisplayName = "Invariant Should need sender_id as well as client_id to join clients to their accounts")]
     public void Invariant_Should_need_sender_id_as_well_as_client_id_to_join_clients_to_their_accounts()
     {
-        // arrange, one client id used by two senders, with trading accounts on each
+        // arrange, one client id, two senders, two different clients, accounts tagged with their owner
         var connectionString = Migrate();
 
         InsertOneStatement(connectionString,
@@ -505,43 +446,27 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             StateEvent(connectionString, OtherSender, 1002, version: 1, comment: "Jones"));
 
         Execute(connectionString,
-            "INSERT INTO trading_account_events (sender_id, event_type, trading_account_id, version, group_id, " +
-            "client_id, introducer, time_created, time_modified, time_password_last_changed, leverage, enabled, " +
-            "allow_trading, external_account_id, comment) VALUES " +
-            $"({Sender}, 0, 5001, 1, 1, 1002, 0, now(), now(), to_timestamp(0), 100, true, true, \'\', \'\'), " +
-            $"({Sender}, 0, 5002, 1, 1, 1002, 0, now(), now(), to_timestamp(0), 100, true, true, \'\', \'\'), " +
-            $"({OtherSender}, 0, 6001, 1, 1, 1002, 0, now(), now(), to_timestamp(0), 100, true, true, \'\', \'\')");
+            $"INSERT INTO trading_account_events ({Columns(connectionString, "trading_account_events")}) VALUES " +
+            string.Join(", ",
+                TradingAccountEvent(connectionString, Sender, tradingAccountId: 5001, clientId: 1002, owner: "Smith"),
+                TradingAccountEvent(connectionString, Sender, tradingAccountId: 5002, clientId: 1002, owner: "Smith"),
+                TradingAccountEvent(connectionString, OtherSender, tradingAccountId: 6001, clientId: 1002, owner: "Jones")));
 
         // act, the full key against the id alone
-        const string fullKey =
-            "SELECT count(*)::text FROM clients c JOIN trading_accounts a " +
-            "ON a.sender_id = c.sender_id AND a.client_id = c.client_id";
+        const string fullKey = "FROM clients c JOIN trading_accounts a ON a.sender_id = c.sender_id AND a.client_id = c.client_id";
+        const string idOnly = "FROM clients c JOIN trading_accounts a ON a.client_id = c.client_id";
 
-        const string idOnly =
-            "SELECT count(*)::text FROM clients c JOIN trading_accounts a " +
-            "ON a.client_id = c.client_id";
+        // assert, three accounts have a client, and joining on the id alone invents three more
+        Assert.Equal(3, Scalar<long>(connectionString, $"SELECT count(*) {fullKey}"));
+        Assert.Equal(6, Scalar<long>(connectionString, $"SELECT count(*) {idOnly}"));
 
-        // assert, three accounts belong to a client, and joining on the id alone invents three more
-        Assert.Equal("3", Strings(connectionString, fullKey).Single());
-        Assert.Equal("6", Strings(connectionString, idOnly).Single());
-
-        // and each sender's client owns only its own accounts
-        Assert.Equal(["5001", "5002"], Strings(connectionString,
-            "SELECT a.trading_account_id::text FROM clients c JOIN trading_accounts a " +
-            "ON a.sender_id = c.sender_id AND a.client_id = c.client_id " +
-            $"WHERE c.sender_id = {Sender} ORDER BY a.trading_account_id"));
-
-        Assert.Equal(["6001"], Strings(connectionString,
-            "SELECT a.trading_account_id::text FROM clients c JOIN trading_accounts a " +
-            "ON a.sender_id = c.sender_id AND a.client_id = c.client_id " +
-            $"WHERE c.sender_id = {OtherSender} ORDER BY a.trading_account_id"));
+        // and only the full key pairs each account with its own client
+        Assert.Equal(0, Scalar<long>(connectionString, $"SELECT count(*) {fullKey} WHERE c.comment <> a.comment"));
+        Assert.Equal(3, Scalar<long>(connectionString, $"SELECT count(*) {idOnly} WHERE c.comment <> a.comment"));
     }
 
     /// <summary>
-    /// A regression test for the reconcile pass. A sweep leaves no trace in the log - a client dropped from a
-    /// resync is gone by its absence from the re-announcements, and absence is not an event - so a reconcile
-    /// that only looked for the newest retained event per client read the swept client's last pre-resync state
-    /// event and brought it back from the dead.
+    /// A sweep leaves no event, so a naive reconcile would replay the swept client's last state.
     /// </summary>
     [Fact(DisplayName = "Regression Should not bring back a swept client when the projection runs again")]
     public void Regression_Should_not_bring_back_a_swept_client_when_the_projection_runs_again()
@@ -576,13 +501,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// A regression test, from code review. A resync's sweep happens at the end marker, in the trigger - so if
-    /// the trigger is absent when that marker arrives, nothing ever removes the clients the resync did not
-    /// re-announce. The reconcile used to replay only state events and explicit deletions, so --force refreshed
-    /// what the resync announced and left the rest behind indefinitely, correctly stamped and long dead.
-    ///
-    /// The previous repair test drops the trigger <i>after</i> a resync has completed; this one has it absent
-    /// for the whole resync, which is the case that was wrong.
+    /// The sweep lives in the trigger, so the reconcile has to apply one the trigger missed.
     /// </summary>
     [Fact(DisplayName = "Regression Should apply a resync sweep that happened while the trigger was absent")]
     public void Regression_Should_apply_a_resync_sweep_that_happened_while_the_trigger_was_absent()
@@ -606,17 +525,16 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             StateEvent(connectionString, Sender, 101, version: 1, comment: "re-announced"));
         InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 3));
 
-        // nothing was projected while it was gone, so the table still shows both
         Assert.Equal(2, ReadClients(connectionString).Count);
 
         AssertSuccessful(CreateRunner().Run(request with { FullReload = true }));
 
-        // assert, the reconcile applied the sweep the end marker never got to run
+        // assert
         Assert.Equal([(101L, 1L, 0, "re-announced")], ReadClients(connectionString));
     }
 
     /// <summary>
-    /// The sender dies partway through a resync, so no end marker ever arrives and the sweep never runs.
+    /// The sender dies mid-resync, so no end marker arrives.
     /// </summary>
     [Fact(DisplayName = "Edge case Should leave the table converging when a resync never finishes")]
     public void Edge_case_Should_leave_the_table_converging_when_a_resync_never_finishes()
@@ -631,48 +549,49 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         InsertOneStatement(connectionString, Marker(connectionString, Sender, eventType: 2));
         InsertOneStatement(connectionString, StateEvent(connectionString, Sender, 1002, version: 2, comment: "re-announced"));
 
-        // assert, what it reached is current, what it did not keeps its previous state, and the sender stays
-        // flagged so a reader can tell this picture is still converging
+        // assert, the unreached client keeps its old state and the sender stays flagged
         Assert.Equal([(1002L, 2L, 0, "re-announced"), (2003L, 1L, 0, "not reached")], ReadClients(connectionString));
         Assert.True(ResyncInProgress(connectionString, Sender));
     }
 
     /// <summary>
-    /// The projection copies; it does not interpret, convert or re-derive.
-    ///
-    /// This is the test that guards the column lists. The projection names sixty-five columns four times over -
-    /// the VALUES list and the ON CONFLICT SET list in the function, then both again in the reconcile - and a
-    /// mismapping between any two of them produces a row that is correctly stamped and quietly wrong. Rather
-    /// than list the columns a fifth time here, the whole event row and the whole state row are compared as
-    /// jsonb, so the assertion covers every column there is and names the ones that differ. Each column is given
-    /// a value distinct from every other column's, so two columns crossed on the way across cannot compare
-    /// equal, and the text ones carry a quote so a truncation or an escaping fault would show.
+    /// Drives all four column lists with values distinct per column and per write, comparing rows as jsonb.
     /// </summary>
-    [Fact(DisplayName = "Invariant Should copy every field from the event unchanged")]
-    public void Invariant_Should_copy_every_field_from_the_event_unchanged()
+    [Fact(DisplayName = "Invariant Should copy every field from the event unchanged on all four write paths")]
+    public void Invariant_Should_copy_every_field_from_the_event_unchanged_on_all_four_write_paths()
     {
         // arrange
-        var connectionString = Migrate();
+        var request = CreateRequest();
+        AssertSuccessful(CreateRunner().Run(request));
+        var connectionString = request.ConnectionString;
 
-        // act, one state event with every column distinctly populated
-        InsertOneStatement(connectionString, DistinctiveStateEvent(connectionString, Sender, 4242));
+        // act, the trigger's INSERT
+        InsertOneStatement(connectionString, DistinctiveStateEvent(connectionString, clientId: 101, seed: 1));
 
-        // assert, the state row and the event it names differ in no column either of them shares
-        const string mismatches = """
-                                  SELECT key
-                                  FROM clients c
-                                           JOIN client_events e ON e.id = c.source_event_row_id
-                                           JOIN LATERAL jsonb_each(to_jsonb(e) - 'id' - 'time_inserted' - 'event_type') ON true
-                                  WHERE value IS DISTINCT FROM
-                                        ((to_jsonb(c) - 'source_event_row_id' - 'time_applied') -> key)
-                                  """;
+        // assert
+        Assert.Empty(Mismatches(connectionString));
 
-        Assert.Empty(Strings(connectionString, mismatches));
+        // act, the trigger's SET
+        InsertOneStatement(connectionString, DistinctiveStateEvent(connectionString, clientId: 101, seed: 2));
 
-        // and the comparison above was actually made against a populated row, not an empty one that happens to
-        // match an empty one
-        Assert.Equal(1, Scalar<long>(connectionString,
-            "SELECT count(*) FROM clients WHERE client_id = 4242 AND person_first_name <> '' AND person_annual_income <> 0"));
+        // assert
+        Assert.Empty(Mismatches(connectionString));
+
+        // act, the reconcile's SET (101) and INSERT (201)
+        Execute(connectionString, "DROP TRIGGER trg_project_clients ON client_events");
+
+        InsertOneStatement(connectionString,
+            DistinctiveStateEvent(connectionString, clientId: 101, seed: 3),
+            DistinctiveStateEvent(connectionString, clientId: 201, seed: 3));
+
+        AssertSuccessful(CreateRunner().Run(request with { FullReload = true }));
+
+        // assert
+        Assert.Empty(Mismatches(connectionString));
+
+        // and the rows compared were populated by the last write
+        Assert.Equal(2, Scalar<long>(connectionString,
+            "SELECT count(*) FROM clients WHERE comment LIKE '3-%' AND person_annual_income <> 0"));
     }
 
     [Fact(DisplayName = "Invariant Should name the log event that produced every state row")]
@@ -685,7 +604,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         InsertOneStatement(connectionString, StateEvent(connectionString, Sender, 1002, version: 1));
         InsertOneStatement(connectionString, StateEvent(connectionString, Sender, 1002, version: 2));
 
-        // assert, the stamp is the newest state event for the client, not the one that created it
+        // assert, stamped with the newest state event
         const string notNewest = """
                                  SELECT c.client_id::text
                                  FROM clients c
@@ -703,8 +622,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// The whole reason the current state is a table rather than a view over the log: a client can go unchanged
-    /// for longer than the retention window, so the state has to outlive the events that built it.
+    /// Why the state is a table, not a view: it has to outlive the log's retention.
     /// </summary>
     [Fact(DisplayName = "Invariant Should keep the current state when the log is purged")]
     public void Invariant_Should_keep_the_current_state_when_the_log_is_purged()
@@ -715,7 +633,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             StateEvent(connectionString, Sender, 1002, version: 2, experience: 5, comment: "survives"),
             StateEvent(connectionString, Sender, 2003, version: 1, experience: 20, comment: "also survives"));
 
-        // act, a retention purge is a DELETE, and the projection fires on INSERT only
+        // act, a purge is a DELETE; the trigger fires on INSERT only
         Execute(connectionString, "DELETE FROM client_events");
 
         // assert
@@ -724,9 +642,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// The agreed schema carries no credential material: phone_password was dropped from it, so the client
-    /// tables hold nothing a reporting reader should not see. Enforced by the schema rather than promised by
-    /// upstream code - there is no column for one, so one cannot arrive.
+    /// The client API's phonePassword is out of the agreed schema; this keeps it out.
     /// </summary>
     [Fact(DisplayName = "Invariant Should have no column that could hold credential material")]
     public void Invariant_Should_have_no_column_that_could_hold_credential_material()
@@ -734,7 +650,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         // arrange, act
         var connectionString = Migrate();
 
-        // assert, a column that could hold one: name and type both have to fit
+        // assert, name and type both have to fit
         const string credentialColumns = """
                                          SELECT table_name || '.' || column_name
                                          FROM information_schema.columns
@@ -754,7 +670,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         // arrange, act
         var connectionString = Migrate();
 
-        // assert, the primary key is what makes the invariant structural rather than incidental
+        // assert
         const string primaryKey = """
                                   SELECT string_agg(a.attname, ', ' ORDER BY k.ord)
                                   FROM pg_index i
@@ -768,9 +684,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// "No lag, no catching up": the state row is written by the same transaction as the event, so it is
-    /// visible before that transaction commits and gone if it rolls back. That is what stops the two tables
-    /// drifting, and it is the property a scheduled or polled projection could not offer.
+    /// No lag: the state row is written in the event's transaction.
     /// </summary>
     [Fact(DisplayName = "Invariant Should project inside the writing transaction and roll back with it")]
     public void Invariant_Should_project_inside_the_writing_transaction_and_roll_back_with_it()
@@ -797,25 +711,19 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             read.Transaction = transaction;
             read.CommandText = "SELECT count(*) FROM clients";
 
-            // assert, the writer sees the projected row before it commits
+            // assert, visible before commit
             Assert.Equal(1L, (long)read.ExecuteScalar()!);
 
             transaction.Rollback();
         }
 
-        // and a batch that never commits leaves nothing behind in either table
+        // and gone after rollback
         Assert.Empty(ReadClients(connectionString));
         Assert.Equal(0, Scalar<long>(connectionString, "SELECT count(*) FROM client_events"));
     }
 
     /// <summary>
-    /// A row that is correctly stamped and wrong: what an earlier, buggy version of this projection would have
-    /// left behind, since the function copies sixty-five columns twice and a mismapping produces exactly that.
-    /// Fixing the function and re-applying the file has to correct such a row, which means the reconcile must
-    /// replay the newest state event over it rather than compare the stamp against itself and skip.
-    ///
-    /// The UPDATE below is how the test manufactures that state, not a scenario in itself - nothing edits these
-    /// tables by hand.
+    /// A correctly stamped, wrong row, as a buggy projection would leave; re-applying the file must fix it.
     /// </summary>
     [Fact(DisplayName = "Regression Should correct a state row whose content disagrees with its event")]
     public void Regression_Should_correct_a_state_row_whose_content_disagrees_with_its_event()
@@ -828,7 +736,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         InsertOneStatement(connectionString,
             StateEvent(connectionString, Sender, 1002, version: 1, experience: 10, comment: "correct"));
 
-        // stand in for a row a broken projection wrote: right stamp, wrong content
+        // right stamp, wrong content
         Execute(connectionString, "UPDATE clients SET experience_forex = 999, comment = 'corrupted'");
         Assert.Equal([(1002L, 1L, 999, "corrupted")], ReadClients(connectionString));
 
@@ -840,10 +748,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// Every other test here writes as the migration owner, which would keep passing if the grants were wrong or
-    /// the invoker-rights trigger could not reach the derived table. This one runs the real production path:
-    /// the exporter role, over <c>COPY</c>, including a resync whose sweep needs DELETE on a table the exporter
-    /// never reads for itself.
+    /// The production path: the exporter over <c>COPY</c>, including a DELETE sweep.
     /// </summary>
     [Fact(DisplayName = "Grants Should let the exporter role drive the whole projection over COPY")]
     public void Grants_Should_let_the_exporter_role_drive_the_whole_projection_over_COPY()
@@ -858,23 +763,23 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         using var exporter = new NpgsqlConnection(ExporterConnectionString(request));
         exporter.Open();
 
-        // act, two clients and a resync start, exactly as the export delivers them
+        // act
         Copy(exporter, columns,
             CopyLine(schema, Sender, eventType: 0, clientId: 1002, version: 1, experience: 10, comment: "live"),
             CopyLine(schema, Sender, eventType: 0, clientId: 2003, version: 1, experience: 20, comment: "swept"));
 
         Copy(exporter, columns, CopyLine(schema, Sender, eventType: 2));
 
-        // assert, the trigger ran under the exporter's own rights and left the table complete
+        // assert
         Assert.Equal([1002L, 2003L], ReadClients(request.ConnectionString).Select(client => client.ClientId));
 
-        // re-announce one client and close the resync: the sweep needs DELETE as the exporter
+        // the sweep needs DELETE as the exporter
         Copy(exporter, columns, CopyLine(schema, Sender, eventType: 0, clientId: 1002, version: 1, experience: 10, comment: "live"));
         Copy(exporter, columns, CopyLine(schema, Sender, eventType: 3));
 
         Assert.Equal([(1002L, 1L, 10, "live")], ReadClients(request.ConnectionString));
 
-        // and the reader role can read the projection but not write it
+        // and ro reads but cannot write
         using var reader = new NpgsqlConnection(ReaderConnectionString(request));
         reader.Open();
 
@@ -884,6 +789,12 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             Assert.Equal(1L, (long)read.ExecuteScalar()!);
         }
 
+        using (var read = reader.CreateCommand())
+        {
+            read.CommandText = $"SELECT resync_in_progress FROM clients_resync WHERE sender_id = {Sender}";
+            Assert.False((bool)read.ExecuteScalar()!);
+        }
+
         using var write = reader.CreateCommand();
         write.CommandText = "DELETE FROM clients";
         var denied = Assert.Throws<PostgresException>(() => write.ExecuteNonQuery());
@@ -891,149 +802,173 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     // ---------------------------------------------------------------------------------------------------
-    // Fixtures.
-    //
-    // Every row is built from the live schema rather than from a list kept here: the event table's columns in
-    // ordinal order, each filled with the type-appropriate zero the exporter sends for a field that does not
-    // apply, and then whatever the test names on top. Sixty-eight columns is too many to keep in step by hand,
-    // and a forgotten one would arrive as NULL against a NOT NULL column and fail somewhere unhelpful.
+    // Fixtures: rows are built from the live schema, zeroed, with the named columns overridden.
     // ---------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The event table's columns, in ordinal order, excluding the two the table fills in itself.
+    /// A table's columns in ordinal order, minus id and time_inserted.
     /// </summary>
-    private static List<(string Column, string Type)> EventSchema(string connectionString)
+    private static List<(string Column, string Type, bool Nullable)> Schema(string connectionString, string table)
     {
         using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-                              SELECT column_name, data_type
+                              SELECT column_name, data_type, is_nullable = 'YES'
                               FROM information_schema.columns
                               WHERE table_schema = 'public'
-                                AND table_name = 'client_events'
+                                AND table_name = @table
                                 AND column_name NOT IN ('id', 'time_inserted')
                               ORDER BY ordinal_position
                               """;
+        command.Parameters.AddWithValue("table", table);
 
         using var reader = command.ExecuteReader();
 
-        var columns = new List<(string, string)>();
+        var columns = new List<(string, string, bool)>();
 
         while (reader.Read())
         {
-            columns.Add((reader.GetString(0), reader.GetString(1)));
+            columns.Add((reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)));
         }
 
         return columns;
     }
 
+    private static List<(string Column, string Type, bool Nullable)> EventSchema(string connectionString)
+    {
+        return Schema(connectionString, "client_events");
+    }
+
+    private static string Columns(string connectionString, string table)
+    {
+        return string.Join(", ", Schema(connectionString, table).Select(column => column.Column));
+    }
+
     private static string EventColumns(string connectionString)
     {
-        return string.Join(", ", EventSchema(connectionString).Select(column => column.Column));
+        return Columns(connectionString, "client_events");
     }
 
     /// <summary>
-    /// The zero the exporter writes for a field that does not apply, as a SQL literal.
+    /// The exporter's zero for an unused field as a SQL literal; NULL where nullable.
     /// </summary>
-    private static string Zero(string dataType)
+    private static string Zero((string Column, string Type, bool Nullable) column)
     {
-        return dataType switch
+        if (column.Nullable)
+        {
+            return "NULL";
+        }
+
+        return column.Type switch
         {
             "character varying" => "''",
             "timestamp with time zone" => "to_timestamp(0)",
+            "boolean" => "false",
             _ => "0"
         };
     }
 
     /// <summary>
-    /// One event as a SQL tuple: every column of the log, zeroed, with the named ones overridden. The overrides
-    /// carry SQL literals, so a string value arrives quoted.
+    /// One row as a SQL tuple, zeroed, with the named columns overridden by SQL literals.
     /// </summary>
-    private static string Event(string connectionString, long sender, int eventType, params (string Column, string Value)[] overrides)
+    private static string Row(string connectionString, string table, params (string Column, string Value)[] overrides)
     {
-        var values = EventSchema(connectionString).Select(column => column.Column switch
-        {
-            "sender_id" => sender.ToString(),
-            "event_type" => eventType.ToString(),
-            _ => overrides.FirstOrDefault(o => o.Column == column.Column).Value ?? Zero(column.Type)
-        });
+        var values = Schema(connectionString, table).Select(column =>
+            overrides.FirstOrDefault(o => o.Column == column.Column).Value ?? Zero(column));
 
         return $"({string.Join(", ", values)})";
     }
 
+    private static string Event(string connectionString, long sender, int eventType, params (string Column, string Value)[] overrides)
+    {
+        return Row(connectionString, "client_events",
+            [("sender_id", sender.ToString()), ("event_type", eventType.ToString()), .. overrides]);
+    }
+
     /// <summary>
-    /// A state carrying event. The fields the tests vary stand in for the whole record: version for the
-    /// client's own sequence, experience_forex for a number, comment for text, assigned_manager for a reference
-    /// to something outside the client.
+    /// A state event; the named fields stand in for the whole record.
     /// </summary>
     private static string StateEvent(string connectionString, long sender, long clientId, long version,
-        long manager = 1, int experience = 0, string comment = "")
+        long manager = 0, int experience = 0, string comment = "")
     {
         return Event(connectionString, sender, eventType: 0,
             ("client_id", clientId.ToString()),
             ("version", version.ToString()),
             ("assigned_manager", manager.ToString()),
             ("experience_forex", experience.ToString()),
-            ("comment", $"'{comment.Replace("'", "''")}'"),
-            ("time_created", "now()"),
-            ("time_modified", "now()"));
+            ("comment", Quote(comment)));
     }
 
-    /// <summary>
-    /// A deletion: it carries none of the client's state, so every field but the id is a zero.
-    /// </summary>
     private static string DeleteEvent(string connectionString, long sender, long clientId)
     {
         return Event(connectionString, sender, eventType: 1, ("client_id", clientId.ToString()));
     }
 
-    /// <summary>
-    /// A resync marker: not about a client, so every field it does not use carries a zero, exactly as the
-    /// exporter writes it.
-    /// </summary>
     private static string Marker(string connectionString, long sender, int eventType)
     {
         return Event(connectionString, sender, eventType);
     }
 
     /// <summary>
-    /// A state event whose every column holds a value no other column holds, so that two columns crossed on the
-    /// way into the state table cannot compare equal. Text carries a quote and a column-specific suffix, numbers
-    /// and timestamps a column-specific offset.
+    /// A full state event whose every column differs from every other; <paramref name="seed"/> changes them all.
     /// </summary>
-    private static string DistinctiveStateEvent(string connectionString, long sender, long clientId)
+    private static string DistinctiveStateEvent(string connectionString, long clientId, int seed)
     {
-        var schema = EventSchema(connectionString);
-
-        var overrides = schema
+        var overrides = EventSchema(connectionString)
             .Where(column => column.Column is not ("sender_id" or "event_type" or "client_id"))
             .Select((column, ordinal) => (column.Column, Value: column.Type switch
             {
-                // the width is not known here, so the value is kept short enough for the narrowest column
-                "character varying" => $"'{ordinal}''s'",
-                "timestamp with time zone" => $"to_timestamp({1700000000 + ordinal})",
-                "double precision" => $"{ordinal}.25",
-                _ => (ordinal + 1).ToString()
+                // short enough for the narrowest column, VARCHAR(16)
+                "character varying" => $"'{seed}-{ordinal}''s'",
+                "timestamp with time zone" => $"to_timestamp({1700000000 + seed * 1000 + ordinal})",
+                "double precision" => $"{seed * 1000 + ordinal}.25",
+                _ => (seed * 1000 + ordinal + 1).ToString()
             }))
             .ToArray();
 
-        return Event(connectionString, sender, eventType: 0, [("client_id", clientId.ToString()), .. overrides]);
+        return Event(connectionString, Sender, eventType: 0, [("client_id", clientId.ToString()), .. overrides]);
     }
 
     /// <summary>
-    /// One event as a <c>COPY</c> text line: tab separated, in the schema's column order. An empty field is an
-    /// empty string here, which is what the exporter has to send - a <c>\N</c> would be NULL and every column of
-    /// this table is NOT NULL.
+    /// Columns where a state row differs from its source event, as <c>client_id: column</c>.
     /// </summary>
-    private static string CopyLine(List<(string Column, string Type)> schema, long sender, int eventType,
+    private static List<string> Mismatches(string connectionString)
+    {
+        return Strings(connectionString,
+            """
+            SELECT c.client_id || ': ' || key
+            FROM clients c
+                     JOIN client_events e ON e.id = c.source_event_row_id
+                     JOIN LATERAL jsonb_each(to_jsonb(e) - 'id' - 'time_inserted' - 'event_type') ON true
+            WHERE value IS DISTINCT FROM ((to_jsonb(c) - 'source_event_row_id' - 'time_applied') -> key)
+            ORDER BY c.client_id, key
+            """);
+    }
+
+    private static string TradingAccountEvent(string connectionString, long sender, long tradingAccountId, long clientId, string owner)
+    {
+        return Row(connectionString, "trading_account_events",
+            ("sender_id", sender.ToString()),
+            ("event_type", "0"),
+            ("trading_account_id", tradingAccountId.ToString()),
+            ("version", "1"),
+            ("client_id", clientId.ToString()),
+            ("comment", Quote(owner)));
+    }
+
+    private static string Quote(string value)
+    {
+        return $"'{value.Replace("'", "''")}'";
+    }
+
+    /// <summary>
+    /// One event as a <c>COPY</c> text line; empty strings, never <c>\N</c>, as every column is NOT NULL.
+    /// </summary>
+    private static string CopyLine(List<(string Column, string Type, bool Nullable)> schema, long sender, int eventType,
         long clientId = 0, long version = 0, int experience = 0, string comment = "")
     {
-        const string epoch = "1970-01-01 00:00:00+00";
-        var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.ffffff+00");
-        var isState = eventType == 0;
-
         return string.Join('\t', schema.Select(column => column.Column switch
         {
             "sender_id" => sender.ToString(),
@@ -1042,18 +977,17 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             "version" => version.ToString(),
             "experience_forex" => experience.ToString(),
             "comment" => comment,
-            "time_created" or "time_modified" => isState ? now : epoch,
             _ => column.Type switch
             {
                 "character varying" => "",
-                "timestamp with time zone" => epoch,
+                "timestamp with time zone" => "1970-01-01 00:00:00+00",
                 _ => "0"
             }
         }));
     }
 
     /// <summary>
-    /// Sends rows the way the export does, over <c>COPY … FROM STDIN</c> rather than an INSERT.
+    /// Sends rows the way the export does, over <c>COPY … FROM STDIN</c>.
     /// </summary>
     private static void Copy(NpgsqlConnection connection, string columns, params string[] rows)
     {
@@ -1067,9 +1001,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// One INSERT carrying every row, so the whole set lands in a single statement and a single transaction -
-    /// the shape a batch of the export arrives in. Called more than once, the rows arrive in separate
-    /// transactions, which is how a resync spanning several of them is written.
+    /// One statement and one transaction, the shape of an export batch.
     /// </summary>
     private static void InsertOneStatement(string connectionString, params string[] rows)
     {
@@ -1108,7 +1040,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT client_id, version, experience_forex, comment FROM clients ORDER BY client_id";
+        command.CommandText = "SELECT client_id, version, experience_forex, comment FROM clients ORDER BY client_id, sender_id";
 
         using var reader = command.ExecuteReader();
 
@@ -1127,10 +1059,6 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
         return Scalar<long>(connectionString, $"SELECT assigned_manager FROM clients WHERE client_id = {clientId}");
     }
 
-    /// <summary>
-    /// Reads one client by its full key, which is the only way to tell two senders' rows apart when they share
-    /// a client id.
-    /// </summary>
     private static string ReadComment(string connectionString, long sender, long clientId)
     {
         return Scalar<string>(connectionString,
@@ -1186,7 +1114,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
     }
 
     /// <summary>
-    /// Provisions a database, migrates it, and returns its connection string.
+    /// Provisions and migrates a database; returns its connection string.
     /// </summary>
     private string Migrate()
     {
@@ -1219,8 +1147,7 @@ public class ClientsProjectionIntegrationTests : IClassFixture<ConfigBuilder>, I
             "schema_versions",
             [new(true, "psql")],
             configBuilder.RepositoryRoot,
-            // the variables the CLI derives, so a variable added to the migrator reaches these tests without
-            // anyone having to remember this file
+            // the CLI's own variables, so new ones reach these tests automatically
             MigrationHandler.BuildVariables(DatabaseProvider.Postgres, databaseName, null, new()),
             false,
             false,
