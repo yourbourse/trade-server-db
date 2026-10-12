@@ -19,6 +19,7 @@
 using DbUp.Builder;
 using DbUp.Engine.Output;
 using DbUp.Engine.Transactions;
+using Npgsql;
 using YB.DbUp.PSQL;
 
 // ReSharper disable once CheckNamespace
@@ -76,12 +77,15 @@ public static class PostgresExtensions
     /// Creating a database requires a connection to the <c>postgres</c> maintenance database, which a managed
     /// instance does not always grant to the migration user. Failures are logged and swallowed so a run against
     /// an already provisioned database still succeeds.
+    /// <para>DbUp never disposes the data source behind that connection, so it is unpooled to close with the call.</para>
     /// </remarks>
     public static void PostgresDatabase(this SupportedDatabasesForEnsureDatabase supported, string connectionString, IUpgradeLog logger)
     {
         try
         {
-            EnsureDatabase.For.PostgresqlDatabase(connectionString, logger);
+            var unpooled = new NpgsqlConnectionStringBuilder(connectionString) { Pooling = false }.ConnectionString;
+
+            EnsureDatabase.For.PostgresqlDatabase(unpooled, logger);
         }
         catch (Exception e)
         {

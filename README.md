@@ -192,6 +192,15 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##trading_account_events_table##` | `trading_account_events`, unless `--variables` says otherwise |
 | `##trading_accounts_table##` | `trading_accounts`, unless `--variables` says otherwise |
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless `--variables` says otherwise |
+| `##client_events_table##` | `client_events`, unless `--variables` says otherwise |
+| `##clients_table##` | `clients`, unless `--variables` says otherwise |
+| `##clients_resync_view##` | `clients_resync`, unless `--variables` says otherwise |
+| `##symbol_events_table##` | `symbol_events`, unless `--variables` says otherwise |
+| `##symbols_table##` | `symbols`, unless `--variables` says otherwise |
+| `##symbols_resync_view##` | `symbols_resync`, unless `--variables` says otherwise |
+| `##group_events_table##` | `group_events`, unless `--variables` says otherwise |
+| `##groups_table##` | `groups`, unless `--variables` says otherwise |
+| `##groups_resync_view##` | `groups_resync`, unless `--variables` says otherwise |
 | `##cursor_table##` | `export_cursor`, unless `--variables cursor_table=...` says otherwise |
 | `##ticks_table##` | `ticks`, unless `--variables ticks_table=...` says otherwise |
 | `##assembly_version##` | The version of the migrator that applied the script |
@@ -204,7 +213,7 @@ Anything else can be passed with `--variables key=value`.
 A script containing a `##name##` that is not in this list and was not passed with `--variables` is **rejected
 before it reaches the database**, naming the placeholder — otherwise the `##` travels through to the server and
 comes back as a syntax error pointing at a character offset. If you want a literal table name, just write it; the
-six table variables are templated only because the trade server's export configuration makes those names
+exported table variables are templated only because the trade server's export configuration makes those names
 configurable — a deployment that renamed one passes the name with `--variables`.
 
 ### Statement separators
@@ -252,9 +261,9 @@ happens to contain a quote fails loudly or works correctly, rather than silently
 
 1. Create the file. Incremental: `psql/20260315_01_add_broker_id.sql`. Re-runnable: drop it in `views/`,
    `users/` or `post/`.
-2. Use the table variables — `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-   `##position_snapshots_table##`, `##cursor_table##` on PostgreSQL, `##ticks_table##` on ClickHouse — rather
-   than hard-coded table names. They are all configurable in the trade server's export configuration.
+2. Use the table variables — `##trades_table##`, `##cursor_table##`, the event log tables and the rest on
+   PostgreSQL, `##ticks_table##` on ClickHouse — rather than hard-coded table names. The exported ones are all
+   configurable in the trade server's export configuration.
 3. Check what it would do: `./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run`.
 4. Apply it, then run it a second time and confirm nothing is applied.
 5. Mirror the change in the other provider's folder if it applies to both — a `users/` or `post/` change
@@ -304,6 +313,10 @@ On top of `trades` there are two views:
 
 The two filters are complements, so every row of `trades` is visible through exactly one of them.
 
+Four further views, `trading_accounts_resync`, `clients_resync`, `symbols_resync` and `groups_resync`, report
+whether each sender's picture of the live set is settled or still converging, read from the resync markers in the
+matching event log.
+
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
 together.
@@ -333,8 +346,8 @@ when the parts merge. Query with `FINAL` when duplicates must not be visible bef
 ### Roles
 
 The `users/` scripts provision the two roles the guide describes on both engines: `exporter` — on PostgreSQL
-INSERT and SELECT on the four exported tables plus INSERT, SELECT and UPDATE on the cursor, on ClickHouse INSERT
-on `ticks` — and `ro`, with SELECT on everything.
+INSERT and SELECT on the exported tables, INSERT, SELECT and UPDATE on the cursor, and INSERT, SELECT, UPDATE and
+DELETE on the tables the triggers derive; on ClickHouse INSERT on `ticks` — and `ro`, with SELECT on everything.
 
 ## Building and testing
 
