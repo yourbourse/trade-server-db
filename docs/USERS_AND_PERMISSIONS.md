@@ -124,6 +124,9 @@ GRANT INSERT, SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##trading_accounts_table## TO ##user_name##;
 GRANT INSERT, SELECT ON TABLE ##symbol_events_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##symbols_table## TO ##user_name##;
+
+GRANT INSERT, SELECT ON TABLE ##group_events_table## TO ##user_name##;
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##groups_table## TO ##user_name##;
 GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 ```
 
@@ -139,16 +142,19 @@ GRANT INSERT, SELECT, UPDATE ON TABLE ##cursor_table## TO ##user_name##;
 | `trading_accounts` | `INSERT`, `SELECT`, `UPDATE`, `DELETE` | `SELECT` |
 | `symbol_events` | `INSERT`, `SELECT` | `SELECT` |
 | `symbols` | `INSERT`, `SELECT`, `UPDATE`, `DELETE` | `SELECT` |
+| `symbols_resync` (view) | — | `SELECT` |
+| `group_events` | `INSERT`, `SELECT` | `SELECT` |
+| `groups` | `INSERT`, `SELECT`, `UPDATE`, `DELETE` | `SELECT` |
 | `export_cursor` | `INSERT`, `SELECT`, `UPDATE` | `SELECT` |
 | `trades_history` (view) | — | `SELECT` |
 | `trading_accounts_resync` (view) | — | `SELECT` |
-| `symbols_resync` (view) | — | `SELECT` |
+| `groups_resync` (view) | — | `SELECT` |
 | `cash_transfers` (view) | — | `SELECT` |
 
 `UPDATE` is granted on the cursor table alone, among the tables the export writes: it is the only row the export
-ever rewrites, and an exported record is never updated or deleted. `trading_accounts` and `symbols` are not
+ever rewrites, and an exported record is never updated or deleted. `trading_accounts`, `symbols` and `groups` are not
 exported records — each is derived from its event log by a trigger that runs as whoever inserted the event, so
-the exporter needs to write and delete rows in both even though it never reads either. The wider grant gives
+the exporter needs to write and delete rows in all three even though it never reads them. The wider grant gives
 nothing away: a principal that can insert events can already empty the derived table through the trigger, by
 writing a resync marker pair that re-announces nothing.
 

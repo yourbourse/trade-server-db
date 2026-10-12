@@ -272,9 +272,12 @@ deployed database will silently differ from the file. Add a new one.
 ## Schema
 
 The two engines hold different tables, because the trade server exports each entity to exactly one of them:
-trades, daily statements, their snapshots, the trading account events and the export cursor go to PostgreSQL,
+trades, daily statements, their snapshots, the trading account events, the symbol events and the export cursor
 go to PostgreSQL, ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and the
-all of them — plus `trading_accounts`, which it derives from the event log with a trigger:
+migrator creates all of them — plus `trading_accounts` and `symbols`, which it derives from their event logs
+with a trigger each:
+trades, daily statements, their snapshots, the trading account events, the group events and the export cursor
+migrator creates all of them — plus `trading_accounts` and `groups`, which it derives from their event logs with
 
 | Table | Default name | Engine |
 |---|---|---|
@@ -305,6 +308,7 @@ On top of `trades` there are two views:
 
 The two filters are complements, so every row of `trades` is visible through exactly one of them.
 
+Two further views, `trading_accounts_resync` and `symbols_resync`, report whether each sender's picture of the
 live set is settled or still converging, read from the resync markers in the matching event log.
 
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**

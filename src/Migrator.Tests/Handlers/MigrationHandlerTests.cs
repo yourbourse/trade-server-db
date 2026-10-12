@@ -328,6 +328,13 @@ public class MigrationHandlerTests
     [InlineData("symbols_table", "symbols")]
     [InlineData("symbols_resync_view", "symbols_resync")]
     public void BuildVariables_Should_default_the_symbol_objects_to_their_documented_names(string variable, string expected)
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.Equal(expected, variables[variable]);
+    }
 
     /// <summary>
     /// A name that is a legal 63 character identifier is still too long once the scripts prefix it to derive an
@@ -430,6 +437,16 @@ public class MigrationHandlerTests
     [InlineData("symbols_table")]
     [InlineData("symbols_resync_view")]
     public void BuildVariables_Should_let_variables_rename_a_symbol_object(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
+
+        // assert
+        Assert.Equal("renamed_object", variables[variable]);
+    }
+
     {
         // arrange
         var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };

@@ -87,7 +87,7 @@ public class MigrationHandler : IMigrationHandler
         "trades_history_view",
         "cash_transfers_view",
         "trading_accounts_resync_view",
-        "symbols_resync_view"
+        "symbols_resync_view",
         "groups_resync_view"
     ];
 
@@ -103,7 +103,7 @@ public class MigrationHandler : IMigrationHandler
     private static readonly string[] derivedTableVariables =
     [
         "trading_accounts_table",
-        "symbols_table"
+        "symbols_table",
         "groups_table"
     ];
 
