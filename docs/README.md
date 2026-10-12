@@ -22,7 +22,8 @@ New to this repository? Read in this order:
 
 1. **[Getting Started](GETTING_STARTED.md)** — prerequisites, first migration against a throwaway database, and how to tell it worked
 2. **[Operations Guide](OPERATIONS_GUIDE.md)** — how to run it against a real export database, and what to do at every trade server upgrade
-3. **[Schema Reference](SCHEMA_REFERENCE.md)** — the tables the migrator creates and what each column means
+3. **[Schema Reference](SCHEMA_REFERENCE.md)** — the tables the migrator creates, each with its own page: final SQL,
+   columns and indexes
 
 Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
@@ -56,7 +57,9 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 | Reference | Description |
 |-----------|-------------|
-| [Schema Reference](SCHEMA_REFERENCE.md) | The PostgreSQL trade, daily statement, snapshot and cursor tables, the ClickHouse ticks table and the journal, column by column |
+| [Schema Reference](SCHEMA_REFERENCE.md) | The source of truth for the schema: every table and view on both engines, the conventions they share, deduplication and caveats |
+| [PostgreSQL tables](PSQL) | One page per table and view — final SQL, columns, indexes and the scripts that built it |
+| [ClickHouse tables](ClickHouse) | The same for `ticks` and the ClickHouse journal |
 | [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
 | [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
 

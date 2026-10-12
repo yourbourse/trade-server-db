@@ -2,9 +2,9 @@
 
 # Schema Reference
 
-**The tables and views the export uses, on both engines, column by column**
+**The source of truth for the export databases — every table and view the migrator creates, one page each**
 
-[Overview](#overview) · [trades](#trades) · [daily_statements_export](#daily_statements_export) · [order snapshots](#daily_statements_order_snapshots) · [position snapshots](#daily_statements_position_snapshots) · [export_cursor](#export_cursor) · [trading_account_events](#trading_account_events) · [trading_accounts](#trading_accounts) · [Views](#views) · [ticks](#ticks) · [schema_versions](#schema_versions) · [Deduplication](#deduplication) · [Caveats](#caveats)
+[Overview](#overview) · [PostgreSQL](#postgresql) · [ClickHouse](#clickhouse) · [Conventions](#conventions) · [Event logs](#event-logs-and-their-projections) · [Deduplication](#deduplication) · [Caveats](#caveats)
 
 </div>
 
@@ -12,639 +12,288 @@
 
 ## Overview
 
-The trade server exports each entity to exactly one engine, so the two engines hold different tables. Every one
-of them is created by the migrator, in the database named by the connection string:
+The trade server exports each entity to exactly one engine, so the two engines hold different tables. Every one of
+them is created by the migrator, in the database named by the connection string, and each has its own page — under
+[`PSQL/`](PSQL) for PostgreSQL and [`ClickHouse/`](ClickHouse) for ClickHouse — named after its default table name.
 
-| Table | Default name | Engine | Written by | Purpose |
-|-------|--------------|--------|------------|---------|
-| Trades | `trades` | PostgreSQL | trade server | Every exported trade record, append-only |
-| Daily statements | `daily_statements_export` | PostgreSQL | trade server | One end-of-day row per account |
-| Order snapshots | `daily_statements_order_snapshots` | PostgreSQL | trade server | The account's working orders at the statement time |
-| Position snapshots | `daily_statements_position_snapshots` | PostgreSQL | trade server | The account's open positions at the statement time |
-| Trading account events | `trading_account_events` | PostgreSQL | trade server | Every trading account change, as an ordered log |
-| Trading accounts | `trading_accounts` | PostgreSQL | **migrator, by trigger** | The current state of every live trading account |
-| Export cursor | `export_cursor` | PostgreSQL | trade server | How far each PostgreSQL export has progressed |
-| Ticks | `ticks` | ClickHouse | trade server | The top of the order book of every symbol, one row per change |
-| Journal | `schema_versions` | both | migrator | Which scripts have been applied |
+Every page has the same sections:
 
-…and three views, on PostgreSQL:
+| Section | What it holds |
+|---------|---------------|
+| **Overview** | The engine, the default name and the variable that renames it, who writes it, what one row is, its key and its grants |
+| **Final SQL** | The table as it stands once **every** script has run, with the default names substituted — a single definition even when several scripts built it, such as a table and the indexes a later migration added |
+| **Columns** | Every column, its type and what it means |
+| **Indexes** | What each index covers and which query it serves |
+| **Scripts** | Which scripts built the object, in which phase, and what each contributed |
 
-| View | Default name | Purpose |
-|------|--------------|---------|
-| Trades history | `trades_history` | The executed and cancelled trades, without the accounting records |
-| Cash transfers | `cash_transfers` | The cash movements, over the columns a transfer actually populates |
-| Trading accounts resync | `trading_accounts_resync` | Whether a resync is in progress, per sender, read from the log's markers |
+The **Final SQL** is checked against the migrator, not written from memory: applied to an empty database it creates
+the same tables, columns, defaults, constraints, indexes and views a migration creates. When a migration changes a
+table, its page changes in the same pull request — see [Contributing](CONTRIBUTING.md#review-checklist).
 
-The seven names the trade server writes to are configurable — they mirror its export configuration and are
-templated as `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-`##position_snapshots_table##`, `##trading_account_events_table##`, `##cursor_table##` and `##ticks_table##`.
-The journal name comes from `--journal-table`. `trading_accounts` is templated too, as
-`##trading_accounts_table##`, even though the trade server never writes to it — a deployment may already own
-an object under that name.
+The column descriptions come from two documents of the trade server team: the *Export Setup* guide, which describes
+what the exporter writes, and the trade server's Admin REST API, whose `TradingAccount`, `Client`, `Group`,
+`Symbol`, `Order`, `Position`, `Trade`, `Transfer` and `Statement` resources carry the same data. Where the two
+disagree, the page says so.
 
-The three daily statement tables are produced by one export: when a statement is generated the trade server
-publishes the statement row, a snapshot of every **working** order and a snapshot of every open position, all
-carrying the same scheduled end-of-day `time_statement`. That shared timestamp is what ties the three together —
-there are no foreign keys.
-
-```
-statement run at time_statement
-├── daily_statements_export             one row per account
-├── daily_statements_order_snapshots    one row per working order
-└── daily_statements_position_snapshots one row per open position
-```
-
-Each has its own pipeline in the trade server's `export_config.json`, so a deployment can export the statement
-without the snapshots. Every PostgreSQL pipeline shares the one `export_cursor` table, which holds a row per
-`(sender_id, table_name)`.
-
-> **Important:** **The engines are not mirrors of each other.** The *Export Setup* guide sends trades, daily
-> statements, their snapshots, the trading account events and the cursor to PostgreSQL only, and ticks to
-> ClickHouse only; a pipeline that pairs an entity with the other engine is rejected by the trade server. So
-> `psql/` creates those six tables, the `trading_accounts` projection and the three views, `clickhouse/`
-> creates the ticks table, and both create the journal.
-
-Every definition matches the *Export Setup* guide.
+> **Important:** **The engines are not mirrors of each other.** The *Export Setup* guide sends the trades, the daily
+> statements and their snapshots, the event logs and the cursor to PostgreSQL only, and the ticks to ClickHouse
+> only; a pipeline that pairs an entity with the other engine is rejected by the trade server. So `psql/` creates
+> the PostgreSQL tables, their projections and views, `clickhouse/` creates the ticks table and nothing else, and
+> both create the journal.
 
 ---
 
-## trades
+## PostgreSQL
 
-PostgreSQL. Append-only. Delivery is at-least-once, so the same trade can arrive twice after a restart — see
-[Deduplication](#deduplication).
+### Exported by the trade server
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. Server-generated |
-| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | Defaults to `now()` — when the row landed, not when the trade happened |
-| `sender_id` | `BIGINT` | Identifies the writing trade server |
-| `group_name` | `VARCHAR(128)` | |
-| `symbol_name` | `VARCHAR(32)` | |
-| `trade_id` | `BIGINT` | Unique per `sender_id` |
-| `time_created` | `TIMESTAMP WITH TIME ZONE` | When the trade was created |
-| `time_modified` | `TIMESTAMP WITH TIME ZONE` | |
-| `trading_account_id` | `BIGINT` | |
-| `group_id` | `BIGINT` | |
-| `trade_type` | `SMALLINT` | Trade / Balance / Credit / Fee and the other accounting types |
-| `executed_price` | `NUMERIC` | |
-| `volume` | `NUMERIC` | |
-| `order_id` | `BIGINT` | |
-| `position_id` | `BIGINT` | |
-| `profit` | `NUMERIC` | |
-| `commission` | `NUMERIC` | |
-| `swaps` | `NUMERIC` | |
-| `fee` | `NUMERIC` | |
-| `position_price` | `NUMERIC` | |
-| `profit_conversion_rate` | `NUMERIC` | |
-| `contract_size` | `NUMERIC` | |
-| `notional_value_in_original_currency` | `NUMERIC` | |
-| `notional_value_in_account_currency` | `NUMERIC` | |
-| `tick_value` | `NUMERIC` | |
-| `tick_size` | `NUMERIC` | |
-| `market_bid` | `NUMERIC` | |
-| `market_ask` | `NUMERIC` | |
-| `symbol_id` | `BIGINT` | |
-| `group_markup` | `NUMERIC` | |
-| `side` | `SMALLINT` | |
-| `entry_type` | `SMALLINT` | |
-| `reason` | `SMALLINT` | |
-| `price_decimal_places` | `SMALLINT` | |
-| `account_currency_decimal_places` | `SMALLINT` | |
-| `comment` | `VARCHAR(64)` | Defaults to `''` |
-| `agent_commission` | `NUMERIC` | |
-| `notional_value_in_usd` | `NUMERIC` | |
+Each table is written by one pipeline of the trade server's `export_config.json`, identified by its `entity`. The
+pipeline's `table` field names the table; a deployment that changed it passes the same name to every migration, as
+`--variables <variable>=<name>` — see [Renamed tables](#renamed-tables).
 
-Every column is `NOT NULL`.
+| Entity | Page | Pipeline `entity` | Default name | Variable | One row per |
+|--------|------|-------------------|--------------|----------|-------------|
+| Export cursor | [export_cursor](PSQL/export_cursor.md) | every pipeline's `cursor_table` | `export_cursor` | `cursor_table` | PostgreSQL pipeline and sender |
+| Trades | [trades](PSQL/trades.md) | `trade` | `trades` | `trades_table` | Trade or cash movement |
+| Daily statements | [daily_statements_export](PSQL/daily_statements_export.md) | `daily_statement` | `daily_statements_export` | `daily_statements_table` | Account per statement run |
+| Daily order snapshots | [daily_statements_order_snapshots](PSQL/daily_statements_order_snapshots.md) | `daily_statement_order_snapshot` | `daily_statements_order_snapshots` | `order_snapshots_table` | Working order per statement run |
+| Daily position snapshots | [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | `daily_statement_position_snapshot` | `daily_statements_position_snapshots` | `position_snapshots_table` | Open position per statement run |
+| Trading account events | [trading_account_events](PSQL/trading_account_events.md) | `trading_account` | `trading_account_events` | `trading_account_events_table` | Trading account change or resync marker |
+| Client events | [client_events](PSQL/client_events.md) | `client` | `client_events` | `client_events_table` | Client change or resync marker |
+| Symbol events | [symbol_events](PSQL/symbol_events.md) | — | `symbol_events` | `symbol_events_table` | Symbol configuration change or resync marker |
+| Group events | [group_events](PSQL/group_events.md) | — | `group_events` | `group_events_table` | Group configuration change or resync marker |
 
-**Indexes**
+> **Important:** The *Export Setup* guide's example configuration names the trades table **`trades_export`**; the
+> migrator's default is `trades`. A deployment that follows the guide's example migrates with
+> `--variables trades_table=trades_export`. Every other default here matches the guide, which does not cover the
+> symbol and group pipelines.
 
-| Index | Definition | Purpose |
-|-------|------------|---------|
-| `idx_sender_trade_<trades_table>` | `UNIQUE (sender_id, trade_id)` | Deduplicates at-least-once delivery |
-| `idx_time_created_<trades_table>` | `(time_created)` | Time-range queries |
-| `idx_account_time_<trades_table>` | `(trading_account_id, time_created)` | An account's trades over a period - the main reporting path, and `trades_history` |
-| `idx_transfers_account_time_<trades_table>` | `(trading_account_id, time_created)` `WHERE trade_type NOT IN (0, 1, 14, 15)` | The same query against `cash_transfers`; partial, so it holds only the accounting records |
+### Derived by the migrator
 
-What the index covers comes **before** the table name, because PostgreSQL truncates identifiers to 63 bytes: a
-long configured table name would otherwise leave both indexes with the same truncated name, and the second
-`CREATE INDEX IF NOT EXISTS` would quietly do nothing.
+Maintained from an event log by a trigger, never written by the trade server — see
+[Event logs and their projections](#event-logs-and-their-projections).
+
+| Table | Page | Derived from | One row per |
+|-------|------|--------------|-------------|
+| `trading_accounts` | [trading_accounts](PSQL/trading_accounts.md) | `trading_account_events` | Live trading account |
+| `clients` | [clients](PSQL/clients.md) | `client_events` | Live client |
+| `symbols` | [symbols](PSQL/symbols.md) | `symbol_events` | Live symbol |
+| `groups` | [groups](PSQL/groups.md) | `group_events` | Live group |
+
+### Views
+
+| View | Documented on | Over | Answers |
+|------|---------------|------|---------|
+| `trades_history` | [trades_history](PSQL/trades_history.md) | `trades` | The executed and cancelled trades, without the cash movements |
+| `cash_transfers` | [cash_transfers](PSQL/cash_transfers.md) | `trades` | The cash movements, over the columns a transfer actually populates |
+| `trading_accounts_resync` | [trading_accounts](PSQL/trading_accounts.md#trading_accounts_resync) | `trading_account_events` | Whether a resync is in progress, per sender |
+| `clients_resync` | [clients](PSQL/clients.md#clients_resync) | `client_events` | The same, for the client export |
+| `symbols_resync` | [symbols](PSQL/symbols.md#symbols_resync) | `symbol_events` | The same, for the symbol export |
+| `groups_resync` | [groups](PSQL/groups.md#groups_resync) | `group_events` | The same, for the group export |
+
+Reading a view needs `SELECT` on the view itself — a grant on the underlying table does not reach through.
+`psql/users/ro.sql` grants every view; `exporter` gets none of them, because it writes rows and does not read
+reports. The view names are templated (`##trades_history_view##` and so on) even though the trade server never
+touches them, so that a database already owning an object under one of the names can move ours aside.
+
+### Journal
+
+| Table | Page |
+|-------|------|
+| `schema_versions` | [schema_versions](PSQL/schema_versions.md) — renamed with `--journal-table` |
 
 ---
 
-## daily_statements_export
+## ClickHouse
 
-PostgreSQL. One row per account per statement run. Append-only, at-least-once, same as trades.
+| Entity | Page | Pipeline `entity` | Default name | Variable | One row per |
+|--------|------|-------------------|--------------|----------|-------------|
+| Ticks | [ticks](ClickHouse/ticks.md) | `tick` | `ticks` | `ticks_table` | Change of a symbol's best bid or best ask |
+| Journal | [schema_versions](ClickHouse/schema_versions.md) | — | `schema_versions` | `--journal-table` | Applied script |
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. Server-generated |
-| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | Defaults to `now()` — when the row landed |
-| `sender_id` | `BIGINT` | Identifies the writing trade server |
-| `time_statement` | `TIMESTAMP WITH TIME ZONE` | The scheduled end-of-day time. Shared with the snapshots of the same run |
-| `group_name` | `VARCHAR(128)` | |
-| `trading_account_id` | `BIGINT` | |
-| `group_id` | `BIGINT` | |
-| `statement_client_name` | `VARCHAR(160)` | Account owner |
-| `account_currency` | `VARCHAR(16)` | `USD`, `EUR`, … |
-| `email` | `VARCHAR(64)` | |
-| `current_balance` | `NUMERIC` | |
-| `prev_day_balance` | `NUMERIC` | |
-| `current_credit` | `NUMERIC` | |
-| `prev_day_credit` | `NUMERIC` | |
-| `current_floating_profit` | `NUMERIC` | Unrealised, on open positions |
-| `lifetime_realized_profit` | `NUMERIC` | Since the account was created |
-| `current_equity` | `NUMERIC` | Balance plus floating profit |
-| `prev_day_equity` | `NUMERIC` | |
-| `current_margin` | `NUMERIC` | |
-| `current_collateral` | `NUMERIC` | |
-| `prev_day_collateral` | `NUMERIC` | |
-| `open_positions_swaps` | `NUMERIC` | |
-| `closed_positions_swaps` | `NUMERIC` | For the statement period |
-| `commissions` | `NUMERIC` | |
-| `agent_commissions` | `NUMERIC` | |
-| `fees` | `NUMERIC` | |
-| `interest` | `NUMERIC` | |
-| `deposits` | `NUMERIC` | |
-| `withdrawals` | `NUMERIC` | |
-| `credit_transactions` | `NUMERIC` | |
-| `adjustment_transactions` | `NUMERIC` | |
-| `balance_bonus_transactions` | `NUMERIC` | |
-| `credit_bonus_transactions` | `NUMERIC` | |
-| `dividend_transactions` | `NUMERIC` | |
-| `tax` | `NUMERIC` | |
-| `stopout_compensations` | `NUMERIC` | |
-| `stopout_credit_adjustments` | `NUMERIC` | |
-| `volume_in_usd` | `NUMERIC` | |
-| `volume_in_account_currency` | `NUMERIC` | |
-| `realized_profit` | `NUMERIC` | For the statement period |
-| `account_currency_decimal_places` | `SMALLINT` | Usually 2 |
-
-Every column is `NOT NULL`.
-
-**Indexes**
-
-| Index | Definition | Purpose |
-|-------|------------|---------|
-| `idx_sender_stmt_account_<daily_statements_table>` | `UNIQUE (sender_id, time_statement, trading_account_id)` | Deduplicates at-least-once delivery |
-| `idx_account_stmt_<daily_statements_table>` | `(trading_account_id, time_statement)` | An account's statement history. The unique index carries `trading_account_id` third, so it cannot serve a filter on the account alone |
+ClickHouse holds nothing else: no cursor table — a ClickHouse pipeline keeps its export position on disk — no views,
+and no event logs, since it has no trigger mechanism to maintain a current-state table with.
 
 ---
 
-## daily_statements_order_snapshots
+## Conventions
 
-PostgreSQL. One row per **working** order of the account, as it stood at `time_statement`. A filled, cancelled
-or expired order is not part of a statement.
+### Every id is scoped to its sender
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. Server-generated |
-| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | Defaults to `now()` |
-| `sender_id` | `BIGINT` | Identifies the writing trade server |
-| `time_statement` | `TIMESTAMP WITH TIME ZONE` | Same value as on the statement row |
-| `order_id` | `BIGINT` | Unique per `sender_id` and `time_statement` |
-| `order_history_record_id` | `BIGINT` | Tracks order modifications |
-| `trading_account_id` | `BIGINT` | |
-| `group_id` | `BIGINT` | |
-| `group_name` | `VARCHAR(128)` | |
-| `symbol_name` | `VARCHAR(32)` | |
-| `time_created` | `TIMESTAMP WITH TIME ZONE` | |
-| `time_modified` | `TIMESTAMP WITH TIME ZONE` | |
-| `classification_id` | `BIGINT` | |
-| `symbol_id` | `BIGINT` | |
-| `parent_order_id` | `BIGINT` | 0 when standalone |
-| `oco_order_id` | `BIGINT` | 0 when not part of an OCO pair |
-| `stop_loss_order_id` | `BIGINT` | 0 when none |
-| `take_profit_order_id` | `BIGINT` | 0 when none |
-| `parent_position_id` | `BIGINT` | 0 for a new position |
-| `position_id` | `BIGINT` | 0 when the order opened no position |
-| `position_by_id` | `BIGINT` | 0 when not applicable |
-| `liquidity_connection_id` | `BIGINT` | 0 for a house order |
-| `volume` | `NUMERIC` | In lots |
-| `remaining_volume` | `NUMERIC` | Unfilled |
-| `avg_fill_price` | `NUMERIC` **nullable** | `NULL` when unfilled |
-| `stop_price` | `NUMERIC` **nullable** | `NULL` when not a stop order |
-| `limit_price` | `NUMERIC` **nullable** | `NULL` when not applicable |
-| `margin_conversion_rate` | `NUMERIC` | |
-| `lot_size` | `NUMERIC` | Contract multiplier |
-| `order_type` | `SMALLINT` | Market / Stop / Limit / Stop-Limit / Close By |
-| `order_expiry` | `SMALLINT` | FOK / IOC / GTC / GTD / Day / Milliseconds |
-| `order_side` | `SMALLINT` | 0 Buy, 1 Sell |
-| `order_status` | `SMALLINT` | Only working orders are exported |
-| `group_markup` | `NUMERIC` | |
-| `price_decimal_places` | `SMALLINT` | |
-| `account_currency_decimal_places` | `SMALLINT` | |
-| `expiration_time` | `TIMESTAMP WITH TIME ZONE` **nullable** | `NULL` unless the order is Good Till Date |
-| `reason` | `SMALLINT` | Same value set as on a trade |
-| `comment` | `VARCHAR(64)` | |
+`sender_id` identifies the trade server instance that produced a row. A deployment may run **several instances**,
+each exporting into the same database, and **each numbers its own records**. So every id in this schema —
+`trade_id`, `trading_account_id`, `order_id`, `position_id`, `client_id`, `symbol_id`, `group_id` — is unique only
+**within a sender**.
 
-**Indexes**
-
-| Index | Definition | Purpose |
-|-------|------------|---------|
-| `idx_sender_stmt_order_<order_snapshots_table>` | `UNIQUE (sender_id, time_statement, order_id)` | Deduplicates at-least-once delivery |
-| `idx_account_stmt_<order_snapshots_table>` | `(trading_account_id, time_statement)` | The working orders behind one account's statement. `trading_account_id` is not in the unique index at all |
-
----
-
-## daily_statements_position_snapshots
-
-PostgreSQL. One row per open position of the account, as it stood at `time_statement`.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. Server-generated |
-| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | Defaults to `now()` |
-| `sender_id` | `BIGINT` | Identifies the writing trade server |
-| `time_statement` | `TIMESTAMP WITH TIME ZONE` | Same value as on the statement row |
-| `position_id` | `BIGINT` | Unique per `sender_id` and `time_statement` |
-| `trading_account_id` | `BIGINT` | |
-| `group_id` | `BIGINT` | |
-| `group_name` | `VARCHAR(128)` | |
-| `symbol_name` | `VARCHAR(32)` | |
-| `symbol_id` | `BIGINT` | |
-| `side` | `SMALLINT` | 0 Buy (long), 1 Sell (short) |
-| `volume` | `NUMERIC` | In lots |
-| `avg_open_price` | `NUMERIC` | |
-| `market_price` | `NUMERIC` | At snapshot time |
-| `profit` | `NUMERIC` | Unrealised, in account currency |
-| `swaps` | `NUMERIC` | |
-| `commission` | `NUMERIC` | |
-| `fee` | `NUMERIC` | |
-| `margin` | `NUMERIC` | |
-| `stop_loss` | `NUMERIC` **nullable** | `NULL` when not set |
-| `stop_loss_order_id` | `BIGINT` | 0 when none |
-| `take_profit` | `NUMERIC` **nullable** | `NULL` when not set |
-| `take_profit_order_id` | `BIGINT` | 0 when none |
-| `stopout_order_id` | `BIGINT` | 0 when no stop-out happened |
-| `profit_conversion_rate` | `NUMERIC` | |
-| `margin_conversion_rate` | `NUMERIC` | |
-| `lot_size` | `NUMERIC` | Contract multiplier |
-| `time_created` | `TIMESTAMP WITH TIME ZONE` | When the position was opened |
-| `time_modified` | `TIMESTAMP WITH TIME ZONE` | |
-| `price_decimal_places` | `SMALLINT` | |
-| `account_currency_decimal_places` | `SMALLINT` | |
-| `intraday_swap_day` | `NUMERIC` | Accrued today |
-| `intraday_swap_month` | `NUMERIC` | Accrued this month |
-| `created_by_order_id` | `BIGINT` | |
-| `updated_by_order_id` | `BIGINT` | Most recent order that modified the position |
-
-**Indexes**
-
-| Index | Definition | Purpose |
-|-------|------------|---------|
-| `idx_sender_stmt_position_<position_snapshots_table>` | `UNIQUE (sender_id, time_statement, position_id)` | Deduplicates at-least-once delivery |
-| `idx_account_stmt_<position_snapshots_table>` | `(trading_account_id, time_statement)` | The open positions behind one account's statement. `trading_account_id` is not in the unique index at all |
-
----
-
-## export_cursor
-
-PostgreSQL. How many records the trade server has already committed for a given table — one row per
-`(sender_id, table_name)`, so every PostgreSQL export pipeline of every server instance shares this one table.
-It — not the trade server's local `state.bin` — is the authoritative position; the local file is only a
-shutdown-time cache.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `sender_id` | `BIGINT` | Part of the primary key |
-| `table_name` | `TEXT` | Part of the primary key |
-| `last_written_position` | `BIGINT` | The committed position |
-
-`PRIMARY KEY (sender_id, table_name)`.
-
-The cursor row and the batch of records are written **in the same transaction**, which is what makes the cursor
-trustworthy: it can never claim more than was actually stored.
-
-There is no cursor on ClickHouse: a ClickHouse pipeline keeps its position on disk only, and after a crash it
-starts again from position 0. The *Export Setup* guide describes the consequences.
-
----
-
-## trading_account_events
-
-Every change to a trading account, as an ordered log. A creation or a modification carries the account's full
-state; a deletion carries none of it; and two marker types bracket a resync and are not about an account at all.
-
-Reducing this log to "which accounts are live" is the job of [`trading_accounts`](#trading_accounts), which a
-trigger maintains from it — see [Trading account projection](#trading-account-projection).
-
-### PostgreSQL
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. The recorded order, and the only column that orders events |
-| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | When the row reached PostgreSQL. Transaction start time, so a whole batch shares one — it cannot order events |
-| `sender_id` | `BIGINT` | The trade server instance that produced the event |
-| `event_type` | `SMALLINT` | `0` account state, `1` deletion, `2` resync started, `3` resync finished |
-| `trading_account_id` | `BIGINT` | `0` on both marker rows |
-| `version` | `BIGINT` | The account's version as of this event. `0` on a deletion and on both markers |
-| `group_id` | `BIGINT` | |
-| `client_id` | `BIGINT` | |
-| `introducer` | `BIGINT` | `0` means no introducing broker |
-| `time_created` | `TIMESTAMP WITH TIME ZONE` | |
-| `time_modified` | `TIMESTAMP WITH TIME ZONE` | |
-| `time_password_last_changed` | `TIMESTAMP WITH TIME ZONE` | The epoch means never changed |
-| `leverage` | `INTEGER` | |
-| `enabled` | `BOOLEAN` | |
-| `allow_trading` | `BOOLEAN` | |
-| `external_account_id` | `VARCHAR(64)` | `''` means none |
-| `comment` | `VARCHAR(256)` | |
-
-Every column is `NOT NULL`, and the exporter writes every one of them on every row — a field that does not
-apply carries a type-appropriate zero rather than relying on a column default. A delete row and both marker
-rows carry those zeros throughout, `version` and `trading_account_id` included, which is why a delete row cannot
-be ordered into an account's history by its `version`. Use `id`.
-
-Indexes: `(sender_id, trading_account_id, id)` for an account's history, and a partial
-`(sender_id, event_type, id) WHERE event_type IN (2, 3)` for the resync markers.
-
-> **Note:** **There is no deduplication key**, unlike every other exported table here. Delivery is
-> at-least-once, so a redelivered event lands as a second row rather than being rejected. `trading_accounts`
-> absorbs that — a re-applied change leaves the same state — but a consumer reading this log directly can see
-> one logical change twice.
-
-> **Warning:** The account password is deliberately absent and must stay absent. It is never present in an API
-> response, nothing here has a use for it, and leaving it out of the schema is what keeps it out of the
-> database — the `ro` role can read every table in here.
-
----
-
-## trading_accounts
-
-The current state of every live trading account: one row per `(sender_id, trading_account_id)`, so "which
-accounts are live and how is each configured" is a single read.
-
-**Not written by the trade server.** It is derived from `trading_account_events` by a trigger, inside the same
-transaction as the event that caused the change — so it cannot lag behind the log, and a batch that fails to
-commit leaves no trace in it.
-
-### PostgreSQL
-
-Every account column of `trading_account_events`, with the same types and the same meanings, minus the log's
-own envelope (`id`, `time_inserted`, `event_type`) and plus:
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `sender_id`, `trading_account_id` | `BIGINT` | `PRIMARY KEY (sender_id, trading_account_id)` |
-| `source_event_row_id` | `BIGINT` | The `trading_account_events.id` this state came from. Traceability, and what a resync's end marker compares against |
-| `time_applied` | `TIMESTAMP WITH TIME ZONE` | When the projection last wrote the row, as against `time_modified`, when the account last changed |
-
-There is deliberately **no foreign key** on `source_event_row_id`: an event ages out of the retention window
-long before the account does, and a foreign key would make that purge either fail or cascade into here — which
-is the one thing this table exists not to do.
-
-No indexes beyond the primary key. The table is bounded at roughly the live account count, so a filter the
-primary key cannot serve is a scan of a small table rather than of a growing one.
-
----
-
-## Trading account projection
-
-`psql/views/trading_accounts_projection.sql` creates the function `project_trading_accounts()` and the trigger
-`trg_project_trading_accounts`, an `AFTER INSERT … FOR EACH ROW` trigger on `trading_account_events`.
-
-| `event_type` | What the trigger does |
-|--------------|-----------------------|
-| `0` account state | Upserts the account's row, stamped with the event's `id` |
-| `1` deletion | Deletes the account's row |
-| `2` resync started | **Nothing.** The row's own `id` is the watermark the end marker reads back out of the log |
-| `3` resync finished | Deletes that sender's rows stamped older than the newest `2` before it |
-| anything else | Nothing — stored in the log, not projected, and no batch fails |
-
-Ordering is by arrival, never by `version`: trading account ids are reused after deletion, so a reused id
-restarts its version sequence, and deletions and markers carry `version 0` anyway.
-
-A resync sweeps at the **end** marker rather than the start, so the table stays complete and readable for the
-whole resync — which matters because a resync runs on every trade server startup that has it enabled.
-
-The script is re-runnable and ends with a reconcile pass that replays the newest retained event per account, so
-`--force` repairs a dropped trigger, and corrects rows an earlier, buggy version of the projection wrote. It
-cannot recover what the retention window has
-dropped; the authoritative repair for that is a resync from the trade server.
-
----
-## Views
-
-Three views, on PostgreSQL. Two are over `trades`, and exist because the trades table holds two unrelated kinds
-of record — an executed trade and a cash movement on the account — and a reader almost always wants one or the
-other.
-
-| View | Default name | Rows | Columns |
-|------|--------------|------|---------|
-| Trades history | `trades_history` | `trade_type` in (0, 1, 14, 15) | every `trades` column except the identity |
-| Cash transfers | `cash_transfers` | every other `trade_type` | the 22 the transfer pipeline populates, plus 2 |
-
-Both names are templated — `##trades_history_view##` and `##cash_transfers_view##` — so a deployment that
-already owns an object under one of them moves ours aside with `--variables`.
-
-The two filters are complements, so **the views partition the table**: every row is visible through exactly one
-of them, and a trade type the trade server gains later surfaces in `cash_transfers` rather than in neither.
-
-The third view is over the event log rather than over `trades` — see
-[trading_accounts_resync](#trading_accounts_resync) below.
-
-ClickHouse has no views: the ticks table is the only one there, and nothing reads it through a view.
-
-### trades_history
-
-`trade_type` selects the four trading records:
-
-| `trade_type` | Enum |
-|---|---|
-| `0` | `kBuy` |
-| `1` | `kSell` |
-| `14` | `kBuyCancelled` |
-| `15` | `kSellCancelled` |
-
-Every column of [`trades`](#trades) is exposed except the identity column.
-
-### cash_transfers
-
-Everything else: `kBalance`, `kCredit`, `kFee`, `kAdjustment`, `kBonus`, `kCommission`, `kDailyCommission`,
-`kMonthlyCommission`, `kAgentCommission`, `kDailyAgentCommission`, `kMonthlyAgentCommission`, `kInterest`,
-`kDividend`, `kFrankedDividend`, `kTax`, `kStopoutCompensation`, `kStopoutCreditAdjustment` and `kCreditBonus` —
-`trade_type` 2 to 13 and 16 to 21 today.
-
-The transfer pipeline populates a fixed subset of the trades columns and this view is that subset. The rest are
-left at `0` by the writer and are not exposed, so nothing invites a reader to draw a conclusion from them.
-
-| # | Column | Populated | Source in the trade server |
-|---|--------|-----------|----------------------------|
-| 1 | `sender_id` | always | export pipeline configuration |
-| 2 | `group_name` | always | `group.GetName()` |
-| 3 | `symbol_name` | always | the transfer currency |
-| 4 | `trade_id` | always | next trade id |
-| 5 | `time_created` | always | request timestamp |
-| 6 | `time_modified` | always | request timestamp |
-| 7 | `trading_account_id` | always | request |
-| 8 | `group_id` | always | `group.GetId()` |
-| 9 | `trade_type` | always | the transfer type |
-| 10 | `notional_value_in_original_currency` | always | amount, in the transfer currency |
-| 11 | `notional_value_in_account_currency` | always | amount, in the account currency |
-| 12 | `entry_type` | always | `kIn` / `kOut`; for collateral, by the sign of the amount |
-| 13 | `reason` | always | `kAdmin` |
-| 14 | `account_currency_decimal_places` | always | `group.GetCurrencyDecimalPlaces()` |
-| 15 | `comment` | always | request |
-| 16 | `volume` | collateral only | amount converted at the symbol's rate |
-| 17 | `contract_size` | collateral only | `symbol.GetLotSize()` |
-| 18 | `market_bid` | collateral only | top of book |
-| 19 | `market_ask` | collateral only | top of book |
-| 20 | `symbol_id` | collateral only | `symbol.GetId()` |
-| 21 | `side` | collateral only | `kBuy` / `kSell` by the sign of the amount |
-| 22 | `price_decimal_places` | collateral only | `symbol.GetDecimalPlaces()` |
-| 23 | `time_inserted` | *added by the view* | when the row landed in the database |
-| 24 | `is_collateral` | *added by the view* | `symbol_id <> 0` |
-
-A **collateral transfer** is one whose currency differs from the account currency. The trade server resolves a
-symbol for it and fills columns 16–22 from that symbol and the top of its book; a plain transfer leaves them at
-`0`. `is_collateral` is what tells the two apart — `symbol_id` is the one of the seven that cannot legitimately
-be `0` on a collateral transfer.
-
-### trading_accounts_resync
-
-Whether each sender's picture of the live account set is settled or still converging, aggregated from the
-resync markers in [`trading_account_events`](#trading_account_events) — `event_type` `2` and `3`. There is no
-table behind it: the markers are the record of every resync, so the answer cannot disagree with the log.
-
-| Column | Notes |
-|--------|-------|
-| `sender_id` | One row per sender that has ever resynced |
-| `resync_started_event_row_id` | The log row the newest start marker arrived as — the watermark the end marker compares `source_event_row_id` against |
-| `time_resync_started` | When the newest resync started |
-| `time_resync_finished` | When a resync last finished. While one is in progress this belongs to the *previous* resync — read it together with `resync_in_progress` |
-| `resync_in_progress` | A start marker with no end marker after it |
-
-It matters because [`trading_accounts`](#trading_accounts) carries a mixture between the two markers: accounts
-the resync has re-announced are current, accounts it has not reached yet still carry their pre-resync state,
-and accounts deleted while the sender was down survive until the end marker sweeps them. Bounded and plausible
-rather than wrong — and a reader that cares can tell the two situations apart here.
-
-### Reading a view needs `SELECT` on the view itself
-
-A grant on the underlying table does not reach through. `psql/users/ro.sql` grants all three views; `exporter`
-gets none of them, because it writes rows and does not read reports.
-
----
-
-## ticks
-
-ClickHouse. The top of the order book of one symbol — the best bid and the best ask, each with its volume — one
-row per change. The trade server writes a tick when it publishes prices for a symbol and the best bid or the best
-ask differs from the previous publication; a change of price and a change of volume both count, a change deeper
-in the book does not. Prices include the symbol's markup and not the group markups. A symbol produces at most as
-many ticks per second as its `throttling` setting allows, from 1 to 5.
-
-Created by `clickhouse/20260922_01_create_ticks.sql`, column for column from the ticks script of the *Export
-Setup* guide:
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `sender_id` | `UInt64` | Identifies the writing trade server. Every server exporting into one database must use a different value |
-| `sequence` | `UInt64` | The order in which this server instance inserted its rows |
-| `batch_time` | `DateTime64(6, 'UTC')` | When the batch that carried the row was created. Every row of one insert has the same value |
-| `created_time` | `DateTime64(6, 'UTC')` | When the trade server received the latest price update the publication includes |
-| `symbol_id` | `UInt64` | Unique identifier of the instrument |
-| `short_symbol_name` | `LowCardinality(String)` | Name of the instrument without its path, such as `EURUSD` |
-| `bid_price` | `Decimal128(12)` | Best bid price. Zero when the bid side is empty |
-| `bid_volume` | `Decimal64(8)` | Volume at the best bid, in the units of the order book. Zero when the bid side is empty |
-| `ask_price` | `Decimal128(12)` | Best ask price. Zero when the ask side is empty |
-| `ask_volume` | `Decimal64(8)` | Volume at the best ask. Zero when the ask side is empty |
-
-Every column is `NOT NULL`. The three service columns come first, as on every ClickHouse table the trade server
-writes; `batch_time` and `created_time` carry `CODEC(Delta, Default)`, because consecutive rows of one symbol
-are close in time.
+> **Warning:** **Never filter or join on an id alone.** Always pair it with `sender_id`. A query that omits it
+> silently mixes records belonging to different instances, and it looks correct on a single-instance deployment
+> right up until a second instance is added.
 
 ```sql
-ENGINE = ReplacingMergeTree          -- ReplicatedReplacingMergeTree with --cluster
-PARTITION BY toYYYYMM(created_time)
-PRIMARY KEY (sender_id, short_symbol_name)
-ORDER BY (sender_id, short_symbol_name, created_time, sequence)
+-- WRONG: attributes one instance's trades to another instance's account
+FROM trading_accounts a JOIN trades t ON t.trading_account_id = a.trading_account_id
+
+-- RIGHT
+FROM trading_accounts a JOIN trades t ON t.sender_id = a.sender_id
+                                     AND t.trading_account_id = a.trading_account_id
 ```
 
-| Choice | Why |
-|--------|-----|
-| `ReplacingMergeTree` | Delivery is at-least-once: after a lost connection the server re-sends the batch it could not confirm. Duplicates collapse on the sorting key when the parts merge, and they are identical rows, so no version column is needed |
-| `PRIMARY KEY (sender_id, short_symbol_name)` | The sparse index held in memory stops at the symbol; the sorting key goes on to `created_time` and `sequence` so that two ticks of one symbol never collapse into each other |
-| Monthly partitions | Make the TTL cheap: a part is dropped whole once every row in it has expired |
+The same applies to counting and grouping: `GROUP BY sender_id, trading_account_id`, never
+`GROUP BY trading_account_id`. Every exported and derived table carries `sender_id`, and every unique or primary key
+on an exported id leads with it, so the correct query is also the one the keys serve.
 
-**Reading it**
+### How the exporter writes
 
-- Add `FINAL` to read every row once before the parts have merged.
-- Sort by `created_time`, not by `sequence`, to read ticks in time order.
-- A side of the book with no quotes is a zero price **and** a zero volume — check the volume to tell an empty
-  side from a price.
-- When a symbol's session closes the server writes one tick with both sides empty, stamped with the time of the
-  last price update before the close. After a restart the first tick of every symbol is written even when it
-  equals the last one before the restart.
+Every exported table is **append-only**: only `export_cursor` is ever rewritten, and only the derived tables are
+ever deleted from — by their trigger.
 
-Roles: `exporter` holds `INSERT` on the table and nothing else, `ro` holds `SELECT` —
-[Users & Permissions](USERS_AND_PERMISSIONS.md#clickhouse).
+On PostgreSQL the exporter writes each batch with `COPY ... FROM STDIN`, naming its columns, in one transaction with
+the batch's cursor update. So:
+
+- **Column order is free; names and types are not.** Every column the exporter writes must exist under its name,
+  with the type on the entity's page. A mismatch is not detected at start-up — it surfaces later, when a batch is
+  rejected and dropped and the trade server logs an `ERROR` (`failed to send batch ... dropping`). Money and price
+  columns in particular must be `NUMERIC`; `DOUBLE PRECISION` is rejected.
+- **In normal operation a record is written once.** The cursor commits with the data, and on every connection the
+  exporter skips past whatever the cursor says is committed. The unique keys are a guard for the case that bypasses
+  the cursor — see [Deduplication](#deduplication).
+
+On ClickHouse there is no cursor table and no transaction: after a lost connection the server re-sends the batch it
+could not confirm, so delivery there is **at-least-once**, and the table's sorting key absorbs the copies.
+
+### Types
+
+| | PostgreSQL | ClickHouse |
+|---|---|---|
+| Ids | `BIGINT` | `UInt64` |
+| Amounts, prices, rates | `NUMERIC`, unconstrained — stored exactly as sent | `Decimal128(12)` prices, `Decimal64(8)` volumes |
+| Timestamps | `TIMESTAMP WITH TIME ZONE` | `DateTime64(6, 'UTC')` |
+| Enums | The trade server's ordinal — `SMALLINT` or `INTEGER` — never the name | — |
+| Text | `VARCHAR(n)`; `TEXT` for the cursor's table name and the journal | `LowCardinality(String)` |
+
+A column is `NOT NULL` unless its page says otherwise, and the exporter writes a type-appropriate zero (`''`, `0`,
+`false`, the epoch) for a field that does not apply rather than `NULL`. The exceptions are deliberate and listed on
+their pages: the snapshot columns that can have no value — an unfilled order's fill price, a position without a
+stop loss — on the [order](PSQL/daily_statements_order_snapshots.md#columns) and
+[position](PSQL/daily_statements_position_snapshots.md#columns) snapshots, and `email_service_id` on the
+[group](PSQL/group_events.md#columns) tables. The client tables' two declared amounts are `DOUBLE PRECISION`, the
+one place an amount is not `NUMERIC` — see [client_events](PSQL/client_events.md#columns).
+
+> **Warning:** **`NaN` is not `NULL`.** In [`trades`](PSQL/trades.md#nan-not-null) a `NUMERIC` field that does not
+> apply to a record may hold the numeric value `NaN`. `IS NULL` never finds it, `= 'NaN'` does, and a single one
+> turns `sum()`, `avg()` or `max()` over the column into `NaN`. The snapshot tables write `NULL` instead.
+
+**From the Admin API to a column.** The API's timestamps are microseconds since the Unix epoch; the export writes them
+as `TIMESTAMP WITH TIME ZONE`. Each `VARCHAR` holds at least the API's maximum length — usually one more, a field
+capped at 63 characters being `VARCHAR(64)`. The API's enumerations are **names**, while the columns store the trade
+server's **ordinal**, and the API's declaration order is no guide to the ordinal: its client enums omit the
+`Unspecified` member the export numbers `0`, and its transfer types are declared in a different order from
+`trade_type`. A page gives an enum's numbers only where the *Export Setup* guide confirms them; elsewhere it lists the
+members by name.
+
+### Names
+
+Every table and view name is templated as a `##variable##` and can be renamed with `--variables` — see
+[Template Variables](TEMPLATE_VARIABLES.md). The names the trade server writes to mirror its export configuration;
+the derived tables and the views are templated so that a database already owning an object under a default name
+can move ours aside.
+
+Index, function and trigger names lead with what they cover and end with the table name —
+`idx_account_time_trades`, `trg_project_trading_accounts`. PostgreSQL truncates identifiers to 63 bytes, so a long
+configured table name would otherwise leave two objects with the same truncated name, and the second
+`CREATE … IF NOT EXISTS` would quietly do nothing.
 
 ---
 
-## schema_versions
+## Event logs and their projections
 
-The migrator's own bookkeeping. Identical on both engines by design.
+Trading accounts, clients, symbols and groups are exported as an **event log** plus a **current-state table**
+derived from it. The mechanism is identical for all four.
 
-| Column | PostgreSQL | ClickHouse |
-|--------|------------|------------|
-| `script_name` | `TEXT NOT NULL`, primary key | `LowCardinality(String)` |
-| `applied_at` | `TIMESTAMP WITH TIME ZONE NOT NULL` | `DateTime64(6, 'UTC')` |
-
-ClickHouse uses `MergeTree` (or `ReplicatedMergeTree` with `--cluster`), ordered by
-`(script_name, applied_at)`.
-
-Entry naming:
-
-| Kind | Journal entry | Re-runs when |
-|------|---------------|--------------|
-| Incremental | `[psql] 20260101_01_create_trades.sql` | never |
-| Re-runnable | `[psql/post] run_on_every_build.sql::a1b2…` | its processed content changes |
-| Users | `[psql/users] exporter.sql for trade_exporter::7f3c…` | its content, name or password changes |
-
-The `::` suffix is the MD5 of the processed script. Before writing a new entry the migrator deletes every
-previous entry for the same script, so exactly one row per re-runnable script survives.
-
-```sql
-SELECT script_name, applied_at FROM schema_versions ORDER BY applied_at;
 ```
+trade server ──COPY──► <entity>_events ──AFTER INSERT trigger──► <entity> table   (one row per live entity)
+                             │
+                             └──────────── <entity>_resync view                   (resync in progress?)
+```
+
+The log carries four event types, named here as the *Export Setup* guide names them for the trading account and
+client logs:
+
+| `event_type` | Name | Meaning | What the trigger does to the current-state table |
+|--------------|------|---------|--------------------------------------------------|
+| `0` | Upsert | The entity's full state — a creation or a modification | Upserts its row, stamped with the event's `id`. Last write wins, with no version guard |
+| `1` | Delete | The entity was removed | Deletes its row |
+| `2` | SnapshotStart | A resync begins | **Nothing.** The marker's own `id` is the watermark the end marker reads back |
+| `3` | SnapshotEnd | The resync is complete | Deletes that sender's rows stamped older than the newest SnapshotStart before it |
+| anything else | — | Unknown to this schema | Nothing — stored in the log, not projected, and no batch fails |
+
+- **Ordering is by arrival** — the log's `id` — never by `version` or `time_inserted`. A whole batch shares one
+  `time_inserted`; ids are reused after deletion, which restarts the version sequence; and deletions and markers
+  carry `version 0`.
+- **A resync sweeps at the end marker**, not the start, so the current-state table stays complete and readable for
+  the whole resync — which matters because a resync can follow every restart of the trade server. Between the
+  markers the table is a mixture of re-announced and not-yet-reached rows; the entity's `_resync` view says whether
+  a sender is in that window.
+- **The trigger runs in the exporter's transaction**, so the table cannot lag behind the log, and a batch that fails
+  to commit leaves no trace in it. That is also why `exporter` holds `INSERT`, `UPDATE` and `DELETE` on the derived
+  tables.
+- **The projection script is re-runnable** and ends with a reconcile pass that replays the newest retained event per
+  entity, so `--force` repairs a dropped trigger and corrects rows an earlier, buggy version of the projection wrote.
+  The pass also re-applies a resync sweep the trigger missed because it was absent when the end marker arrived. No
+  reconcile can recover what the retention window has dropped — the authoritative repair for that is a resync from
+  the trade server.
+- **A resync can be requested on demand** with the Admin REST API: `POST /admin/export/snapshot` with
+  `"entityType"` `TradingAccount`, `Client`, `Group` or `Symbol` queues one, and the manager needs the matching
+  `initialize…Export` permission. The call returns `202 Accepted` as soon as the request is queued; the
+  `_resync` view shows when the resync has started and finished.
+- **There is no foreign key** from a derived row to its source event: events age out of retention long before the
+  entity does, and a foreign key would make that purge fail or cascade.
+
+The full specification, with workflows, edge cases and the decisions behind them, is
+[trading accounts — SPEC](specs/trading-accounts/SPEC.md) and its [design](specs/trading-accounts/design.md).
 
 ---
 
 ## Deduplication
 
-Export delivery is at-least-once: after a restart or a lost connection the trade server may resend records it
-already sent. Each table has its own key, and the engine that holds the table absorbs the duplicate in its own
-way:
+Each exported table has a key that a record cannot be stored twice under, and the engine that holds the table
+enforces it in its own way:
 
 | Table | Engine | Key |
 |-------|--------|-----|
-| Trades | PostgreSQL | `(sender_id, trade_id)` |
-| Daily statements | PostgreSQL | `(sender_id, time_statement, trading_account_id)` |
-| Order snapshots | PostgreSQL | `(sender_id, time_statement, order_id)` |
-| Position snapshots | PostgreSQL | `(sender_id, time_statement, position_id)` |
-| Trading account events | PostgreSQL | **none** — see below |
-| Ticks | ClickHouse | `(sender_id, short_symbol_name, created_time, sequence)` |
+| [trades](PSQL/trades.md) | PostgreSQL | `(sender_id, trade_id)` |
+| [daily_statements_export](PSQL/daily_statements_export.md) | PostgreSQL | `(sender_id, time_statement, trading_account_id)` |
+| [daily_statements_order_snapshots](PSQL/daily_statements_order_snapshots.md) | PostgreSQL | `(sender_id, time_statement, order_id)` |
+| [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | PostgreSQL | `(sender_id, time_statement, position_id)` |
+| The event logs | PostgreSQL | **none** — see below |
+| [ticks](ClickHouse/ticks.md) | ClickHouse | `(sender_id, short_symbol_name, created_time, sequence)` |
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
+| Why a record would arrive twice | Only when the cursor is bypassed: a lost local state file makes the pipeline re-export from position `0` | After a lost connection the server re-sends the batch it could not confirm |
 | Mechanism | a `UNIQUE` index on the key | `ReplacingMergeTree` sorted by the key |
 | When it applies | immediately, on insert | when parts merge — eventually |
-| Effect of a duplicate | second insert rejected | both rows exist until the merge collapses them |
+| Effect of a duplicate | the **whole batch** is rejected, and the exporter drops it — the new rows in it included | both rows exist until the merge collapses them |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
+
+On PostgreSQL the key is a **guard, not a repair mechanism**. The exporter writes a batch in one transaction, so a
+single duplicate fails all of it; the exporter treats that as permanent, logs `failed to send batch ... dropping`
+and moves on. A duplicate cannot corrupt the table, but the batch carrying it is lost. In normal operation it never
+happens — the cursor keeps the exporter from re-sending what is committed — and the case that reaches the key is
+logged as an `ERROR` first. See [`export_cursor`](PSQL/export_cursor.md#what-the-exporter-does-on-connect).
 
 ```sql
 -- ClickHouse: exact counts before a merge has happened
 SELECT count() FROM ticks FINAL;
 ```
 
-`FINAL` costs more than a plain read. For aggregate reporting over large ranges, consider deduplicating in the
-query (`argMax` by the key) or accepting the small window of duplication instead.
+`FINAL` costs more than a plain read. For aggregate reporting over large ranges, consider deduplicating in the query
+(`argMax` by the key) or accepting the small window of duplication instead.
 
-`trading_account_events` is the exception: it carries no per-event id, so there is no key to deduplicate on and
-a redelivered event lands as a second row. `trading_accounts` absorbs that — a re-applied change leaves the same
-state — but a consumer reading the log directly can see one logical change twice. Adding a per-event id and a
-unique index on `(sender_id, event_id)` later would be purely additive.
+The event logs are the exception: an event carries no per-event id, so there is no key to deduplicate on, and an
+event that reaches the database twice lands as a second row instead of failing its batch. The derived table absorbs
+that — a re-applied change leaves the same state — but a consumer reading a log directly can see one logical change
+twice. Adding a per-event id and a unique index on `(sender_id, event_id)` later would be purely additive.
 
 ---
 
@@ -652,15 +301,14 @@ unique index on `(sender_id, event_id)` later would be purely additive.
 
 ### Adding an index to a large, live table
 
-The read-path indexes are added by `psql/20260828_01_add_reporting_indexes.sql`, an ordinary incremental script,
-so on an empty or small database they are simply built. On a table already holding a serious number of rows they
-are not free: `CREATE INDEX` takes an `ACCESS EXCLUSIVE` lock for the whole build and the exporter's inserts
-block until it finishes.
+The read-path indexes are added by `psql/20260828_01_add_reporting_indexes.sql`, an ordinary incremental script, so
+on an empty or small database they are simply built. On a table already holding a serious number of rows they are
+not free: `CREATE INDEX` takes an `ACCESS EXCLUSIVE` lock for the whole build and the exporter's inserts block until
+it finishes.
 
-`CREATE INDEX CONCURRENTLY` is the usual escape and **it cannot be used from the migrator** — every PostgreSQL
-script runs inside one transaction and PostgreSQL rejects `CONCURRENTLY` inside a transaction block with
-`25001`. Splitting the script with `----break----` does not change that; it produces several commands in the
-same transaction.
+`CREATE INDEX CONCURRENTLY` is the usual escape and **it cannot be used from the migrator** — every PostgreSQL script
+runs inside one transaction and PostgreSQL rejects `CONCURRENTLY` inside a transaction block with `25001`. Splitting
+the script with `----break----` does not change that; it produces several commands in the same transaction.
 
 The routine is therefore: build them concurrently by hand first, then migrate. Every statement in the script is
 `CREATE INDEX IF NOT EXISTS`, so it adopts what is already there and does nothing.
@@ -678,18 +326,49 @@ SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
 
 ### `IF NOT EXISTS` everywhere
 
-Every create statement is conditional, so the migrator can be pointed at a database that was provisioned by hand
-from the guide before this repository existed. It adopts what is already there rather than failing — which also
-means it will **not** correct a table whose columns differ from the script. Compare the schema by hand when
-adopting a database you did not create. On ClickHouse that includes the engine: a `ticks` table
-created by hand without `--cluster` in mind stays a local table when the flag is added later.
+Every create statement in the scripts is conditional, so the migrator can be pointed at a database that was
+provisioned by hand from the guide before this repository existed. It adopts what is already there rather than
+failing — which also means it will **not** correct a table whose columns differ from the script. Compare the schema
+with the entity's **Final SQL** by hand when adopting a database you did not create. On ClickHouse that includes the
+engine: a `ticks` table created by hand without `--cluster` in mind stays a local table when the flag is added
+later.
+
+`IF NOT EXISTS` matches an index by **name**, and the guide's index names differ from the migrator's. On a table the
+guide created, the migrator therefore adds its own indexes beside the guide's, and the table carries each one twice:
+
+| Guide's index | Migrator's index, on the same columns |
+|---------------|----------------------------------------|
+| `idx_trades_trade_id_sender_id` | `idx_sender_trade_<trades_table>` |
+| `idx_trades_time_created` | `idx_time_created_<trades_table>` |
+| `idx_daily_statements_composite_key` | `idx_sender_stmt_account_<daily_statements_table>` |
+| `idx_order_snapshots_composite_key` | `idx_sender_stmt_order_<order_snapshots_table>` |
+| `idx_position_snapshots_composite_key` | `idx_sender_stmt_position_<position_snapshots_table>` |
+
+Both of a pair enforce or serve the same thing, so one of them is redundant and only costs writes and space. Drop
+the guide's by hand after migrating: the migrator's names are the ones these pages and any later script refer to.
 
 ### Renamed tables
 
 If the trade server's export configuration uses non-default table names, every run must pass the same
 `--variables trades_table=… daily_statements_table=… order_snapshots_table=… position_snapshots_table=…
-cursor_table=…` on PostgreSQL, or `--variables ticks_table=…` on ClickHouse. Nothing records the names on the
-database side, so a run without them creates and grants on a second set of tables under the default names.
+trading_account_events_table=… client_events_table=… symbol_events_table=… group_events_table=… cursor_table=…` on
+PostgreSQL, or `--variables ticks_table=…` on ClickHouse. Nothing
+records the names on the database side, so a run without them falls back to the default names. It does not create a
+second set of tables — the create scripts are journalled by file name and never run again. Instead the first
+re-runnable script that names a default table fails, and the run with it:
+
+| Engine | Fails in | Left behind |
+|--------|----------|-------------|
+| PostgreSQL | the first view or users script that names a default table — `views/cash_transfers.sql` for a forgotten `trades_table`, with `relation "trades" does not exist` | nothing: the failing script rolls back in its own transaction, and the run stops there |
+| ClickHouse | `post/ticks_ttl.sql`, `UNKNOWN_TABLE` | grants on a `ticks` table that does not exist, `INSERT` for the exporter role and `SELECT` for the read-only one, because the users phase runs first |
+
+Run again with the variables to recover. On ClickHouse that run does not take the stray grants back, so revoke them
+by hand:
+
+```sql
+REVOKE INSERT ON trading.ticks FROM role_trading_exporter;
+REVOKE SELECT ON trading.ticks FROM role_trading_ro;
+```
 
 ---
 

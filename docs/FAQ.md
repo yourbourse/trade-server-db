@@ -109,7 +109,8 @@ Six on PostgreSQL that the trade server writes to — `trades`, `daily_statement
 `export_cursor` — one on ClickHouse — `ticks` — plus `trading_accounts`, which the migrator creates and a
 trigger maintains from `trading_account_events`, and its own `schema_versions` journal on each engine. Each
 exported table matches one export pipeline in the trade server's `export_config.json`, and the PostgreSQL
-pipelines share the one cursor table. Column by column: [Schema Reference](SCHEMA_REFERENCE.md).
+pipelines share the one cursor table. Each table has its own page with its final SQL and its columns, indexed in
+[Schema Reference](SCHEMA_REFERENCE.md).
 
 ### Can I rename the exported tables?
 
@@ -148,22 +149,27 @@ consequences.
 
 ### How are duplicate records handled?
 
-Export delivery is at-least-once, so the same record can arrive twice after a restart. Each table has its own
-deduplication key — `(sender_id, trade_id)` on trades, `(sender_id, time_statement, trading_account_id)` on
-statements, the same pair plus `order_id` or `position_id` on the snapshots, and
-`(sender_id, short_symbol_name, created_time, sequence)` on ticks:
+Each table has its own deduplication key — `(sender_id, trade_id)` on trades,
+`(sender_id, time_statement, trading_account_id)` on statements, the same pair plus `order_id` or `position_id` on
+the snapshots, and `(sender_id, short_symbol_name, created_time, sequence)` on ticks:
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
+| A record arrives twice | only when the cursor is bypassed — a lost local state file | after a lost connection, by design |
 | Mechanism | a `UNIQUE` index on the key | `ReplacingMergeTree` sorted by the key |
-| When | immediately — the second insert is rejected | when parts merge |
+| When | immediately — the **whole batch** is rejected and dropped | when parts merge |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
+
+On PostgreSQL the key is a guard: the batch carrying a duplicate is lost, its new rows included. See
+[Deduplication](SCHEMA_REFERENCE.md#deduplication).
 
 ### Can I point the migrator at a database that was set up by hand?
 
 Yes. Every create statement uses `IF NOT EXISTS`, so it adopts what is already there. Note the corollary: it will
-**not** correct a table whose columns differ from the script, so compare the schema by hand when adopting a
-database you did not create.
+**not** correct a table whose columns differ from the script, so compare the schema with each table's **Final SQL**
+by hand when adopting a database you did not create. The guide's index names also differ from the migrator's, so a
+table it created ends up with each index twice — see
+[`IF NOT EXISTS` everywhere](SCHEMA_REFERENCE.md#if-not-exists-everywhere).
 
 ### Is the schema a stable interface?
 
