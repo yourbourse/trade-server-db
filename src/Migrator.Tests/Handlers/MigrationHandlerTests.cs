@@ -254,6 +254,9 @@ public class MigrationHandlerTests
         "trading_account_events_table",
         "trading_accounts_table",
         "trading_accounts_resync_view",
+        "symbol_events_table",
+        "symbols_table",
+        "symbols_resync_view",
         "group_events_table",
         "groups_table",
         "groups_resync_view",
@@ -318,6 +321,19 @@ public class MigrationHandlerTests
         // act, assert
         Assert.Throws<SchemaMigrationException>(
             () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
+    }
+
+    [Theory(DisplayName = "BuildVariables Should default the symbol objects to their documented names")]
+    [InlineData("symbol_events_table", "symbol_events")]
+    [InlineData("symbols_table", "symbols")]
+    [InlineData("symbols_resync_view", "symbols_resync")]
+    public void BuildVariables_Should_default_the_symbol_objects_to_their_documented_names(string variable, string expected)
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.Equal(expected, variables[variable]);
     }
 
     /// <summary>
@@ -414,6 +430,39 @@ public class MigrationHandlerTests
 
         // assert
         Assert.Equal(expected, variables[variable]);
+    }
+
+    [Theory(DisplayName = "BuildVariables Should let --variables rename a symbol object")]
+    [InlineData("symbol_events_table")]
+    [InlineData("symbols_table")]
+    [InlineData("symbols_resync_view")]
+    public void BuildVariables_Should_let_variables_rename_a_symbol_object(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=renamed_object"] };
+
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options);
+
+        // assert
+        Assert.Equal("renamed_object", variables[variable]);
+    }
+
+    /// <summary>
+    /// These names reach DDL as text, so each must be in identifierVariables.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should reject a symbol object name that is not an identifier")]
+    [InlineData("symbol_events_table")]
+    [InlineData("symbols_table")]
+    [InlineData("symbols_resync_view")]
+    public void BuildVariables_Should_reject_a_symbol_object_name_that_is_not_an_identifier(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=not a valid name; DROP TABLE trades"] };
+
+        // act, assert
+        Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
     }
 
     [Theory(DisplayName = "BuildVariables Should let --variables rename a group object")]

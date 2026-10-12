@@ -36,6 +36,11 @@ GRANT INSERT, SELECT ON TABLE ##trading_account_events_table## TO ##user_name##;
 -- the projection trigger runs as the exporter, so it needs to write the derived table
 GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##trading_accounts_table## TO ##user_name##;
 
+GRANT INSERT, SELECT ON TABLE ##symbol_events_table## TO ##user_name##;
+
+-- likewise for the symbol projection
+GRANT INSERT, SELECT, UPDATE, DELETE ON TABLE ##symbols_table## TO ##user_name##;
+
 GRANT INSERT, SELECT ON TABLE ##group_events_table## TO ##user_name##;
 
 -- likewise for the group projection

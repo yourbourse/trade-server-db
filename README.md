@@ -192,6 +192,9 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##trading_account_events_table##` | `trading_account_events`, unless `--variables` says otherwise |
 | `##trading_accounts_table##` | `trading_accounts`, unless `--variables` says otherwise |
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless `--variables` says otherwise |
+| `##symbol_events_table##` | `symbol_events`, unless `--variables` says otherwise |
+| `##symbols_table##` | `symbols`, unless `--variables` says otherwise |
+| `##symbols_resync_view##` | `symbols_resync`, unless `--variables` says otherwise |
 | `##group_events_table##` | `group_events`, unless `--variables` says otherwise |
 | `##groups_table##` | `groups`, unless `--variables` says otherwise |
 | `##groups_resync_view##` | `groups_resync`, unless `--variables` says otherwise |
@@ -269,10 +272,12 @@ deployed database will silently differ from the file. Add a new one.
 ## Schema
 
 The two engines hold different tables, because the trade server exports each entity to exactly one of them:
-trades, daily statements, their snapshots, the trading account events, the group events and the export cursor
+trades, daily statements, their snapshots, the trading account events, the symbol events and the export cursor
 go to PostgreSQL, ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and the
+migrator creates all of them — plus `trading_accounts` and `symbols`, which it derives from their event logs
+with a trigger each:
+trades, daily statements, their snapshots, the trading account events, the group events and the export cursor
 migrator creates all of them — plus `trading_accounts` and `groups`, which it derives from their event logs with
-a trigger each:
 
 | Table | Default name | Engine |
 |---|---|---|
@@ -282,6 +287,8 @@ a trigger each:
 | Position snapshots | `daily_statements_position_snapshots` | PostgreSQL |
 | Trading account events | `trading_account_events` | PostgreSQL |
 | Trading accounts | `trading_accounts` | PostgreSQL |
+| Symbol events | `symbol_events` | PostgreSQL |
+| Symbols | `symbols` | PostgreSQL |
 | Group events | `group_events` | PostgreSQL |
 | Groups | `groups` | PostgreSQL |
 | Export cursor | `export_cursor` | PostgreSQL |
@@ -301,7 +308,7 @@ On top of `trades` there are two views:
 
 The two filters are complements, so every row of `trades` is visible through exactly one of them.
 
-Two further views, `trading_accounts_resync` and `groups_resync`, report whether each sender's picture of the
+Two further views, `trading_accounts_resync` and `symbols_resync`, report whether each sender's picture of the
 live set is settled or still converging, read from the resync markers in the matching event log.
 
 A daily statement is exported as three rows in three tables — the statement itself, one snapshot per **working**

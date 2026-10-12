@@ -47,6 +47,9 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultTradingAccountEventsTable = "trading_account_events";
     private const string DefaultTradingAccountsTable = "trading_accounts";
     private const string DefaultTradingAccountsResyncView = "trading_accounts_resync";
+    private const string DefaultSymbolEventsTable = "symbol_events";
+    private const string DefaultSymbolsTable = "symbols";
+    private const string DefaultSymbolsResyncView = "symbols_resync";
     private const string DefaultGroupEventsTable = "group_events";
     private const string DefaultGroupsTable = "groups";
     private const string DefaultGroupsResyncView = "groups_resync";
@@ -65,6 +68,7 @@ public class MigrationHandler : IMigrationHandler
         "order_snapshots_table",
         "position_snapshots_table",
         "trading_account_events_table",
+        "symbol_events_table",
         "group_events_table",
         "cursor_table",
         "ticks_table"
@@ -83,6 +87,7 @@ public class MigrationHandler : IMigrationHandler
         "trades_history_view",
         "cash_transfers_view",
         "trading_accounts_resync_view",
+        "symbols_resync_view",
         "groups_resync_view"
     ];
 
@@ -98,6 +103,7 @@ public class MigrationHandler : IMigrationHandler
     private static readonly string[] derivedTableVariables =
     [
         "trading_accounts_table",
+        "symbols_table",
         "groups_table"
     ];
 
@@ -291,6 +297,9 @@ public class MigrationHandler : IMigrationHandler
             ["trading_account_events_table"] = DefaultTradingAccountEventsTable,
             ["trading_accounts_table"] = DefaultTradingAccountsTable,
             ["trading_accounts_resync_view"] = DefaultTradingAccountsResyncView,
+            ["symbol_events_table"] = DefaultSymbolEventsTable,
+            ["symbols_table"] = DefaultSymbolsTable,
+            ["symbols_resync_view"] = DefaultSymbolsResyncView,
             ["group_events_table"] = DefaultGroupEventsTable,
             ["groups_table"] = DefaultGroupsTable,
             ["groups_resync_view"] = DefaultGroupsResyncView,
