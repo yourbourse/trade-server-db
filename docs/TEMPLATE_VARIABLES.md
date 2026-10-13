@@ -79,7 +79,7 @@ from its event log by a trigger, not written by the export.
 
 ## ClickHouse only
 
-These four are defined only when the provider is ClickHouse. Using them in a PostgreSQL script fails the run as
+These five are defined only when the provider is ClickHouse. Using them in a PostgreSQL script fails the run as
 an unresolved placeholder.
 
 | Variable | Without `--cluster` | With `--cluster my_cluster` |
@@ -88,6 +88,12 @@ an unresolved placeholder.
 | `##cluster_name_suffix##` | `` (empty) | ` ON CLUSTER 'my_cluster' ` |
 | `##merge_tree_engine##` | `MergeTree` | `ReplicatedMergeTree` |
 | `##replacing_merge_tree_engine##` | `ReplacingMergeTree` | `ReplicatedReplacingMergeTree` |
+| `##ticks_ttl_days##` | `31` | `31` |
+
+`##ticks_ttl_days##` is the retention of the ticks table, in days, written into its `TTL` by
+`clickhouse/post/ticks_ttl.sql`. A deployment sets its own with `--variables ticks_ttl_days=N`; the changed value
+changes the script's processed content, so it re-runs and the new retention replaces the old one. See
+[ticks → Retention](ClickHouse/ticks.md#retention), which also explains the upper bound to keep it under.
 
 `##cluster_name_suffix##` is the one to put in DDL — it carries its own surrounding spaces and the quotes around
 the cluster name, and collapses to nothing on a single instance:
@@ -176,6 +182,7 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##groups_resync_view##` | same |
 | `##cluster_name##` | same, when not empty |
 | `##user_name##` | same |
+| `##ticks_ttl_days##` | a positive integer — it is written into `MODIFY TTL` as text |
 
 An empty value passes — that is how `##cluster_name##` collapses on a single instance.
 
