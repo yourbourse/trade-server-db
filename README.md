@@ -361,7 +361,7 @@ dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category!=Integra
 
 # integration tests, against the containers in docker-compose.yml
 docker compose up -d
-ASPNETCORE_ENVIRONMENT=integration dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
+dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
 ```
 
 The integration tests provision a throwaway database per test, run the real migration twice and assert that the

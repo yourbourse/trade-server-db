@@ -89,7 +89,7 @@ docker compose up -d
 ```
 
 ```bash
-ASPNETCORE_ENVIRONMENT=integration dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
+dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
 ```
 
 Each test provisions its own database, so assertions about what a first and a second run apply hold regardless of
@@ -106,11 +106,25 @@ what a previous run left behind; the database is dropped again on the way out. W
 - Rotating a user whose name is a prefix of another user's (`reader` and `reader2`) rewrites only its own journal
   entry.
 
-Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
-overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`.
+The PostgreSQL event logs have suites of their own in `Execution/EventLogs/`. What the four logs share is written
+once and runs against each of them through `[EveryEventLog]`:
 
-> **Warning:** `ASPNETCORE_ENVIRONMENT=integration` selects that settings file. Without it no settings file is
-> loaded at all and the tests find no server.
+| Test file | Covers |
+|-----------|--------|
+| `EventLogSchemaIntegrationTests.cs` | How each log, its derived table and its resync view are declared, and the reads the indexes serve |
+| `EventLogExportIntegrationTests.cs` | What a log takes from the exporter and what it refuses, whole batches, the export cursor, two senders at once |
+| `EventLogProjectionIntegrationTests.cs` | How the derived table follows its log, and every field copied on all four write paths |
+| `EventLogResyncIntegrationTests.cs` | The derived table and the resync view through a resync, in every shape the export can send one |
+| `EventLogMigrationIntegrationTests.cs` | Re-runs, forced re-runs, a dropped trigger, a purged log, tables a deployment renamed |
+| `EventLogReplayIntegrationTests.cs` | The derived table against a replay of its log in C#, over seeded random histories |
+| `EventLogGrantsIntegrationTests.cs` | What `exporter` and `ro` may do to each log, derived table and resync view |
+| `<Log>IntegrationTests.cs`, one per log | The log's agreed columns and the edge cases particular to it |
+
+A new log joins the shared suites through the `EventLog` enum and `EventLogTables.Of` in `EventLog.cs`.
+
+Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
+overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`. That file is loaded whatever
+`ASPNETCORE_ENVIRONMENT` says, so a run from an IDE needs no setup.
 
 ---
 

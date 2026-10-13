@@ -397,15 +397,18 @@ offline.
 
 ### Integration tests fail with a connection error
 
+The tests connect to the containers from `docker-compose.yml`, so start them first:
+
 ```bash
 docker compose up -d
 ```
 
 ```bash
-ASPNETCORE_ENVIRONMENT=integration dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
+dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
 ```
 
-Without `ASPNETCORE_ENVIRONMENT=integration` no settings file is loaded at all, so the tests find no server.
+For servers elsewhere, set `ClickHouse__ConnectionString` and `Postgres__ConnectionString` — they override
+`appsettings.integration.json`.
 
 ### `Unable to locate the repository root`
 

@@ -179,8 +179,9 @@ FROM trading_accounts a
 | [`psql/views/trading_accounts_resync.sql`](../../psql/views/trading_accounts_resync.sql) | views | The `trading_accounts_resync` view |
 | [`psql/users/exporter.sql`](../../psql/users/exporter.sql), [`psql/users/ro.sql`](../../psql/users/ro.sql) | users | The grants |
 
-`TradingAccountsProjectionIntegrationTests` pins the projection's behaviour down: each test is named for the
-workflow, edge case or invariant it covers, so the suite reads as a conformance list.
+The `EventLog*IntegrationTests` suites pin the projection's behaviour down, running each case against all four logs,
+and `TradingAccountsIntegrationTests` adds what is particular to this one. Each test is named for the workflow, edge
+case or invariant it covers, so the suites read as a conformance list.
 
 ---
 
