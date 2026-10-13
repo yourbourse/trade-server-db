@@ -1,6 +1,6 @@
--- Maintains ##symbols_table## from ##symbol_events_table##: function, trigger and reconcile, in one file so they
--- share a transaction. Event types: 0 state, 1 deletion, 2 resync started, 3 resync finished.
--- The four column lists are guarded by the "copy every field ... on all four write paths" test.
+-- Maintains ##symbols_table## from ##symbol_events_table##; function, trigger and reconcile share one transaction.
+-- Event types: 0 state, 1 deletion, 2 resync started, 3 resync finished.
+-- The column lists are guarded by the "copy every field" test.
 
 CREATE OR REPLACE FUNCTION project_##symbols_table##()
     RETURNS trigger
@@ -10,7 +10,7 @@ $$
 BEGIN
     CASE NEW.event_type
 
-        -- Upsert, last write wins. A version guard would skip a resync re-announcement, then the sweep deletes it.
+        -- Upsert, last write wins; a version guard would let the sweep delete re-announced symbols.
         WHEN 0 THEN
             INSERT INTO ##symbols_table## (sender_id,
                                            symbol_id,
@@ -348,12 +348,11 @@ BEGIN
             WHERE sender_id = NEW.sender_id
               AND symbol_id = NEW.symbol_id;
 
-        -- Nothing: the end marker sweeps, with this row's id as the watermark.
+        -- Nothing: this row's id is the end marker's watermark.
         WHEN 2 THEN
             NULL;
 
-        -- Sweep rows stamped before this resync's start marker. marker.id < NEW.id: the batch may already hold
-        -- the next resync's start marker.
+        -- Sweep rows older than this resync's start marker; marker.id < NEW.id skips the next resync's.
         WHEN 3 THEN
             DELETE
             FROM ##symbols_table##
@@ -364,7 +363,7 @@ BEGIN
                                            AND marker.event_type = 2
                                            AND marker.id < NEW.id);
 
-        -- Unknown type: stored, not projected. Without ELSE, CASE_NOT_FOUND would stall the export.
+        -- Unknown type: stored, not projected. ELSE stops CASE_NOT_FOUND stalling the export.
         ELSE
             NULL;
 
@@ -383,8 +382,7 @@ CREATE TRIGGER trg_project_##symbols_table##
     FOR EACH ROW
 EXECUTE FUNCTION project_##symbols_table##();
 
--- Reconcile: replay each symbol's newest event the row does not reflect. Newest first, then type, so a deleted
--- symbol stays deleted.
+-- Reconcile: replay each symbol's newest event the row does not reflect; newest first, so deletions stick.
 WITH latest AS (SELECT DISTINCT ON (sender_id, symbol_id) *
                 FROM ##symbol_events_table##
                 WHERE event_type IN (0, 1)
@@ -739,7 +737,7 @@ ON CONFLICT (sender_id, symbol_id) DO UPDATE
         source_event_row_id                     = excluded.source_event_row_id,
         time_applied                            = excluded.time_applied;
 
--- deletions the row does not reflect
+-- deleted: the newest event is a deletion the row does not reflect
 DELETE
 FROM ##symbols_table## s
     USING (SELECT DISTINCT ON (sender_id, symbol_id) sender_id, symbol_id, id, event_type
@@ -751,7 +749,7 @@ WHERE l.sender_id = s.sender_id
   AND l.event_type = 1
   AND l.id > s.source_event_row_id;
 
--- resync sweeps missed while the trigger was absent
+-- swept: a finished resync skipped the row while the trigger was absent, and a sweep leaves no event
 DELETE
 FROM ##symbols_table## s
     USING (SELECT started.sender_id, max(started.id) AS watermark

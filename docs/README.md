@@ -22,7 +22,8 @@ New to this repository? Read in this order:
 
 1. **[Getting Started](GETTING_STARTED.md)** — prerequisites, first migration against a throwaway database, and how to tell it worked
 2. **[Operations Guide](OPERATIONS_GUIDE.md)** — how to run it against a real export database, and what to do at every trade server upgrade
-3. **[Schema Reference](SCHEMA_REFERENCE.md)** — the tables the migrator creates and what each column means
+3. **[Schema Reference](SCHEMA_REFERENCE.md)** — the tables the migrator creates, each with its own page: final SQL,
+   columns and indexes
 
 Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
@@ -56,42 +57,11 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 
 | Reference | Description |
 |-----------|-------------|
-| [Schema Reference](SCHEMA_REFERENCE.md) | The PostgreSQL trade, daily statement, snapshot and cursor tables, the ClickHouse ticks table and the journal, column by column |
+| [Schema Reference](SCHEMA_REFERENCE.md) | The source of truth for the schema: every table and view on both engines, the conventions they share, deduplication and caveats |
+| [PostgreSQL tables](PSQL) | One page per table and view — final SQL, columns, indexes and the scripts that built it |
+| [ClickHouse tables](ClickHouse) | The same for `ticks` and the ClickHouse journal |
 | [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
 | [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
-
----
-
-## Specifications
-
-What a piece of behaviour has to do, and why it was built the way it was. A spec is the contract — it outlives
-the implementation and is what the tests are written against; the design beside it records the decisions and
-the alternatives that were rejected.
-
-| Specification | Description |
-|---------------|-------------|
-| [Trading accounts — SPEC](specs/trading-accounts/SPEC.md) | The trading account event log and the current-state table derived from it by trigger: workflows, edge cases and invariants |
-| [Trading accounts — design](specs/trading-accounts/design.md) | How the projection works, the decisions behind it, and what the backend team still has to confirm |
-
-The trading accounts specification is verified by `TradingAccountsProjectionIntegrationTests`, where each test
-is named for the SPEC clause it covers, so the suite reads as a conformance list.
-
-The **symbol** event log and its `symbols` projection are built to the same contract against a different entity:
-the same four event types, the same resync markers, the same end-marker sweep and the same reconcile pass. There
-is no separate SPEC for them — read the one above, substituting *symbol* for *trading account* — and they are
-verified by `SymbolsProjectionIntegrationTests`, which mirrors the suite case for case. Where the two differ is
-recorded in [Schema Reference → symbol_events](SCHEMA_REFERENCE.md#symbol_events) and
-[→ symbols](SCHEMA_REFERENCE.md#symbols): the column set, whose order and types are fixed by the schema agreed
-with the trade server team, and the absence of a unique key on the symbol name.
-
-The **group** event log and its `groups` projection are built to the same contract against a different entity:
-the same four event types, the same resync markers, the same end-marker sweep and the same reconcile pass. There
-is no separate SPEC for them — read the one above, substituting *group* for *trading account* — and they are
-verified by `GroupsProjectionIntegrationTests`, which mirrors the suite case for case. Where the two differ is
-recorded in [Schema Reference → group_events](SCHEMA_REFERENCE.md#group_events) and
-[→ groups](SCHEMA_REFERENCE.md#groups): the column set, whose order and types are fixed by the schema agreed
-with the trade server team, the one nullable column, `email_service_id`, and the absence of a unique key on the
-group name.
 
 ---
 
@@ -142,6 +112,7 @@ group name.
 | Daily statements table | `daily_statements_export` |
 | Order snapshots table | `daily_statements_order_snapshots` |
 | Position snapshots table | `daily_statements_position_snapshots` |
+| Event log tables | `trading_account_events`, `client_events`, `symbol_events`, `group_events` |
 | Cursor table | `export_cursor` |
 | Ticks table | `ticks` |
 | Script folder | `psql` or `clickhouse`, after the provider |
