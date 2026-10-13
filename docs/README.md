@@ -73,21 +73,23 @@ the alternatives that were rejected.
 | [Trading accounts — SPEC](specs/trading-accounts/SPEC.md) | The trading account event log and the current-state table derived from it by trigger: workflows, edge cases and invariants |
 | [Trading accounts — design](specs/trading-accounts/design.md) | How the projection works, the decisions behind it, and what the backend team still has to confirm |
 
-The trading accounts specification is verified by `TradingAccountsProjectionIntegrationTests`, where each test
-is named for the SPEC clause it covers, so the suite reads as a conformance list.
+The **client**, **symbol** and **group** event logs and their projections are built to the same contract as the
+trading account one, against a different entity: the same four event types, the same resync markers, the same
+end-marker sweep and the same reconcile pass. There is no separate SPEC for them — read the one above, substituting
+the entity for *trading account*.
 
-The **client**, **symbol** and **group** event logs and their projections are built to the same contract against
-a different entity: the same four event types, the same resync markers, the same end-marker sweep and the same
-reconcile pass. There is no separate SPEC for them — read the one above, substituting the entity for *trading
-account* — and each is verified by its own suite, which mirrors the trading account one case for case. Where
-each differs is recorded in the Schema Reference; in every case the column set, whose order and types are fixed
-by the schema agreed with the trade server team, plus:
+The tests in `src/Migrator.Tests/Execution/EventLogs/` follow the same split. What the four logs share is written
+once and runs against each: the `EventLog*IntegrationTests` suites, by topic — schema, export, projection, resync,
+migration, grants, and a replay of random histories. What one log does differently has a suite of its own. Where
+each differs is recorded in the Schema Reference; in every case the column set, whose order and types are fixed by
+the schema agreed with the trade server team, plus:
 
 | Entity | Suite | Schema Reference | Also differs in |
 |--------|-------|------------------|-----------------|
-| Client | `ClientsProjectionIntegrationTests` | [client_events](SCHEMA_REFERENCE.md#client_events), [clients](SCHEMA_REFERENCE.md#clients) | — |
-| Symbol | `SymbolsProjectionIntegrationTests` | [symbol_events](SCHEMA_REFERENCE.md#symbol_events), [symbols](SCHEMA_REFERENCE.md#symbols) | No unique key on the symbol name |
-| Group | `GroupsProjectionIntegrationTests` | [group_events](SCHEMA_REFERENCE.md#group_events), [groups](SCHEMA_REFERENCE.md#groups) | The one nullable column, `email_service_id`; no unique key on the group name |
+| Trading account | `TradingAccountsIntegrationTests` | [trading_account_events](SCHEMA_REFERENCE.md#trading_account_events), [trading_accounts](SCHEMA_REFERENCE.md#trading_accounts) | — |
+| Client | `ClientsIntegrationTests` | [client_events](SCHEMA_REFERENCE.md#client_events), [clients](SCHEMA_REFERENCE.md#clients) | Two amounts held as `DOUBLE PRECISION` |
+| Symbol | `SymbolsIntegrationTests` | [symbol_events](SCHEMA_REFERENCE.md#symbol_events), [symbols](SCHEMA_REFERENCE.md#symbols) | No unique key on the symbol name |
+| Group | `GroupsIntegrationTests` | [group_events](SCHEMA_REFERENCE.md#group_events), [groups](SCHEMA_REFERENCE.md#groups) | The one nullable column, `email_service_id`; no unique key on the group name |
 
 ---
 

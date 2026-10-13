@@ -650,7 +650,7 @@ The script is re-runnable and ends with the same reconcile pass, so `--force` re
 resync sweep the trigger missed, and corrects rows an earlier, buggy version of the projection wrote.
 
 > **Note:** The projection names sixty-five columns in four places — the `INSERT` and the `ON CONFLICT` `SET` in
-> the function, then both again in the reconcile. `ClientsProjectionIntegrationTests` compares the complete event
+> the function, then both again in the reconcile. `EventLogProjectionIntegrationTests` compares the complete event
 > and state rows as `jsonb` on all four write paths.
 
 ---
@@ -859,7 +859,7 @@ The script is re-runnable and ends with the same reconcile pass, so `--force` re
 resync sweep the trigger missed, and corrects rows an earlier, buggy version of the projection wrote.
 
 > **Note:** The projection names over a hundred columns in four places — the `INSERT` and the `ON CONFLICT` `SET`
-> in the function, then both again in the reconcile. `SymbolsProjectionIntegrationTests` compares the complete
+> in the function, then both again in the reconcile. `EventLogProjectionIntegrationTests` compares the complete
 > event and state rows as `jsonb` on all four write paths.
 
 ---
@@ -1054,7 +1054,7 @@ The script is re-runnable and ends with the same reconcile pass, so `--force` re
 resync sweep the trigger missed, and corrects rows an earlier, buggy version of the projection wrote.
 
 > **Note:** The projection names every column in four places — the `INSERT` and the `ON CONFLICT` `SET` in the
-> function, then both again in the reconcile. `GroupsProjectionIntegrationTests` compares the complete event and
+> function, then both again in the reconcile. `EventLogProjectionIntegrationTests` compares the complete event and
 > state rows as `jsonb` on all four write paths. `email_service_id` turns from a value to `NULL` and back.
 
 ---
