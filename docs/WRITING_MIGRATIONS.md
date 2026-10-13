@@ -205,6 +205,9 @@ Before opening a PR with a new script:
 - [ ] `--dry-run` lists it, and only it
 - [ ] Applied twice: the second run reports `Executed scripts: 0`
 - [ ] Integration tests pass against both engines
+- [ ] The table's page in `docs/PSQL/` or `docs/ClickHouse/` updated — **Final SQL** rewritten as the table now
+      stands rather than appended to, **Columns** and **Scripts** extended; a new table gets a page of its own and a
+      row in the [Schema Reference](SCHEMA_REFERENCE.md) index
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "Host=localhost;Port=15432;Database=trade_demo;Username=postgres;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd" --dry-run

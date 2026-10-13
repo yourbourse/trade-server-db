@@ -1,0 +1,177 @@
+<div align="center">
+
+# daily_statements_position_snapshots
+
+**Every open position of an account as it stood at the statement time — one row per position per statement run**
+
+PostgreSQL · written by the trade server · [Schema Reference](../SCHEMA_REFERENCE.md)
+
+[Overview](#overview) · [Final SQL](#final-sql) · [Columns](#columns) · [Indexes](#indexes) · [Scripts](#scripts)
+
+</div>
+
+---
+
+## Overview
+
+| | |
+|---|---|
+| Engine | PostgreSQL |
+| Default name | `daily_statements_position_snapshots` — renamed with `--variables position_snapshots_table=…` |
+| Written by | The trade server's `daily_statement_position_snapshot` pipeline — `"entity": "daily_statement_position_snapshot"`, `"target": "postgresql"` |
+| One row per | Position the account holds when its daily statement is generated |
+| Deduplicated by | `UNIQUE (sender_id, time_statement, position_id)` — a guard, as on [`trades`](trades.md#indexes) |
+| Grants | `exporter`: `INSERT`, `SELECT` · `ro`: `SELECT` |
+| Related | [`daily_statements_export`](daily_statements_export.md) — the statement it belongs to |
+
+The position's volume, pricing, profit and loss, margin and related metadata at the scheduled end-of-day time. Each
+row carries the statement's `time_statement`, so positions join to their statement on
+`(sender_id, time_statement, trading_account_id)` — see
+[the statement family](daily_statements_export.md#the-statement-family).
+
+---
+
+## Final SQL
+
+The table as it stands once both incremental scripts under [Scripts](#scripts) have run, with the default names
+substituted. On an empty database it creates the same table, indexes and constraints the migrator does.
+
+```sql
+CREATE TABLE daily_statements_position_snapshots
+(
+    id                              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    time_inserted                   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    sender_id                       BIGINT                   NOT NULL,
+    time_statement                  TIMESTAMP WITH TIME ZONE NOT NULL,
+    position_id                     BIGINT                   NOT NULL,
+    trading_account_id              BIGINT                   NOT NULL,
+    group_id                        BIGINT                   NOT NULL,
+    group_name                      VARCHAR(128)             NOT NULL,
+    symbol_name                     VARCHAR(32)              NOT NULL,
+    symbol_id                       BIGINT                   NOT NULL,
+    side                            SMALLINT                 NOT NULL,
+    volume                          NUMERIC                  NOT NULL,
+    avg_open_price                  NUMERIC                  NOT NULL,
+    market_price                    NUMERIC                  NOT NULL,
+    profit                          NUMERIC                  NOT NULL,
+    swaps                           NUMERIC                  NOT NULL,
+    commission                      NUMERIC                  NOT NULL,
+    fee                             NUMERIC                  NOT NULL,
+    margin                          NUMERIC                  NOT NULL,
+    stop_loss                       NUMERIC,
+    stop_loss_order_id              BIGINT                   NOT NULL,
+    take_profit                     NUMERIC,
+    take_profit_order_id            BIGINT                   NOT NULL,
+    stopout_order_id                BIGINT                   NOT NULL,
+    profit_conversion_rate          NUMERIC                  NOT NULL,
+    margin_conversion_rate          NUMERIC                  NOT NULL,
+    lot_size                        NUMERIC                  NOT NULL,
+    time_created                    TIMESTAMP WITH TIME ZONE NOT NULL,
+    time_modified                   TIMESTAMP WITH TIME ZONE NOT NULL,
+    price_decimal_places            SMALLINT                 NOT NULL,
+    account_currency_decimal_places SMALLINT                 NOT NULL,
+    intraday_swap_day               NUMERIC                  NOT NULL,
+    intraday_swap_month             NUMERIC                  NOT NULL,
+    created_by_order_id             BIGINT                   NOT NULL,
+    updated_by_order_id             BIGINT                   NOT NULL
+);
+
+-- guards against storing a position twice per statement
+CREATE UNIQUE INDEX idx_sender_stmt_position_daily_statements_position_snapshots
+    ON daily_statements_position_snapshots (sender_id, time_statement, position_id);
+
+-- the open positions behind one account's statement
+CREATE INDEX idx_account_stmt_daily_statements_position_snapshots
+    ON daily_statements_position_snapshots (trading_account_id, time_statement);
+```
+
+---
+
+## Columns
+
+Three service columns and 32 data columns. Every column is `NOT NULL` except `stop_loss` and `take_profit`. The
+amounts are in the account currency.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key. Generated by PostgreSQL, not exported |
+| `time_inserted` | `TIMESTAMP WITH TIME ZONE` | When the row was inserted; defaults to `now()` |
+| `sender_id` | `BIGINT` | The trade server instance that wrote the row, from the pipeline's `sender_id` |
+| `time_statement` | `TIMESTAMP WITH TIME ZONE` | The scheduled end-of-day time. Every position of one statement shares it, and so does the statement row |
+| **Identifiers** | | |
+| `position_id` | `BIGINT` | The position. Unique per `sender_id` and `time_statement` |
+| `trading_account_id` | `BIGINT` | The account the position belongs to |
+| `group_id` | `BIGINT` | The account's group |
+| `group_name` | `VARCHAR(128)` | Name of the account's group |
+| `symbol_name` | `VARCHAR(32)` | The instrument, such as `EURUSD` or `AAPL` |
+| `symbol_id` | `BIGINT` | The instrument's identifier |
+| **Size and direction** | | |
+| `side` | `SMALLINT` | `0` Buy (long), `1` Sell (short) |
+| `volume` | `NUMERIC` | Current quantity, in lots. `volume × lot_size` is the quantity in units |
+| `lot_size` | `NUMERIC` | Multiplier converting lots to base units, such as `100000` for an FX pair |
+| **Pricing** | | |
+| `avg_open_price` | `NUMERIC` | Average open price: the volume-weighted average price of the position's trades |
+| `market_price` | `NUMERIC` | Market price when the snapshot was taken |
+| **Profit, fees, margin** | | |
+| `profit` | `NUMERIC` | Unrealised profit or loss at snapshot time |
+| `swaps` | `NUMERIC` | Swaps — overnight interest — accumulated |
+| `commission` | `NUMERIC` | Trading commission paid |
+| `fee` | `NUMERIC` | Additional fees |
+| `margin` | `NUMERIC` | Margin requirement of the position |
+| **Risk management** | | |
+| `stop_loss` | `NUMERIC`, **nullable** | Stop-loss price. `NULL` when not set |
+| `stop_loss_order_id` | `BIGINT` | The stop-loss order. `0` when none |
+| `take_profit` | `NUMERIC`, **nullable** | Take-profit price. `NULL` when not set |
+| `take_profit_order_id` | `BIGINT` | The take-profit order. `0` when none |
+| `stopout_order_id` | `BIGINT` | The margin close-out order. `0` when no stop-out has occurred |
+| **Conversion and precision** | | |
+| `profit_conversion_rate` | `NUMERIC` | Rate converting profit into the account currency, as of the position's last update |
+| `margin_conversion_rate` | `NUMERIC` | Rate converting margin into the account currency, as of the position's last update |
+| `price_decimal_places` | `SMALLINT` | Decimal places of the instrument's price, typically 2–5 |
+| `account_currency_decimal_places` | `SMALLINT` | Decimal places of the account currency, typically 2 |
+| **Timestamps** | | |
+| `time_created` | `TIMESTAMP WITH TIME ZONE` | When the position was opened |
+| `time_modified` | `TIMESTAMP WITH TIME ZONE` | When the position was last modified, by a partial close for example |
+| **Intraday swaps** | | |
+| `intraday_swap_day` | `NUMERIC` | Intraday swap accrued today |
+| `intraday_swap_month` | `NUMERIC` | Intraday swap accrued this month |
+| **Order tracking** | | |
+| `created_by_order_id` | `BIGINT` | The order that opened the position |
+| `updated_by_order_id` | `BIGINT` | The most recent order that modified it |
+
+**`NULL`, not `NaN`.** A position without protection carries `NaN` in the trade server, which the exporter writes
+here as SQL `NULL` rather than as a NaN-encoded `NUMERIC`, so an ordinary `IS NULL` finds it — unlike
+[`trades`](trades.md#nan-not-null).
+
+---
+
+## Indexes
+
+| Index | Definition | Purpose |
+|-------|------------|---------|
+| `daily_statements_position_snapshots_pkey` | `PRIMARY KEY (id)` | |
+| `idx_sender_stmt_position_daily_statements_position_snapshots` | `UNIQUE (sender_id, time_statement, position_id)` | Each position at most once per end-of-day time |
+| `idx_account_stmt_daily_statements_position_snapshots` | `(trading_account_id, time_statement)` | The open positions behind one account's statement. `trading_account_id` is not in the unique index at all |
+
+The *Export Setup* guide names its unique index `idx_position_snapshots_composite_key`; on a table provisioned by
+hand from the guide the migrator adds its own beside it.
+
+---
+
+## Scripts
+
+| Script | Phase | Contributes |
+|--------|-------|-------------|
+| [`psql/20260101_05_create_position_snapshots.sql`](../../psql/20260101_05_create_position_snapshots.sql) | incremental | The table, `idx_sender_stmt_position_daily_statements_position_snapshots` |
+| [`psql/20260828_01_add_reporting_indexes.sql`](../../psql/20260828_01_add_reporting_indexes.sql) | incremental | `idx_account_stmt_daily_statements_position_snapshots` |
+| [`psql/users/exporter.sql`](../../psql/users/exporter.sql), [`psql/users/ro.sql`](../../psql/users/ro.sql) | users | The grants |
+
+Column descriptions follow the *Export Setup* guide's Daily Position Snapshots section and the Admin REST API's
+`Position`.
+
+---
+
+## See also
+
+[Schema Reference](../SCHEMA_REFERENCE.md) · [`daily_statements_export`](daily_statements_export.md) ·
+[`daily_statements_order_snapshots`](daily_statements_order_snapshots.md)

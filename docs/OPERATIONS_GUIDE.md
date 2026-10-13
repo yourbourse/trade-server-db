@@ -38,7 +38,8 @@ Three properties of this tool shape every procedure below:
 The order matters: schema first, users second, and the export pipeline only after both.
 
 > **Important:** The two engines hold different tables — PostgreSQL the trades, the daily statements, the two
-> snapshot tables and the cursor, ClickHouse the ticks — and the migrator creates all of them. Run it once per
+> snapshot tables, the four event logs with the tables derived from them, and the cursor, ClickHouse the ticks —
+> and the migrator creates all of them. Run it once per
 > engine the export is configured for, before starting the export. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
@@ -133,7 +134,7 @@ database here if a run does something surprising.
 
 ```
 ====================================
-Migrating Postgres database trading, tables: [trades_table=trades, daily_statements_table=daily_statements_export, order_snapshots_table=daily_statements_order_snapshots, position_snapshots_table=daily_statements_position_snapshots, cursor_table=export_cursor, ticks_table=ticks], users: [trade_exporter(exporter)]
+Migrating Postgres database trading, tables: [trades_table=trades, daily_statements_table=daily_statements_export, order_snapshots_table=daily_statements_order_snapshots, position_snapshots_table=daily_statements_position_snapshots, trading_account_events_table=trading_account_events, client_events_table=client_events, symbol_events_table=symbol_events, group_events_table=group_events, cursor_table=export_cursor, ticks_table=ticks], users: [trade_exporter(exporter)]
 ```
 
 The target line reports the **effective** values — after `--variables` overrides — so this is where you confirm

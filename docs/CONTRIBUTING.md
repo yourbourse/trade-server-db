@@ -106,7 +106,10 @@ What a reviewer will check, and therefore what to check yourself first.
 **Documentation**
 
 - [ ] `docs/` updated: new flag in [Configuration](CONFIGURATION.md), new variable in
-      [Template Variables](TEMPLATE_VARIABLES.md), schema change in [Schema Reference](SCHEMA_REFERENCE.md)
+      [Template Variables](TEMPLATE_VARIABLES.md), schema change on the table's page in `docs/PSQL/` or
+      `docs/ClickHouse/` — its **Final SQL**, **Columns** and **Scripts** — and a new table also in the
+      [Schema Reference](SCHEMA_REFERENCE.md) index
+- [ ] The page's **Final SQL**, applied to an empty database, still creates what the migration creates
 - [ ] The root `README.md` still matches reality if the CLI surface changed
 - [ ] No internal hostnames, environment names or real credentials anywhere in the diff
 
@@ -119,7 +122,9 @@ A schema change is the most common contribution. It should contain, in one PR:
 1. `psql/20260315_01_add_broker_id.sql` — the incremental script, in the folder of the engine that holds the
    table (`clickhouse/` for a change to the ticks table)
 2. Updated `users/` grants in **both** folders, if the change adds an object the exporter must reach
-3. [Schema Reference](SCHEMA_REFERENCE.md) updated with the new column and its type
+3. The table's page in `docs/PSQL/` or `docs/ClickHouse/` updated: the column in **Final SQL** and **Columns**,
+   the new script in **Scripts**. The Final SQL stays a single definition of the table as it now stands, never a
+   list of the changes
 4. A QA section describing how to see the column arrive on a real database
 
 And in the description: why the column exists, whether the exporter has to be deployed before or after, and

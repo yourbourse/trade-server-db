@@ -116,7 +116,7 @@ The rest of this file is a summary. The full documentation lives in [`docs/`](do
 
 | Reference | Description |
 |---|---|
-| [Schema Reference](docs/SCHEMA_REFERENCE.md) | The trade, daily statement, snapshot, cursor and journal tables and the two views, column by column, with the type mapping |
+| [Schema Reference](docs/SCHEMA_REFERENCE.md) | The source of truth for the schema: every table and view on both engines, each with its own page in [`docs/PSQL`](docs/PSQL) or [`docs/ClickHouse`](docs/ClickHouse) — final SQL, columns, indexes and the scripts that built it |
 | [Template Variables](docs/TEMPLATE_VARIABLES.md) | Every `##variable##`, where its value comes from, and how it is validated |
 | [Security](docs/SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model |
 
@@ -276,29 +276,31 @@ deployed database will silently differ from the file. Add a new one.
 
 The two engines hold different tables, because the trade server exports each entity to exactly one of them:
 trades, daily statements, their snapshots, the trading account, client, symbol and group events and the export
-cursor go to PostgreSQL, ticks go to ClickHouse. The *Export Setup* guide is the source of every definition, and
-the migrator creates all of them — plus `trading_accounts`, `clients`, `symbols` and `groups`, which it derives
-from their event logs with a trigger each:
+cursor go to PostgreSQL, ticks go to ClickHouse. This repository is the source of truth for every definition, and the
+migrator creates all of them — plus `trading_accounts`, `clients`, `symbols` and `groups`, which it derives from the
+event logs with triggers:
 
 | Table | Default name | Engine |
 |---|---|---|
-| Trades | `trades` | PostgreSQL |
-| Daily statements | `daily_statements_export` | PostgreSQL |
-| Order snapshots | `daily_statements_order_snapshots` | PostgreSQL |
-| Position snapshots | `daily_statements_position_snapshots` | PostgreSQL |
-| Trading account events | `trading_account_events` | PostgreSQL |
-| Trading accounts | `trading_accounts` | PostgreSQL |
-| Client events | `client_events` | PostgreSQL |
-| Clients | `clients` | PostgreSQL |
-| Symbol events | `symbol_events` | PostgreSQL |
-| Symbols | `symbols` | PostgreSQL |
-| Group events | `group_events` | PostgreSQL |
-| Groups | `groups` | PostgreSQL |
-| Export cursor | `export_cursor` | PostgreSQL |
-| Ticks | `ticks` | ClickHouse |
-| Journal | `schema_versions` | both |
+| Trades | [`trades`](docs/PSQL/trades.md) | PostgreSQL |
+| Daily statements | [`daily_statements_export`](docs/PSQL/daily_statements_export.md) | PostgreSQL |
+| Order snapshots | [`daily_statements_order_snapshots`](docs/PSQL/daily_statements_order_snapshots.md) | PostgreSQL |
+| Position snapshots | [`daily_statements_position_snapshots`](docs/PSQL/daily_statements_position_snapshots.md) | PostgreSQL |
+| Trading account events | [`trading_account_events`](docs/PSQL/trading_account_events.md) | PostgreSQL |
+| Trading accounts | [`trading_accounts`](docs/PSQL/trading_accounts.md) | PostgreSQL |
+| Client events | [`client_events`](docs/PSQL/client_events.md) | PostgreSQL |
+| Clients | [`clients`](docs/PSQL/clients.md) | PostgreSQL |
+| Symbol events | [`symbol_events`](docs/PSQL/symbol_events.md) | PostgreSQL |
+| Symbols | [`symbols`](docs/PSQL/symbols.md) | PostgreSQL |
+| Group events | [`group_events`](docs/PSQL/group_events.md) | PostgreSQL |
+| Groups | [`groups`](docs/PSQL/groups.md) | PostgreSQL |
+| Export cursor | [`export_cursor`](docs/PSQL/export_cursor.md) | PostgreSQL |
+| Ticks | [`ticks`](docs/ClickHouse/ticks.md) | ClickHouse |
+| Journal | `schema_versions` — [PostgreSQL](docs/PSQL/schema_versions.md), [ClickHouse](docs/ClickHouse/schema_versions.md) | both |
 
-Column by column: [Schema Reference](docs/SCHEMA_REFERENCE.md).
+Every table has its own page with its final SQL — the definition as it stands once every script has run — its
+columns and its indexes. The [Schema Reference](docs/SCHEMA_REFERENCE.md) indexes them and the views, and holds the
+conventions they share.
 
 ### PostgreSQL
 
@@ -306,8 +308,8 @@ On top of `trades` there are two views:
 
 | View | Default name | Rows |
 |---|---|---|
-| Trades history | `trades_history` | the executed and cancelled trades — `trade_type` 0, 1, 14, 15 |
-| Cash transfers | `cash_transfers` | every other `trade_type`: balances, credits, fees, commissions, interest, dividends and the rest |
+| Trades history | [`trades_history`](docs/PSQL/trades_history.md) | the executed and cancelled trades — `trade_type` 0, 1, 14, 15 |
+| Cash transfers | [`cash_transfers`](docs/PSQL/cash_transfers.md) | every other `trade_type`: balances, credits, fees, commissions, interest, dividends and the rest |
 
 The two filters are complements, so every row of `trades` is visible through exactly one of them.
 
@@ -319,10 +321,12 @@ A daily statement is exported as three rows in three tables — the statement it
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
 together.
 
-Every exported table is append-only. Delivery is at-least-once, so the same record can arrive twice after a
-restart, and a unique index rejects the second insert: `(sender_id, trade_id)` on trades, and
-`(sender_id, time_statement, …)` on the statement and snapshot tables. The four event logs are the exception —
-none carries a per-event id, so a redelivered event lands as a second row and the derived table absorbs it.
+Every exported table is append-only. The export cursor commits with each batch, so in normal operation a record is
+written once; a unique index guards the case that bypasses the cursor — `(sender_id, trade_id)` on trades, and
+`(sender_id, time_statement, …)` on the statement and snapshot tables. A batch that hits one is rejected whole and
+dropped by the exporter, so the index guards against duplicates but does not repair them. The four event logs have
+no such key — none carries a per-event id — so a re-sent event lands as a second row and the derived table absorbs
+it.
 
 `export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
 pipelines share it. The cursor row and the batch of records are written in the same transaction, which is what
@@ -377,6 +381,8 @@ src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI
 src/Migrator.Tests/    Unit and integration tests
 docs/                  Full documentation, indexed in docs/README.md
+docs/PSQL/             One page per PostgreSQL table and view: final SQL, columns, indexes
+docs/ClickHouse/       One page per ClickHouse table
 migrate.sh             Wrapper over the CLI
 docker-compose.yml     ClickHouse and PostgreSQL for the integration tests
 ```

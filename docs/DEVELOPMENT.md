@@ -152,6 +152,8 @@ trade-server-db/
 ├── docker-compose.yml                  ClickHouse + PostgreSQL for testing
 ├── migrate.sh                          build-and-run wrapper
 └── docs/                               this documentation
+    ├── PSQL/                               one page per PostgreSQL table and view
+    └── ClickHouse/                         one page per ClickHouse table
 ```
 
 ---
@@ -163,7 +165,8 @@ trade-server-db/
 Covered in full by [Writing Migrations](WRITING_MIGRATIONS.md). The short version: incremental scripts go in the
 folder root named `YYYYMMDD_NN_what_it_does.sql`, re-runnable ones in `views/` / `users/` / `post/`, use
 the table variables rather than literal names, mirror the change in the other provider, and verify that a second
-run applies nothing.
+run applies nothing. Then bring the table's page in `docs/PSQL/` or `docs/ClickHouse/` up to date, so its
+**Final SQL** still matches what the migration creates.
 
 ### Add a command line option
 
