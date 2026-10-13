@@ -100,6 +100,16 @@ Every column is `NOT NULL`. The three service columns come first, as on every Cl
 writes; `batch_time` and `created_time` carry `CODEC(Delta, Default)`, because consecutive rows of one symbol are
 close in time.
 
+What the types do with a value that does not fit:
+
+- Digits past a decimal column's scale are cut, not rounded: `1.9999999999999` is stored as `1.999999999999`.
+- A value outside its column's range — a volume of 10¹⁰ or more, a price of 10²⁶ or more — or a `nan` or `inf`
+  price refuses the whole batch, and the exporter is told.
+- `NOT NULL` refuses nothing: a `NULL` is stored as zero, so a `NULL` price reads as an empty side.
+- An id outside `UInt64`, such as `-1`, is stored wrapped rather than refused.
+- Timestamps keep the microsecond and are stored in UTC whatever the writer's session time zone; a seventh
+  fractional digit is cut.
+
 ---
 
 ## Engine and keys
@@ -116,7 +126,9 @@ sequence)` are one tick whatever their prices, and the merge keeps the copy inse
 exporting into one database needs its own `sender_id`.
 
 ClickHouse has no unique index, so unlike PostgreSQL a duplicate is not rejected on insert: both copies exist until
-a background merge collapses them. With `--cluster`, the replicated engine may already drop a re-sent batch whose
+a background merge collapses them. Two copies inside one insert are the exception: the insert collapses them itself.
+A re-send that falls in the next month still collapses, because the copy keeps its original's `created_time` and so
+its partition. With `--cluster`, the replicated engine may already drop a re-sent batch whose
 insert block is identical to one it has seen. See [Deduplication](../SCHEMA_REFERENCE.md#deduplication).
 
 ---
@@ -125,7 +137,8 @@ insert block is identical to one it has seen. See [Deduplication](../SCHEMA_REFE
 
 Rows older than `ticks_ttl_days` days, by `created_time`, are removed. The default is 31; a deployment sets its own
 with `--variables ticks_ttl_days=N`, which changes the processed content of `post/ticks_ttl.sql`, so the script
-re-runs and the new TTL replaces the old one. `N` must be a positive integer.
+re-runs, the new TTL replaces the old one, and the run applies it to the ticks already stored. `N` must be a
+positive integer.
 
 > **Warning:** Keep `ticks_ttl_days` far below 28,976. `toDateTime(created_time) + INTERVAL N DAY` cannot reach past
 > 2106, so a larger value wraps the expiry date into the past — `+ INTERVAL 29000 DAY` from a tick of today lands in
@@ -133,10 +146,11 @@ re-runs and the new TTL replaces the old one. `N` must be a positive integer.
 
 `ttl_only_drop_parts = 1` makes ClickHouse drop a part only once **every** row in it has expired, rather than
 rewriting parts to cut single rows out. The monthly partitions keep that cheap, at a price: retention is a
-minimum, and a tick can outlive it while its part still holds a younger one.
+minimum, and a tick can outlive it while its part still holds a younger one, until a merge rewrites that part.
 
 Age is `created_time`, not `batch_time`, so a tick re-sent long after it was created still expires on time — and a
-tick stamped with a `created_time` already older than the retention is removed by the next TTL pass, silently.
+tick stamped with a `created_time` already older than the retention is removed by the next TTL pass, silently — a
+zero or missing `created_time`, which reads as 1970, included.
 
 ---
 
@@ -147,7 +161,7 @@ tick stamped with a `created_time` already older than the retention is removed b
 - Sort by `created_time`, not by `sequence`, to read ticks in time order. `sequence` is numbered per server
   instance and starts again after a restart.
 - Filter on `sender_id` and `short_symbol_name`: they are the primary key. A filter on `symbol_id` alone cannot use
-  it.
+  it. Filter on `created_time`, not `batch_time`, to skip whole months.
 - A side of the book with no quotes is a zero price **and** a zero volume — check the volume to tell an empty side
   from a price.
 - When a symbol's session closes the server writes one tick with both sides empty, stamped with the time of the
@@ -176,7 +190,12 @@ ORDER BY created_time, sequence;
 | [`clickhouse/users/exporter.sql`](../../clickhouse/users/exporter.sql), [`clickhouse/users/ro.sql`](../../clickhouse/users/ro.sql) | users | `INSERT` for `role_<database>_exporter`, `SELECT` for `role_<database>_ro` — see [Users & Permissions](../USERS_AND_PERMISSIONS.md#clickhouse) |
 
 The definition was taken column for column from the ticks script of the *Export Setup* guide; only the table name,
-the cluster clause, the engine and the retention are templated.
+the cluster clause, the engine and the retention are templated. A table created by hand from the guide is adopted
+as it stands, ticks included, and the retention is laid on top; its engine is not converted — see
+[`IF NOT EXISTS` everywhere](../SCHEMA_REFERENCE.md#if-not-exists-everywhere).
+
+`TicksIntegrationTests` pins the table down as ClickHouse 26.7 behaves under this DDL: each test is named for the
+workflow, edge case or invariant it covers, so the suite reads as a conformance list.
 
 ---
 

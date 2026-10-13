@@ -110,7 +110,10 @@ what a previous run left behind; the database is dropped again on the way out. W
 |-----------|--------|
 | `Execution/MigrationIntegrationTests.cs` | The list above, on both engines |
 | `Execution/TradingAccountsProjectionIntegrationTests.cs` | The trigger that maintains `trading_accounts` from the event log |
-| `Execution/TicksIntegrationTests.cs` | The ClickHouse ticks table as ClickHouse 26.7 behaves under its DDL: columns and engine clause, re-sent batches before and after a merge and across a month end, the sorting key, partitioning and retention by `created_time`, `ttl_only_drop_parts`, the limits of the decimal, `UInt64` and `DateTime64` columns, index use, dry runs and a forgotten `ticks_table`, and what `exporter` and `ro` may do |
+| `Execution/ClientsProjectionIntegrationTests.cs` | The same for `clients` |
+| `Execution/SymbolsProjectionIntegrationTests.cs` | The same for `symbols` |
+| `Execution/GroupsProjectionIntegrationTests.cs` | The same for `groups` |
+| `Execution/TicksIntegrationTests.cs` | The ClickHouse [`ticks`](ClickHouse/ticks.md) table as ClickHouse 26.7 behaves under its DDL: deduplication, partitioning, retention, value limits, index use, renaming and grants |
 
 Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
 overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`.
@@ -127,6 +130,7 @@ trade-server-db/
 ├── clickhouse/                         ClickHouse scripts
 │   ├── 20260922_01_create_ticks.sql        incremental (folder root)
 │   ├── post/run_on_every_build.sql         re-runnable
+│   ├── post/ticks_ttl.sql                  the ticks retention, re-runs when ticks_ttl_days changes
 │   ├── users/exporter.sql                  re-runnable, one pass per --users entry
 │   └── users/ro.sql
 ├── psql/                               PostgreSQL scripts
@@ -135,6 +139,7 @@ trade-server-db/
 │   ├── 20260101_03_create_daily_statements.sql
 │   ├── 20260101_04_create_order_snapshots.sql
 │   ├── 20260101_05_create_position_snapshots.sql
+│   ├── …                                   through 20261007_02_create_groups.sql
 │   ├── post/ users/ views/                 re-runnable, same phases as clickhouse/
 ├── src/
 │   ├── Migrator/                       The CLI

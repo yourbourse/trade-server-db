@@ -14,7 +14,8 @@
 
 The trade server exports each entity to exactly one engine, so the two engines hold different tables. Every one of
 them is created by the migrator, in the database named by the connection string, and each has its own page — under
-[`PSQL/`](PSQL) for PostgreSQL and [`ClickHouse/`](ClickHouse) for ClickHouse — named after its default table name.
+`PSQL/` for [PostgreSQL](#postgresql) and `ClickHouse/` for [ClickHouse](#clickhouse) — named after its default table
+name.
 
 Every page has the same sections:
 
@@ -342,7 +343,7 @@ provisioned by hand from the guide before this repository existed. It adopts wha
 failing — which also means it will **not** correct a table whose columns differ from the script. Compare the schema
 with the entity's **Final SQL** by hand when adopting a database you did not create. On ClickHouse that includes the
 engine: a `ticks` table created by hand without `--cluster` in mind stays a local table when the flag is added
-later.
+later, and one created as a plain `MergeTree` never deduplicates and fails under `FINAL`.
 
 `IF NOT EXISTS` matches an index by **name**, and the guide's index names differ from the migrator's. On a table the
 guide created, the migrator therefore adds its own indexes beside the guide's, and the table carries each one twice:

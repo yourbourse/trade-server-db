@@ -639,7 +639,7 @@ public class TradingAccountsProjectionIntegrationTests : IClassFixture<ConfigBui
     /// replay the newest state event over it rather than compare the stamp against itself and skip.
     ///
     /// The UPDATE below is how the test manufactures that state, not a scenario in itself - nothing edits these
-    /// tables by hand, and SPEC.md assumes so.
+    /// tables by hand, and docs/PSQL/trading_accounts.md names the trigger as their only writer.
     /// </summary>
     [Fact(DisplayName = "Regression Should correct a state row whose content disagrees with its event")]
     public void Regression_Should_correct_a_state_row_whose_content_disagrees_with_its_event()
