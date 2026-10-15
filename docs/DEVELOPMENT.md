@@ -65,7 +65,7 @@ Two suites in one project, separated by the `Category` trait.
 
 ### Unit tests
 
-No database required. 60 tests covering the pure logic: file deduplication, unresolved-variable detection,
+No database required. 128 tests covering the pure logic: file deduplication, unresolved-variable detection,
 statement splitting, identifier validation, literal escaping, option and user-definition parsing, access-level
 validation, secret masking and hashing.
 
@@ -93,7 +93,8 @@ dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integrat
 ```
 
 Each test provisions its own database, so assertions about what a first and a second run apply hold regardless of
-what a previous run left behind; the database is dropped again on the way out. What they assert:
+what a previous run left behind; the database is dropped again on the way out.
+`Execution/MigrationIntegrationTests.cs` covers the migrator itself:
 
 - The schema is created, and a second run applies nothing — on both engines.
 - `--force` re-applies the re-runnable scripts.
@@ -122,6 +123,14 @@ once and runs against each of them through `[EveryEventLog]`:
 
 A new log joins the shared suites through the `EventLog` enum and `EventLogTables.Of` in `EventLog.cs`.
 
+The ClickHouse [`ticks`](ClickHouse/ticks.md) table has its suites in `Execution/Ticks/`, on the helpers in
+`TicksTestBase.cs`:
+
+| Test file | Covers |
+|-----------|--------|
+| `TicksMigrationIntegrationTests.cs` | The table as `SHOW CREATE TABLE` prints it, re-runs, renaming, adopting a hand-made table, retention and grants |
+| `TicksDataIntegrationTests.cs` | What ClickHouse 26.7 does with ticks under that DDL: deduplication, partitioning, index use and value limits |
+
 Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
 overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`. That file is loaded whatever
 `ASPNETCORE_ENVIRONMENT` says, so a run from an IDE needs no setup.
@@ -135,14 +144,11 @@ trade-server-db/
 ├── clickhouse/                         ClickHouse scripts
 │   ├── 20260922_01_create_ticks.sql        incremental (folder root)
 │   ├── post/run_on_every_build.sql         re-runnable
+│   ├── post/ticks_ttl.sql                  the ticks retention, re-runs when ticks_ttl_days changes
 │   ├── users/exporter.sql                  re-runnable, one pass per --users entry
 │   └── users/ro.sql
 ├── psql/                               PostgreSQL scripts
-│   ├── 20260101_01_create_trades.sql       incremental (folder root)
-│   ├── 20260101_02_create_export_cursor.sql
-│   ├── 20260101_03_create_daily_statements.sql
-│   ├── 20260101_04_create_order_snapshots.sql
-│   ├── 20260101_05_create_position_snapshots.sql
+│   ├── YYYYMMDD_NN_what_it_does.sql        incremental (folder root), applied in file-name order
 │   ├── post/ users/ views/                 re-runnable, same phases as clickhouse/
 ├── src/
 │   ├── Migrator/                       The CLI

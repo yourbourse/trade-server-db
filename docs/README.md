@@ -58,8 +58,8 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 | Reference | Description |
 |-----------|-------------|
 | [Schema Reference](SCHEMA_REFERENCE.md) | The source of truth for the schema: every table and view on both engines, the conventions they share, deduplication and caveats |
-| [PostgreSQL tables](PSQL) | One page per table and view — final SQL, columns, indexes and the scripts that built it |
-| [ClickHouse tables](ClickHouse) | The same for `ticks` and the ClickHouse journal |
+| [PostgreSQL tables](SCHEMA_REFERENCE.md#postgresql) | One page per table and view — final SQL, columns, indexes and the scripts that built it |
+| [ClickHouse tables](SCHEMA_REFERENCE.md#clickhouse) | The same for `ticks` and the ClickHouse journal |
 | [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
 | [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
 
