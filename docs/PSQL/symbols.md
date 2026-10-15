@@ -267,9 +267,9 @@ because it was absent when the end marker arrived — see
 [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
 > **Note:** The projection names over a hundred columns in four places — the `INSERT` and the `ON CONFLICT` `SET` in
-> the function, then both again in the reconcile. The guard is a test: *Invariant Should copy every field from the
-> event unchanged on all four write paths* in `SymbolsProjectionIntegrationTests` drives each of the four in turn and
-> compares the whole log row against the whole state row as `jsonb`.
+> the function, then both again in the reconcile. The guard is a test: *Invariant Should copy every field unchanged
+> on all four write paths* in `EventLogProjectionIntegrationTests` drives each of the four in turn and compares the
+> whole log row against the whole state row as `jsonb`.
 
 ---
 
