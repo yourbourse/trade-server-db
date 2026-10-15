@@ -259,7 +259,7 @@ docker compose up -d
 ```
 
 ```bash
-ASPNETCORE_ENVIRONMENT=integration dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
+dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
 ```
 
 ### Why is there a custom DbUp provider for ClickHouse?

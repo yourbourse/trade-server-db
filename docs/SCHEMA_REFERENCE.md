@@ -256,13 +256,15 @@ Beyond their columns, the four differ only in this:
 
 | Entity | Pages | Verified by | Also differs in |
 |--------|-------|-------------|-----------------|
-| Trading account | [trading_account_events](PSQL/trading_account_events.md), [trading_accounts](PSQL/trading_accounts.md) | `TradingAccountsProjectionIntegrationTests` | — |
-| Client | [client_events](PSQL/client_events.md), [clients](PSQL/clients.md) | `ClientsProjectionIntegrationTests` | Two amounts are `DOUBLE PRECISION`, not `NUMERIC` |
-| Symbol | [symbol_events](PSQL/symbol_events.md), [symbols](PSQL/symbols.md) | `SymbolsProjectionIntegrationTests` | No unique key on the symbol name |
-| Group | [group_events](PSQL/group_events.md), [groups](PSQL/groups.md) | `GroupsProjectionIntegrationTests` | The one nullable column, `email_service_id`; no unique key on the group name |
+| Trading account | [trading_account_events](PSQL/trading_account_events.md), [trading_accounts](PSQL/trading_accounts.md) | `TradingAccountsIntegrationTests` | — |
+| Client | [client_events](PSQL/client_events.md), [clients](PSQL/clients.md) | `ClientsIntegrationTests` | Two amounts are `DOUBLE PRECISION`, not `NUMERIC` |
+| Symbol | [symbol_events](PSQL/symbol_events.md), [symbols](PSQL/symbols.md) | `SymbolsIntegrationTests` | No unique key on the symbol name |
+| Group | [group_events](PSQL/group_events.md), [groups](PSQL/groups.md) | `GroupsIntegrationTests` | The one nullable column, `email_service_id`; no unique key on the group name |
 
-The client, symbol and group suites repeat the trading account one's cases and add those their differences call for.
-Each test is named for the workflow, edge case or invariant it covers, so a suite reads as a conformance list.
+What the four share is verified once, against each log in turn, by the `EventLog*IntegrationTests` suites — schema,
+export, projection, resync, migration, grants and a replay over random histories. The suites in the table hold only
+each log's agreed columns and the cases its differences call for. Each test is named for the workflow, edge case or
+invariant it covers, so the suites read as a conformance list.
 
 ---
 

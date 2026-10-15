@@ -166,9 +166,9 @@ because it was absent when the end marker arrived — see
 [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
 > **Note:** The projection names every column in four places — the `INSERT` and the `ON CONFLICT` `SET` in the
-> function, then both again in the reconcile. The guard is a test: *Invariant Should copy every field from the event
-> unchanged on all four write paths* in `GroupsProjectionIntegrationTests` drives each of the four in turn and
-> compares the whole log row against the whole state row as `jsonb`. `email_service_id` turns from a value to `NULL`
+> function, then both again in the reconcile. The guard is a test: *Invariant Should copy every field unchanged on
+> all four write paths* in `EventLogProjectionIntegrationTests` drives each of the four in turn and compares the whole
+> log row against the whole state row as `jsonb`. `email_service_id` turns from a value to `NULL`
 > and back on every path, so the test also fails on a `COALESCE` that would keep a removed service.
 
 ---

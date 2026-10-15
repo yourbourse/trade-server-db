@@ -31,7 +31,7 @@ resync. Reducing this log to "which symbols are live and how is each configured"
 [`symbols`](symbols.md) — see [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
 The column set, the types and the column order are the schema agreed with the trade server team, and *Schema Should
-carry the agreed columns and types in the agreed order* in `SymbolsProjectionIntegrationTests` pins them.
+carry the agreed columns and types in the agreed order* in `SymbolsIntegrationTests` pins them.
 
 ---
 

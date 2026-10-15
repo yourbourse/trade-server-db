@@ -184,7 +184,8 @@ migrator adds both.
 
 Column descriptions and the event type names follow the *Export Setup* guide's Trading Account Events section and
 the Admin REST API's `TradingAccount`. The workflows and edge cases the log and its projection must handle are
-pinned down by `TradingAccountsProjectionIntegrationTests` — see [`trading_accounts`](trading_accounts.md#scripts).
+pinned down by the `EventLog*IntegrationTests` suites and `TradingAccountsIntegrationTests` — see
+[`trading_accounts`](trading_accounts.md#scripts).
 
 ---
 

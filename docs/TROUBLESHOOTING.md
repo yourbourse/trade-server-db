@@ -397,17 +397,18 @@ offline.
 
 ### Integration tests fail with a connection error
 
+The tests connect to the containers from `docker-compose.yml`, so start them first:
+
 ```bash
 docker compose up -d
 ```
 
 ```bash
-ASPNETCORE_ENVIRONMENT=integration dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
+dotnet test src/Migrator.Tests/Migrator.Tests.csproj --filter "Category=Integration"
 ```
 
-The tests read the compose ports from `appsettings.integration.json` on every run, from the command line or an IDE
-alike. A connection error means the containers are not up yet (wait for `healthy` in `docker compose ps`), or a
-`ClickHouse__ConnectionString` / `Postgres__ConnectionString` variable points somewhere else.
+For servers elsewhere, set `ClickHouse__ConnectionString` and `Postgres__ConnectionString` — they override
+`appsettings.integration.json`.
 
 ### `Unable to locate the repository root`
 

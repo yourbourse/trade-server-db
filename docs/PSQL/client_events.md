@@ -158,7 +158,7 @@ content column carries a type-appropriate zero — `0`, `''`, the epoch — rath
 before reading any of them. The data columns are the trade server's client record as the Admin REST API's `Client`
 resource carries it; the descriptions combine the API's and the *Export Setup* guide's. The column set, the types and
 the column order are the schema agreed with the trade server team, and *Schema Should carry the agreed columns and
-types in the agreed order* in `ClientsProjectionIntegrationTests` pins them.
+types in the agreed order* in `ClientsIntegrationTests` pins them.
 
 | Column | Type | Description |
 |--------|------|-------------|
