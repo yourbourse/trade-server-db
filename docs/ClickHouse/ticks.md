@@ -194,8 +194,10 @@ the cluster clause, the engine and the retention are templated. A table created 
 as it stands, ticks included, and the retention is laid on top; its engine is not converted — see
 [`IF NOT EXISTS` everywhere](../SCHEMA_REFERENCE.md#if-not-exists-everywhere).
 
-`TicksIntegrationTests` pins the table down as ClickHouse 26.7 behaves under this DDL: each test is named for the
-workflow, edge case or invariant it covers, so the suite reads as a conformance list.
+The suites in `Execution/Ticks/` pin the table down as ClickHouse 26.7 behaves under this DDL —
+`TicksMigrationIntegrationTests` for the definition, retention and grants, `TicksDataIntegrationTests` for what
+happens to the ticks. Each test is named for the workflow, edge case or invariant it covers, so the suites read as a
+conformance list.
 
 ---
 

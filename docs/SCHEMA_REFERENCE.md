@@ -366,10 +366,10 @@ the guide's by hand after migrating: the migrator's names are the ones these pag
 If the trade server's export configuration uses non-default table names, every run must pass the same
 `--variables trades_table=… daily_statements_table=… order_snapshots_table=… position_snapshots_table=…
 trading_account_events_table=… client_events_table=… symbol_events_table=… group_events_table=… cursor_table=…` on
-PostgreSQL, or `--variables ticks_table=…` on ClickHouse. Nothing
-records the names on the database side, so a run without them falls back to the default names. It does not create a
-second set of tables — the create scripts are journalled by file name and never run again. Instead the first
-re-runnable script that names a default table fails, and the run with it:
+PostgreSQL, or `--variables ticks_table=…` on ClickHouse. Nothing records the names on the database side, so a run
+without them falls back to the default names. It does not create a second set of tables — the create scripts are
+journalled by file name and never run again. Instead the first re-runnable script that names a default table fails,
+and the run with it:
 
 | Engine | Fails in | Left behind |
 |--------|----------|-------------|
