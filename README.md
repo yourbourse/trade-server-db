@@ -116,7 +116,7 @@ The rest of this file is a summary. The full documentation lives in [`docs/`](do
 
 | Reference | Description |
 |---|---|
-| [Schema Reference](docs/SCHEMA_REFERENCE.md) | The source of truth for the schema: every table and view on both engines, each with its own page in [`docs/PSQL`](docs/PSQL) or [`docs/ClickHouse`](docs/ClickHouse) — final SQL, columns, indexes and the scripts that built it |
+| [Schema Reference](docs/SCHEMA_REFERENCE.md) | The source of truth for the schema: every table and view on both engines, each with its own page in [`docs/PSQL`](docs/SCHEMA_REFERENCE.md#postgresql) or [`docs/ClickHouse`](docs/SCHEMA_REFERENCE.md#clickhouse) — final SQL, columns, indexes and the scripts that built it |
 | [Template Variables](docs/TEMPLATE_VARIABLES.md) | Every `##variable##`, where its value comes from, and how it is validated |
 | [Security](docs/SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model |
 

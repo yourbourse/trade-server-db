@@ -211,7 +211,7 @@ pending rather than stopping.
 | `TSDB_CONNECTION_STRING` | migrator | Connection string when `--connection-string` is absent |
 | `TSDB_NO_BUILD` | `migrate.sh` | `1` skips the build and runs the previously built binary |
 | `TSDB_CONFIGURATION` | `migrate.sh` | Build configuration, default `Release` |
-| `ASPNETCORE_ENVIRONMENT` | migrator, tests | Selects `appsettings.<env>.json`; default `development` |
+| `ASPNETCORE_ENVIRONMENT` | migrator, tests | Selects `appsettings.<env>.json`; default `development`. The tests read `appsettings.integration.json` underneath it regardless |
 
 ---
 
