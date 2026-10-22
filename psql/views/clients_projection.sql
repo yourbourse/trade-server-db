@@ -256,11 +256,6 @@ CREATE TRIGGER trg_project_##clients_table##
     FOR EACH ROW
 EXECUTE FUNCTION project_##clients_table##();
 
--- 20261021_01 added tags with a default: NOT NULL needed it for existing rows, and the old trigger omits tags.
--- The function above writes tags, so the default goes, in the same transaction.
-ALTER TABLE ##clients_table##
-    ALTER COLUMN tags DROP DEFAULT;
-
 -- Reconcile: replay each client's newest event the row does not reflect; newest first, so deletions stick.
 WITH latest AS (SELECT DISTINCT ON (sender_id, client_id) *
                 FROM ##client_events_table##
@@ -515,3 +510,8 @@ FROM ##clients_table## c
            GROUP BY started.sender_id) w
 WHERE w.sender_id = c.sender_id
   AND c.source_event_row_id < w.watermark;
+
+-- 20261021_01 added tags with a default: NOT NULL needed it for existing rows, and the old trigger omits tags.
+-- The function above writes tags, so the default goes - last, as its ACCESS EXCLUSIVE lock lasts until commit.
+ALTER TABLE ##clients_table##
+    ALTER COLUMN tags DROP DEFAULT;
