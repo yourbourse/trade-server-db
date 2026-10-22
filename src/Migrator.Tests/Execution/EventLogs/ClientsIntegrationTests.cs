@@ -22,8 +22,8 @@ using Xunit.Abstractions;
 namespace YB.TradeServer.Db.Migrator.Tests.Execution.EventLogs;
 
 /// <summary>
-/// What is particular to the client tables: the agreed columns, two amounts held as doubles, enum ordinals, dates far
-/// from today, and the accounts of a client.
+/// What is particular to the client tables: the agreed columns, tags added to tables already holding clients, two
+/// amounts held as doubles, enum ordinals, dates far from today, and the accounts of a client.
 /// </summary>
 /// <remarks>
 /// What the four logs share runs against this one in the EventLog suites.
@@ -72,8 +72,39 @@ public class ClientsIntegrationTests(ConfigBuilder configBuilder, ITestOutputHel
             "address_street character varying(128)", "address_state character varying(64)",
             "address_city character varying(64)", "client_external_id character varying(64)",
             "comment character varying(256)", "experience_forex integer", "experience_cfd integer",
-            "experience_futures integer", "experience_stocks integer", "experience_crypto integer"
+            "experience_futures integer", "experience_stocks integer", "experience_crypto integer",
+            "tags character varying(512)"
         ], ColumnDefinitions(Log.Events));
+    }
+
+    /// <summary>
+    /// The DROP COLUMNs stand in for a database migrated before tags existed, so the ALTERs meet tables holding rows.
+    /// </summary>
+    [Fact(DisplayName = "Migration Should add tags to clients already exported, empty until an event carries them")]
+    public void Migration_Should_add_tags_to_clients_already_exported_empty_until_an_event_carries_them()
+    {
+        // arrange
+        Migrate(EventLog.Clients);
+        Export(State(1, label: "before tags"));
+
+        Execute($"""
+                 ALTER TABLE {Log.Events} DROP COLUMN tags;
+                 ALTER TABLE {Log.State} DROP COLUMN tags;
+                 DELETE FROM {Request.JournalTable} WHERE script_name = '[psql] 20261021_01_add_client_tags.sql';
+                 """);
+
+        // act, forced so the projection re-runs, as its changed column lists make it on a real upgrade
+        MigrateAgain(force: true);
+
+        // assert, the client is kept with empty tags, and the default that filled them is gone again
+        Assert.Equal(["7/1 v1 before tags"], Rows());
+        Assert.Equal("", Value(1, "tags"));
+        Assert.Equal(["time_applied = now()"], Defaults(Log.State));
+
+        // and the next event carries its tags through
+        Export(State(1, version: 2).With("tags", "vip,eu"));
+
+        Assert.Equal("vip,eu", Value(1, "tags"));
     }
 
     /// <summary>

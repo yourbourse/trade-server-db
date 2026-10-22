@@ -25,7 +25,7 @@ PostgreSQL · maintained by the migrator's trigger, never by the trade server ·
 | Companion view | [`clients_resync`](#clients_resync) — whether a resync is in progress, per sender |
 
 "Which clients are live and what do we hold on each" is a single read here: name, status, compliance category,
-contact details, address, declared finances and trading experience. The table is **not written by the trade
+contact details, address, declared finances, trading experience and tags. The table is **not written by the trade
 server**: it is derived from the event log by a trigger inside the same transaction as the event that caused the
 change, so it cannot lag behind the log, and a batch that fails to commit leaves no trace in it.
 
@@ -139,6 +139,9 @@ CREATE TABLE clients
     -- when the projection last wrote the row
     time_applied                    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
 
+    -- added later, and ADD COLUMN can only append
+    tags                            VARCHAR(512)             NOT NULL,
+
     PRIMARY KEY (sender_id, client_id)
 );
 
@@ -159,7 +162,8 @@ GROUP BY sender_id;
 ## Columns
 
 Every client column of [`client_events`](client_events.md#columns), with the same types, in the same order and with
-the same meanings, minus the log's own envelope (`id`, `time_inserted`, `event_type`) and plus:
+the same meanings, minus the log's own envelope (`id`, `time_inserted`, `event_type`) and plus `source_event_row_id`
+and `time_applied` — except that `tags`, added later, comes after those two:
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -171,10 +175,12 @@ Every column is `NOT NULL`, and none but `time_applied` has a default: the proje
 and a default would only mask one it had forgotten. The column descriptions, the enum values and the units of the
 experience columns are on [`client_events`](client_events.md#columns).
 
-> **Note:** If the `tags` column the *Export Setup* guide lists is added to `client_events` — see its
-> [open points](client_events.md#open-points) — it has to be added here too, at the same position, and to every
-> column list in the projection. `EventLogSchemaIntegrationTests` fails on a column missing here, and
-> `EventLogProjectionIntegrationTests` on one missing from the projection.
+> **Note:** A column added to `client_events` has to be added here too, and to every column list in the projection.
+> `EventLogSchemaIntegrationTests` fails on a column missing here, and `EventLogProjectionIntegrationTests` on one
+> missing from the projection. `tags` shows the way: `20261021_01` adds it here `NOT NULL DEFAULT ''`, because
+> `NOT NULL` needs a value for the clients already present and the trigger being replaced does not write `tags`; the
+> projection script then drops the default in the transaction that installs the function that does. See
+> [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
 There is deliberately **no foreign key** on `source_event_row_id`, for the same reason as on
 [`trading_accounts`](trading_accounts.md#columns): an event ages out of the retention window long before the client
@@ -214,7 +220,7 @@ The script is re-runnable and ends with the same reconcile pass, which also appl
 because it was absent when the end marker arrived — see
 [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
-> **Note:** The projection names sixty-five columns in four places — the `INSERT` and the `ON CONFLICT` `SET` in the
+> **Note:** The projection names sixty-six columns in four places — the `INSERT` and the `ON CONFLICT` `SET` in the
 > function, then both again in the reconcile. Reading those lists against each other is not a realistic review, so
 > the guard is a test: *Invariant Should copy every field unchanged on all four write paths* in
 > `EventLogProjectionIntegrationTests` drives each of the four in turn and compares the whole log row against the whole
@@ -241,7 +247,8 @@ clients while its trading account picture is settled, and vice versa.
 | Script | Phase | Contributes |
 |--------|-------|-------------|
 | [`psql/20261002_02_create_clients.sql`](../../psql/20261002_02_create_clients.sql) | incremental | The table |
-| [`psql/views/clients_projection.sql`](../../psql/views/clients_projection.sql) | views | `project_clients()`, `trg_project_clients` and the reconcile pass |
+| [`psql/20261021_01_add_client_tags.sql`](../../psql/20261021_01_add_client_tags.sql) | incremental | `tags`, with a default the projection script drops |
+| [`psql/views/clients_projection.sql`](../../psql/views/clients_projection.sql) | views | `project_clients()`, `trg_project_clients`, the reconcile pass, and dropping the `tags` default |
 | [`psql/views/clients_resync.sql`](../../psql/views/clients_resync.sql) | views | The `clients_resync` view |
 | [`psql/users/exporter.sql`](../../psql/users/exporter.sql), [`psql/users/ro.sql`](../../psql/users/ro.sql) | users | The grants |
 

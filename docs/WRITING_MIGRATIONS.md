@@ -54,6 +54,13 @@ Still, prefer statements that tolerate being re-entered — `IF NOT EXISTS` thro
 do. A migration may have to be re-run after a partial ClickHouse failure, or applied to a database that was
 provisioned by hand from the *Export Setup* guide before the migrator existed.
 
+> **Warning:** **A `NOT NULL` column added to a table that holds rows needs a `DEFAULT`.** Without one PostgreSQL
+> refuses with `column "…" contains null values` — but only where there are rows, so an empty test database passes
+> and the first live deployment fails. A constant default costs nothing on any supported PostgreSQL (14 and later): the
+> rows are not rewritten, and they keep the value after a later `ALTER COLUMN … DROP DEFAULT`. A column added to an event log also goes to the
+> table derived from it, which has one more step — see
+> [Event logs and their projections](SCHEMA_REFERENCE.md#event-logs-and-their-projections).
+
 ---
 
 ## Re-runnable scripts
@@ -198,6 +205,7 @@ Before opening a PR with a new script:
 - [ ] The table variables (`##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
       `##position_snapshots_table##`, `##cursor_table##`, `##ticks_table##`) rather than hard-coded names
 - [ ] `IF NOT EXISTS` / `CREATE OR REPLACE` wherever the engine allows it
+- [ ] A `NOT NULL` column added to an existing table carries a `DEFAULT`, even one a later statement drops
 - [ ] ClickHouse: a `----break----` between every statement, and `##cluster_name_suffix##` on every DDL statement
 - [ ] The view variables (`##trades_history_view##`, `##cash_transfers_view##`) rather than hard-coded names
 - [ ] Mirrored in the other provider's folder when it touches `users/` or `post/` — a table definition belongs

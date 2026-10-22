@@ -251,6 +251,17 @@ client logs:
   `_resync` view shows when the resync has started and finished.
 - **There is no foreign key** from a derived row to its source event: events age out of retention long before the
   entity does, and a foreign key would make that purge fail or cascade.
+- **A column added later goes into both tables** in one incremental script, `NOT NULL` with a default on each.
+  - On the log the default stays: it is what an exporter that does not write the column yet stores.
+  - On the derived table it is temporary. It fills the rows already there, which `NOT NULL` requires, and it lets
+    the old trigger, whose column lists lack the column, keep inserting until the views phase replaces it.
+  - The projection script, re-run because its column lists changed, drops it in the transaction that installs the
+    function writing the column. From then on every write copies the log's value, which is never `NULL`. Dropping
+    it in the incremental script instead would fail every batch while the old trigger was still in place, and for
+    as long as the views phase kept failing.
+  - `ADD COLUMN` can only append, so on the derived table the column follows `time_applied`.
+
+  `tags` on [`client_events`](PSQL/client_events.md#columns) and [`clients`](PSQL/clients.md#columns) was the first.
 
 Beyond their columns, the four differ only in this:
 
