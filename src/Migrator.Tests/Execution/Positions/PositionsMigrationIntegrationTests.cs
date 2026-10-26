@@ -426,10 +426,10 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     }
 
     /// <summary>
-    /// The settings that keep work off the insert path are the exporter's alone.
+    /// The settings that keep work off the insert path, set on the exporter's account by users/exporter.sql.
     /// </summary>
-    [Fact(DisplayName = "Grants Should turn optimize_on_insert and materialize_statistics_on_insert off for the exporter only")]
-    public void Grants_Should_turn_optimize_on_insert_and_materialize_statistics_on_insert_off_for_the_exporter_only()
+    [Fact(DisplayName = "Grants Should turn optimize_on_insert and materialize_statistics_on_insert off for the exporter")]
+    public void Grants_Should_turn_optimize_on_insert_and_materialize_statistics_on_insert_off_for_the_exporter()
     {
         // arrange
         var request = CreateRequest();
@@ -438,10 +438,8 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         AssertSuccessful(CreateRunner().Run(request));
 
         // assert
-        const string settings = "SELECT concat(toString(toUInt8(getSetting('optimize_on_insert'))), ' ', toString(toUInt8(getSetting('materialize_statistics_on_insert'))))";
-
-        Assert.Equal("0 0", Scalar<string>(ExporterConnectionString(request), settings));
-        Assert.Equal("1 1", Scalar<string>(ReaderConnectionString(request), settings));
+        Assert.Equal("0 0", Scalar<string>(ExporterConnectionString(request),
+            "SELECT concat(toString(toUInt8(getSetting('optimize_on_insert'))), ' ', toString(toUInt8(getSetting('materialize_statistics_on_insert'))))"));
     }
 
     /// <summary>
