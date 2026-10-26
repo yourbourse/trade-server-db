@@ -74,14 +74,14 @@ CREATE TABLE positions
     side                            Enum8('buy' = 0, 'sell' = 1)                                               NOT NULL,
     volume                          Decimal(18, 8)                                                             NOT NULL,
     lot_size                        Float64                                                                    NOT NULL,
-    avg_open_price                  Decimal(18, 8)                                                             NOT NULL,
+    avg_open_price                  Decimal(38, 12)                                                            NOT NULL,
 
-    stop_loss                       Decimal(18, 8)                                                             NOT NULL,
+    stop_loss                       Decimal(38, 12)                                                            NOT NULL,
     stop_loss_order_id              UInt64                                                                     NOT NULL,
-    take_profit                     Decimal(18, 8)                                                             NOT NULL,
+    take_profit                     Decimal(38, 12)                                                            NOT NULL,
     take_profit_order_id            UInt64                                                                     NOT NULL,
 
-    close_market_price              Decimal(18, 8)                                                             NOT NULL,
+    close_market_price              Decimal(38, 12)                                                            NOT NULL,
     close_group_markup              Int32                                                                      NOT NULL,
     pl                              Decimal(38, 8)                                                             NOT NULL,
     margin                          Decimal(38, 8)                                                             NOT NULL,
@@ -137,12 +137,12 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 | `side` | `Enum8('buy' = 0, 'sell' = 1)` | Direction of the position |
 | `volume` | `Decimal(18, 8)` | Volume of the position |
 | `lot_size` | `Float64` | Lot size of the instrument |
-| `avg_open_price` | `Decimal(18, 8)` | Average open price of the position |
-| `stop_loss` | `Decimal(18, 8)` | Stop-loss price |
+| `avg_open_price` | `Decimal(38, 12)` | Average open price of the position |
+| `stop_loss` | `Decimal(38, 12)` | Stop-loss price |
 | `stop_loss_order_id` | `UInt64` | The stop-loss order |
-| `take_profit` | `Decimal(18, 8)` | Take-profit price |
+| `take_profit` | `Decimal(38, 12)` | Take-profit price |
 | `take_profit_order_id` | `UInt64` | The take-profit order |
-| `close_market_price` | `Decimal(18, 8)` | Market price the position would close at |
+| `close_market_price` | `Decimal(38, 12)` | Market price the position would close at |
 | `close_group_markup` | `Int32` | Group markup on the close price |
 | `pl` | `Decimal(38, 8)` | Profit or loss of the position |
 | `margin` | `Decimal(38, 8)` | Margin of the position |

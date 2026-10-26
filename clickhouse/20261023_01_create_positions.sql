@@ -49,14 +49,14 @@ CREATE TABLE IF NOT EXISTS ##database_name##.##positions_table## ##cluster_name_
     side                            Enum8('buy' = 0, 'sell' = 1)                                                 NOT NULL,
     volume                          Decimal(18, 8)                                                               NOT NULL,
     lot_size                        Float64                                                                      NOT NULL,
-    avg_open_price                  Decimal(18, 8)                                                               NOT NULL,
+    avg_open_price                  Decimal(38, 12)                                                              NOT NULL,
 
-    stop_loss                       Decimal(18, 8)                                                               NOT NULL,
+    stop_loss                       Decimal(38, 12)                                                              NOT NULL,
     stop_loss_order_id              UInt64                                                                       NOT NULL,
-    take_profit                     Decimal(18, 8)                                                               NOT NULL,
+    take_profit                     Decimal(38, 12)                                                              NOT NULL,
     take_profit_order_id            UInt64                                                                       NOT NULL,
 
-    close_market_price              Decimal(18, 8)                                                               NOT NULL,
+    close_market_price              Decimal(38, 12)                                                              NOT NULL,
     close_group_markup              Int32                                                                        NOT NULL,
     pl                              Decimal(38, 8)                                                               NOT NULL,
     margin                          Decimal(38, 8)                                                               NOT NULL,
