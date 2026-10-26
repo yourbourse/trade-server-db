@@ -77,6 +77,7 @@ BEGIN
                                            experience_futures,
                                            experience_stocks,
                                            experience_crypto,
+                                           tags,
                                            source_event_row_id,
                                            time_applied)
             VALUES (NEW.sender_id,
@@ -144,6 +145,7 @@ BEGIN
                     NEW.experience_futures,
                     NEW.experience_stocks,
                     NEW.experience_crypto,
+                    NEW.tags,
                     NEW.id,
                     now())
             ON CONFLICT (sender_id, client_id) DO UPDATE
@@ -210,6 +212,7 @@ BEGIN
                     experience_futures              = excluded.experience_futures,
                     experience_stocks               = excluded.experience_stocks,
                     experience_crypto               = excluded.experience_crypto,
+                    tags                            = excluded.tags,
                     source_event_row_id             = excluded.source_event_row_id,
                     time_applied                    = excluded.time_applied;
 
@@ -333,6 +336,7 @@ INTO ##clients_table## (sender_id,
                         experience_futures,
                         experience_stocks,
                         experience_crypto,
+                        tags,
                         source_event_row_id,
                         time_applied)
 SELECT l.sender_id,
@@ -400,6 +404,7 @@ SELECT l.sender_id,
        l.experience_futures,
        l.experience_stocks,
        l.experience_crypto,
+       l.tags,
        l.id,
        now()
 FROM latest l
@@ -476,6 +481,7 @@ ON CONFLICT (sender_id, client_id) DO UPDATE
         experience_futures              = excluded.experience_futures,
         experience_stocks               = excluded.experience_stocks,
         experience_crypto               = excluded.experience_crypto,
+        tags                            = excluded.tags,
         source_event_row_id             = excluded.source_event_row_id,
         time_applied                    = excluded.time_applied;
 
@@ -504,3 +510,8 @@ FROM ##clients_table## c
            GROUP BY started.sender_id) w
 WHERE w.sender_id = c.sender_id
   AND c.source_event_row_id < w.watermark;
+
+-- 20261021_01 added tags with a default: NOT NULL needed it for existing rows, and the old trigger omits tags.
+-- The function above writes tags, so the default goes - last, as its ACCESS EXCLUSIVE lock lasts until commit.
+ALTER TABLE ##clients_table##
+    ALTER COLUMN tags DROP DEFAULT;

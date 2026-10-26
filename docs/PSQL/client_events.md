@@ -121,7 +121,9 @@ CREATE TABLE client_events
     experience_cfd                  INTEGER                  NOT NULL,
     experience_futures              INTEGER                  NOT NULL,
     experience_stocks               INTEGER                  NOT NULL,
-    experience_crypto               INTEGER                  NOT NULL
+    experience_crypto               INTEGER                  NOT NULL,
+
+    tags                            VARCHAR(512)             NOT NULL DEFAULT ''
 );
 
 -- a client's history
@@ -153,7 +155,7 @@ A consumer reading the log directly treats a resync the same way as on
 
 ## Columns
 
-68 columns: three service columns and 65 data columns, every one `NOT NULL`. On a Delete and on both markers every
+69 columns: three service columns and 66 data columns, every one `NOT NULL`. On a Delete and on both markers every
 content column carries a type-appropriate zero — `0`, `''`, the epoch — rather than `NULL`, so check `event_type`
 before reading any of them. The data columns are the trade server's client record as the Admin REST API's `Client`
 resource carries it; the descriptions combine the API's and the *Export Setup* guide's. The column set, the types and
@@ -239,6 +241,8 @@ types in the agreed order* in `ClientsIntegrationTests` pins them.
 | `experience_futures` | `INTEGER` | Futures trading experience. `-1` not answered, `0` none |
 | `experience_stocks` | `INTEGER` | Stock trading experience. `-1` not answered, `0` none |
 | `experience_crypto` | `INTEGER` | Cryptocurrency trading experience. `-1` not answered, `0` none |
+| **Tags** | | |
+| `tags` | `VARCHAR(512)` | Free-text client tags, up to 511 characters in the API |
 
 On a Delete and on both markers the experience columns are `0`, not `-1`. The API takes the experience fields as
 optional and never below `0`; the `-1` is how the export writes one the client left out.
@@ -246,6 +250,13 @@ optional and never below `0`; the `-1` is how the export writes one the client l
 The text columns carry `DEFAULT ''`, as the agreed schema declares them; `clients` does not, because the projection
 always writes every column and a default there would only mask one it had forgotten. Each `VARCHAR` is one wider than
 the API's maximum length: a field capped at 63 characters gets `VARCHAR(64)`.
+
+`tags` was added after the table was created, by
+[`psql/20261021_01_add_client_tags.sql`](../../psql/20261021_01_add_client_tags.sql), and is the last column, where the
+guide places it. The exporter writes its columns by name and a batch naming a column the table lacks fails, so the
+migration has to run before a trade server that writes `tags`. Its `DEFAULT ''` is permanent, unlike the one the same
+script puts on `clients`: the events logged before the migration read `''`, and so does every event from a trade
+server that does not write `tags` yet.
 
 `person_annual_income` and `person_net_assets` are `DOUBLE PRECISION` — the one place an amount is not `NUMERIC` in
 this schema. They are client-declared figures rather than ledger amounts, and the type is the one the exporter
@@ -328,12 +339,11 @@ equivalent · `3` Master: a master's degree or equivalent · `4` PhD: a PhD or e
 
 ## Open points
 
-The *Export Setup* guide and the Admin REST API document the client export, and two points are not settled by this
+The *Export Setup* guide and the Admin REST API document the client export, and one point is not settled by this
 table:
 
 | | *Export Setup* guide | Admin REST API | This table |
 |---|---|---|---|
-| **`tags` column** | `tags VARCHAR(512) NOT NULL DEFAULT ''`, the last column — free-text client tags | `tags`, up to 511 characters | No such column. The exporter writes its columns by name, and a column it writes that the table lacks fails every batch — so once the trade server writes `tags`, every client batch is dropped until the column exists here and in `clients` |
 | **Trading experience** | In **months**; `-1` unspecified, `0` no experience | "Number of years of experience", at least `0`, optional | `INTEGER`; the unit is not constrained |
 
 The guide and the API contradict each other on the unit of the experience columns; this page follows the guide's
@@ -359,6 +369,7 @@ all three. The guide's "client id" for it reads as a slip.
 | Script | Phase | Contributes |
 |--------|-------|-------------|
 | [`psql/20261002_01_create_client_events.sql`](../../psql/20261002_01_create_client_events.sql) | incremental | The table and both indexes |
+| [`psql/20261021_01_add_client_tags.sql`](../../psql/20261021_01_add_client_tags.sql) | incremental | `tags` |
 | [`psql/views/clients_projection.sql`](../../psql/views/clients_projection.sql) | views | The `AFTER INSERT` trigger on this table — see [`clients`](clients.md#projection) |
 | [`psql/views/clients_resync.sql`](../../psql/views/clients_resync.sql) | views | The resync view over the markers |
 | [`psql/users/exporter.sql`](../../psql/users/exporter.sql), [`psql/users/ro.sql`](../../psql/users/ro.sql) | users | The grants |
