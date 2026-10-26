@@ -18,7 +18,7 @@ Each provider folder — `psql/` and `clickhouse/` — holds the same five phase
 |-------|--------|-------------|--------------|---------|
 | 1 | `pre/` | yes | `[psql/pre] x.sql::md5` | Anything that must exist before the tables. Optional — create it when you need it |
 | 2 | *folder root* | **no** | `[psql] x.sql` | Incremental migrations, applied once in file-name order |
-| 3 | `views/` | yes | `[psql/views] x.sql::md5` | Views and materialized views — `trades_history` and `cash_transfers` live here on PostgreSQL; ClickHouse has none |
+| 3 | `views/` | yes | `[psql/views] x.sql::md5` | Views and materialized views — `trades_history` and `cash_transfers` live here on PostgreSQL, `positions_state_live` on ClickHouse (see [Re-runnable scripts](#re-runnable-scripts) for where its refreshable `positions_state` goes) |
 | 4 | `users/` | yes | `[psql/users] x.sql for <user>::md5` | Roles and users, once per matching `--users` entry |
 | 5 | `post/` | yes | `[psql/post] x.sql::md5` | Everything that has to run after the schema, such as TTLs |
 
@@ -75,6 +75,14 @@ That has two consequences worth internalising:
 
 `--force` re-applies all of them regardless of hash, for when the *effect* was lost without the *content*
 changing — someone dropped a view by hand.
+
+The ClickHouse positions views show the pattern for a refreshable materialized view. The query that defines the
+state lives in a plain view, `views/positions_state_live.sql`, where `CREATE OR REPLACE VIEW` is harmless to re-run.
+The refreshable `positions_state` is a fixed `SELECT *` over it, created in `post/positions_state.sql` with
+`IF NOT EXISTS` — in `post/` because the views phase, which creates what it selects from, runs after the
+incremental scripts — and kept on the configured period with `MODIFY REFRESH`. A re-run keeps its rows, and a
+change to the query reaches it through the live view on its next refresh. See
+[positions_state → Refresh](ClickHouse/positions_state.md#refresh).
 
 ---
 
@@ -146,8 +154,11 @@ The variables that are always available:
 | `##position_snapshots_table##` | `daily_statements_position_snapshots` unless overridden |
 | `##cursor_table##` | `export_cursor` unless overridden |
 | `##ticks_table##` | `ticks` unless overridden |
+| `##positions_table##` | `positions` unless overridden |
 | `##trades_history_view##` | `trades_history` unless overridden |
 | `##cash_transfers_view##` | `cash_transfers` unless overridden |
+| `##positions_state_view##` | `positions_state` unless overridden |
+| `##positions_state_live_view##` | `positions_state_live` unless overridden |
 | `##assembly_version##` | Version of the migrator applying the script |
 
 ClickHouse adds the cluster and engine variables; the `users/` phase adds `##user_name##` and
@@ -165,9 +176,10 @@ verbatim without validation, so treat that flag as trusted operator input.
 ## Writing for both engines
 
 > **Important:** The two folders create **different tables**, because the trade server exports each entity to
-> exactly one engine: trades, daily statements, their snapshots and the export cursor go to PostgreSQL, ticks go
-> to ClickHouse. A change to a table definition therefore lands in one folder only — `psql/` for the five
-> PostgreSQL tables and the views over them, `clickhouse/` for the ticks table — and has nothing to mirror.
+> exactly one engine: trades, daily statements, their snapshots and the export cursor go to PostgreSQL, ticks and
+> positions go to ClickHouse. A change to a table definition therefore lands in one folder only — `psql/` for the
+> five PostgreSQL tables and the views over them, `clickhouse/` for the ticks and positions tables and the
+> `positions_state_live` and `positions_state` views — and has nothing to mirror.
 >
 > What does span both folders is the `users/` and `post/` phases: a new role, or a change to what an existing
 > one may do, is written for both engines in their own dialects.
@@ -196,10 +208,13 @@ Before opening a PR with a new script:
 - [ ] Right phase — incremental in the folder root, idempotent things in `views/` / `post/`
 - [ ] Named `YYYYMMDD_NN_what_it_does.sql` if incremental
 - [ ] The table variables (`##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-      `##position_snapshots_table##`, `##cursor_table##`, `##ticks_table##`) rather than hard-coded names
+      `##position_snapshots_table##`, `##cursor_table##`, `##ticks_table##`, `##positions_table##`) rather than
+      hard-coded names
 - [ ] `IF NOT EXISTS` / `CREATE OR REPLACE` wherever the engine allows it
 - [ ] ClickHouse: a `----break----` between every statement, and `##cluster_name_suffix##` on every DDL statement
-- [ ] The view variables (`##trades_history_view##`, `##cash_transfers_view##`) rather than hard-coded names
+- [ ] The view variables (`##trades_history_view##`, `##cash_transfers_view##`, `##positions_state_view##`,
+      `##positions_state_live_view##`) rather
+      than hard-coded names
 - [ ] Mirrored in the other provider's folder when it touches `users/` or `post/` — a table definition belongs
       to the engine that holds the table and has no mirror
 - [ ] `--dry-run` lists it, and only it

@@ -32,7 +32,8 @@ namespace YB.TradeServer.Db.Migrator.Tests.Execution;
 /// </summary>
 /// <remarks>
 /// Every test provisions its own database so the assertions about what a first and a second run apply hold
-/// regardless of what the previous run left behind. The database is dropped again on the way out.
+/// regardless of what the previous run left behind. The database is dropped again on the way out, and with it the
+/// accounts and roles the test provisioned, which live server wide rather than in the database.
 /// </remarks>
 [Trait("Category", "Integration")]
 public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLifetime
@@ -40,6 +41,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
     private readonly ConfigBuilder configBuilder;
     private readonly ITestOutputHelper output;
     private readonly List<(DatabaseProvider Provider, string ConnectionString, string DatabaseName)> provisionedDatabases = [];
+    private readonly List<(DatabaseProvider Provider, string ConnectionString, string UserName)> provisionedAccounts = [];
 
     public MigrationIntegrationTests(ConfigBuilder configBuilder, ITestOutputHelper output)
     {
@@ -60,6 +62,31 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
             catch (Exception e)
             {
                 output.WriteLine($"Unable to drop {databaseName}: {e.Message}");
+            }
+        }
+
+        // after the databases, so PostgreSQL finds no object left that still grants to the account
+        foreach (var (provider, connectionString, userName) in provisionedAccounts)
+        {
+            try
+            {
+                await DropAccount(provider, connectionString, userName);
+            }
+            catch (Exception e)
+            {
+                output.WriteLine($"Unable to drop {userName}: {e.Message}");
+            }
+        }
+
+        foreach (var (provider, connectionString, databaseName) in provisionedDatabases.Where(database => database.Provider == DatabaseProvider.ClickHouse))
+        {
+            try
+            {
+                await DropClickHouseRoles(connectionString, databaseName);
+            }
+            catch (Exception e)
+            {
+                output.WriteLine($"Unable to drop the roles of {databaseName}: {e.Message}");
             }
         }
     }
@@ -133,7 +160,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
     public void ClickHouse_migration_Should_create_the_users_it_is_given()
     {
         // arrange
-        var userName = $"exporter_{DateTime.UtcNow.Ticks}";
+        var userName = NewAccount(DatabaseProvider.ClickHouse, "exporter");
 
         var request = CreateRequest(DatabaseProvider.ClickHouse) with
         {
@@ -278,7 +305,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
     public void Postgres_migration_Should_create_the_users_it_is_given()
     {
         // arrange
-        var userName = $"exporter_{DateTime.UtcNow.Ticks}";
+        var userName = NewAccount(DatabaseProvider.Postgres, "exporter");
 
         var request = CreateRequest(DatabaseProvider.Postgres) with
         {
@@ -307,7 +334,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
     public void Postgres_migration_Should_drop_write_access_when_a_user_is_re_provisioned_as_read_only()
     {
         // arrange, the same account is first an exporter and then a reader
-        var userName = $"demoted_{DateTime.UtcNow.Ticks}";
+        var userName = NewAccount(DatabaseProvider.Postgres, "demoted");
 
         var request = CreateRequest(DatabaseProvider.Postgres) with
         {
@@ -342,8 +369,8 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
     public void Postgres_migration_Should_keep_the_journal_entry_of_a_script_whose_name_is_a_prefix_of_another()
     {
         // arrange, "reader" is a prefix of "reader2", and both are journalled by the same users script
-        var reader = $"reader_{DateTime.UtcNow.Ticks}";
-        var readerTwo = $"{reader}2";
+        var reader = NewAccount(DatabaseProvider.Postgres, "reader");
+        var readerTwo = NewAccount(DatabaseProvider.Postgres, $"{reader}2", exact: true);
 
         var request = CreateRequest(DatabaseProvider.Postgres) with
         {
@@ -384,7 +411,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         // arrange, a password carrying a quote, a backslash and a statement terminator
         const string hostilePassword = @"p'a\ss'; DROP TABLE trades; --";
 
-        var userName = $"exporter_{DateTime.UtcNow.Ticks}";
+        var userName = NewAccount(provider, "exporter");
 
         var request = CreateRequest(provider) with
         {
@@ -500,6 +527,28 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         Assert.False(PostgresTableExists(request.ConnectionString, "trades"));
     }
 
+    /// <summary>
+    /// A fresh account name, remembered so the account is dropped when the test ends.
+    /// </summary>
+    /// <param name="provider">The server the account is created on.</param>
+    /// <param name="prefix">The start of the name; a unique suffix follows unless <paramref name="exact"/> is set.</param>
+    /// <param name="exact">Use <paramref name="prefix"/> as the whole name.</param>
+    private string NewAccount(DatabaseProvider provider, string prefix, bool exact = false)
+    {
+        var userName = exact ? prefix : $"{prefix}_{DateTime.UtcNow.Ticks}";
+
+        provisionedAccounts.Add((provider, ConfiguredConnectionString(provider)!, userName));
+
+        return userName;
+    }
+
+    private string? ConfiguredConnectionString(DatabaseProvider provider)
+    {
+        return provider == DatabaseProvider.ClickHouse
+            ? configBuilder.ClickHouseConnectionString
+            : configBuilder.PostgresConnectionString;
+    }
+
     private DbUpRunner CreateRunner()
     {
         return new(NullLogger<DbUpRunner>.Instance, new TestDbUpLogProvider(output));
@@ -512,9 +561,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
 
     private DbMigratorRequest CreateRequest(DatabaseProvider provider)
     {
-        var configuredConnectionString = provider == DatabaseProvider.ClickHouse
-            ? configBuilder.ClickHouseConnectionString
-            : configBuilder.PostgresConnectionString;
+        var configuredConnectionString = ConfiguredConnectionString(provider);
 
         Assert.False(string.IsNullOrWhiteSpace(configuredConnectionString), $"No connection string configured for {provider}. Start docker-compose.yml or set the environment variable.");
 
@@ -522,6 +569,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         var connectionString = WithDatabase(provider, configuredConnectionString!, databaseName);
 
         provisionedDatabases.Add((provider, configuredConnectionString!, databaseName));
+        provisionedAccounts.Add((provider, configuredConnectionString!, $"{databaseName}_exporter"));
 
         return new(
             provider,
@@ -552,13 +600,18 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["groups_table"] = "groups",
                 ["groups_resync_view"] = "groups_resync",
                 ["ticks_table"] = "ticks",
+                ["positions_table"] = "positions",
+                ["positions_state_view"] = "positions_state",
+                ["positions_state_live_view"] = "positions_state_live",
                 ["trades_history_view"] = "trades_history",
                 ["cash_transfers_view"] = "cash_transfers",
                 ["cluster_name"] = "",
                 ["cluster_name_suffix"] = "",
                 ["merge_tree_engine"] = "MergeTree",
                 ["replacing_merge_tree_engine"] = "ReplacingMergeTree",
-                ["ticks_ttl_days"] = "31"
+                ["ticks_ttl_days"] = "31",
+                ["positions_state_refresh_seconds"] = "30",
+                ["positions_delete_ttl_days"] = "30"
             },
             false,
             false,
@@ -606,6 +659,39 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
         command.Parameters.AddWithValue("name", databaseName!);
 
         return Convert.ToInt32(command.ExecuteScalar()) > 0;
+    }
+
+    private static async Task DropAccount(DatabaseProvider provider, string connectionString, string userName)
+    {
+        DbConnection connection = provider == DatabaseProvider.ClickHouse
+            ? new ClickHouseConnection(WithDatabase(provider, connectionString, "system"))
+            : new NpgsqlConnection(WithDatabase(provider, connectionString, "postgres"));
+
+        await using (connection)
+        {
+            await connection.OpenAsync();
+
+            await using var command = connection.CreateCommand();
+
+            // a PostgreSQL account is a login role
+            command.CommandText = provider == DatabaseProvider.ClickHouse
+                ? $"DROP USER IF EXISTS {userName}"
+                : $@"DROP ROLE IF EXISTS ""{userName}""";
+
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
+    /// The ClickHouse roles the users scripts name after the database; PostgreSQL has none.
+    /// </summary>
+    private static async Task DropClickHouseRoles(string connectionString, string databaseName)
+    {
+        await using var connection = new ClickHouseConnection(WithDatabase(DatabaseProvider.ClickHouse, connectionString, "system"));
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand($"DROP ROLE IF EXISTS role_{databaseName}_exporter, role_{databaseName}_ro");
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task DropDatabase(DatabaseProvider provider, string connectionString, string databaseName)
