@@ -58,6 +58,11 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultGroupsResyncView = "groups_resync";
     private const string DefaultTicksTable = "ticks";
     private const string DefaultTicksTtlDays = "31";
+    private const string DefaultPositionsTable = "positions";
+    private const string DefaultPositionsStateView = "positions_state";
+    private const string DefaultPositionsStateLiveView = "positions_state_live";
+    private const string DefaultPositionsStateRefreshSeconds = "30";
+    private const string DefaultPositionsDeleteTtlDays = "30";
     private const string DefaultTradesHistoryView = "trades_history";
     private const string DefaultCashTransfersView = "cash_transfers";
 
@@ -75,7 +80,8 @@ public class MigrationHandler : IMigrationHandler
         "symbol_events_table",
         "group_events_table",
         "cursor_table",
-        "ticks_table"
+        "ticks_table",
+        "positions_table"
     ];
 
     /// <summary>
@@ -93,7 +99,9 @@ public class MigrationHandler : IMigrationHandler
         "trading_accounts_resync_view",
         "clients_resync_view",
         "symbols_resync_view",
-        "groups_resync_view"
+        "groups_resync_view",
+        "positions_state_view",
+        "positions_state_live_view"
     ];
 
     /// <summary>
@@ -121,6 +129,16 @@ public class MigrationHandler : IMigrationHandler
     /// to <see cref="tableVariables"/> alone would otherwise leave its name unvalidated.
     /// </remarks>
     private static readonly string[] identifierVariables = ["database_name", "cluster_name", ..tableVariables, ..viewVariables, ..derivedTableVariables];
+
+    /// <summary>
+    /// The ClickHouse variables holding a number of days or seconds, written into TTL and REFRESH clauses as text.
+    /// </summary>
+    private static readonly string[] numberVariables =
+    [
+        "ticks_ttl_days",
+        "positions_state_refresh_seconds",
+        "positions_delete_ttl_days"
+    ];
 
     /// <summary>
     /// The longest prefix the scripts attach to each table name when they derive another object's name from it.
@@ -153,7 +171,8 @@ public class MigrationHandler : IMigrationHandler
         ["group_events_table"] = (14, "idx_group_row_"),
         ["groups_table"] = (12, "trg_project_"),
         ["cursor_table"] = (0, ""),
-        ["ticks_table"] = (0, "")
+        ["ticks_table"] = (0, ""),
+        ["positions_table"] = (0, "")
     };
 
     /// <summary>
@@ -317,6 +336,9 @@ public class MigrationHandler : IMigrationHandler
             ["groups_table"] = DefaultGroupsTable,
             ["groups_resync_view"] = DefaultGroupsResyncView,
             ["ticks_table"] = DefaultTicksTable,
+            ["positions_table"] = DefaultPositionsTable,
+            ["positions_state_view"] = DefaultPositionsStateView,
+            ["positions_state_live_view"] = DefaultPositionsStateLiveView,
             ["trades_history_view"] = DefaultTradesHistoryView,
             ["cash_transfers_view"] = DefaultCashTransfersView
         };
@@ -334,6 +356,8 @@ public class MigrationHandler : IMigrationHandler
             variables["replacing_merge_tree_engine"] = clustered ? "ReplicatedReplacingMergeTree" : "ReplacingMergeTree";
 
             variables["ticks_ttl_days"] = DefaultTicksTtlDays;
+            variables["positions_state_refresh_seconds"] = DefaultPositionsStateRefreshSeconds;
+            variables["positions_delete_ttl_days"] = DefaultPositionsDeleteTtlDays;
         }
 
         // command line variables are applied last so they can override any of the derived values
@@ -367,10 +391,14 @@ public class MigrationHandler : IMigrationHandler
             }
         }
 
-        // the retention is written into MODIFY TTL as text, so it gets the same treatment as an identifier
-        if (variables.TryGetValue("ticks_ttl_days", out var ticksTtlDays))
+        // the retentions and the refresh period are written into DDL as text, so they get the same treatment as
+        // an identifier
+        foreach (var numberVariable in numberVariables)
         {
-            SqlSafety.ValidatePositiveInteger(ticksTtlDays, "##ticks_ttl_days##");
+            if (variables.TryGetValue(numberVariable, out var number))
+            {
+                SqlSafety.ValidatePositiveInteger(number, $"##{numberVariable}##");
+            }
         }
 
         return variables;

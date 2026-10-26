@@ -70,6 +70,7 @@ the intersection of what both engines accept as an unquoted identifier, capped a
 | `##position_snapshots_table##` | default or `--variables` |
 | `##cursor_table##` | default or `--variables` |
 | `##ticks_table##` | default or `--variables` |
+| `##positions_table##` | default or `--variables` |
 | `##cluster_name##` | `--cluster` (empty passes) |
 | `##user_name##` | each `--users` entry |
 
@@ -145,8 +146,8 @@ passwords in `docker-compose.yml`, the CI service-container values in `.github/w
 
 The roles the `users/` phase provisions are deliberately narrow:
 
-| Role | PostgreSQL tables | PostgreSQL cursor | ClickHouse ticks | DDL | Delete |
-|------|-------------------|-------------------|------------------|-----|--------|
+| Role | PostgreSQL tables | PostgreSQL cursor | ClickHouse ticks and positions | DDL | Delete |
+|------|-------------------|-------------------|--------------------------------|-----|--------|
 | `exporter` | `INSERT`, `SELECT` | `INSERT`, `SELECT`, `UPDATE` | `INSERT` | no | no |
 | `ro` | `SELECT` | `SELECT` | `SELECT` | no | no |
 

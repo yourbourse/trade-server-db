@@ -74,25 +74,25 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// sequence is per server instance, so only created_time reads ticks in time order across a restart.
+    /// sequence grows monotonically per sender across restarts, so the ticks written after one never collide with
+    /// those written before it - not even the first tick of a symbol, which repeats the last book before the restart.
     /// </summary>
-    [Fact(DisplayName = "Workflow Should keep the ticks of a restarted server and read them in time order by created_time")]
-    public void Workflow_Should_keep_the_ticks_of_a_restarted_server_and_read_them_in_time_order_by_created_time()
+    [Fact(DisplayName = "Workflow Should keep the ticks of a restarted server, numbered on from where it stopped")]
+    public void Workflow_Should_keep_the_ticks_of_a_restarted_server_numbered_on_from_where_it_stopped()
     {
         // arrange
         var connectionString = Migrate();
 
-        // act, three ticks, a restart, then two more numbered from 1 again
-        Insert(connectionString, new Tick(1, At(0)), new Tick(2, At(1)), new Tick(3, At(2)));
-        Insert(connectionString, new Tick(1, At(10)), new Tick(2, At(11)));
+        // act, three ticks, a restart, then the first tick again with the same book, and one more
+        Insert(connectionString, new Tick(1, At(0)), new Tick(2, At(1)), new Tick(3, At(2), BidPrice: "1.0857"));
+        Insert(connectionString, new Tick(4, At(10), BidPrice: "1.0857"), new Tick(5, At(11)));
         Execute(connectionString, "OPTIMIZE TABLE ticks FINAL");
 
-        // assert, none collapsed, and created_time gives the publication order
-        Assert.Equal([1L, 2L, 3L, 1L, 2L], Longs(connectionString, "SELECT sequence FROM ticks ORDER BY created_time"));
+        // assert, none collapsed, the repeated book included
+        Assert.Equal([1L, 2L, 3L, 4L, 5L], Sequences(connectionString));
 
-        // while sequence interleaves the two instances
-        Assert.Equal(new[] { At(0), At(10), At(1), At(11), At(2) }.Select(Format),
-            Strings(connectionString, "SELECT toString(created_time) FROM ticks ORDER BY sequence, created_time"));
+        // and sequence orders them as created_time does
+        Assert.Equal([1L, 2L, 3L, 4L, 5L], Longs(connectionString, "SELECT sequence FROM ticks ORDER BY created_time"));
     }
 
     /// <summary>
@@ -275,7 +275,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// optimize_on_insert merges the block itself, so the copy never reaches a part.
+    /// optimize_on_insert merges the block itself, so the copy never reaches a part - for any account but the exporter.
     /// </summary>
     [Fact(DisplayName = "Edge case Should collapse a tick duplicated within one batch as it is inserted")]
     public void Edge_case_Should_collapse_a_tick_duplicated_within_one_batch_as_it_is_inserted()
@@ -289,6 +289,33 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
 
         // assert, without FINAL
         Assert.Equal(2, Count(connectionString, "ticks"));
+    }
+
+    /// <summary>
+    /// The exporter's account turns optimize_on_insert off, so its copy is kept like a re-sent one, until the merge.
+    /// </summary>
+    [Fact(DisplayName = "Edge case Should keep a tick the exporter duplicated within one batch until the parts merge")]
+    public void Edge_case_Should_keep_a_tick_the_exporter_duplicated_within_one_batch_until_the_parts_merge()
+    {
+        // arrange
+        var request = CreateRequest();
+        AssertSuccessful(CreateRunner().Run(request));
+        Execute(request.ConnectionString, "SYSTEM STOP MERGES ticks");
+
+        var tick = new Tick(1, At(0));
+
+        // act
+        Insert(ExporterConnectionString(request), tick, tick, new Tick(2, At(1)));
+
+        // assert, both copies on disk, one under FINAL
+        Assert.Equal(3, Count(request.ConnectionString, "ticks"));
+        Assert.Equal(2, Count(request.ConnectionString, "ticks FINAL"));
+
+        // and the merge collapses them
+        Execute(request.ConnectionString, "SYSTEM START MERGES ticks");
+        Execute(request.ConnectionString, "OPTIMIZE TABLE ticks FINAL");
+
+        Assert.Equal(2, Count(request.ConnectionString, "ticks"));
     }
 
     /// <summary>

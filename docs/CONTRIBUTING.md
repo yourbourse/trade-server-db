@@ -85,7 +85,8 @@ What a reviewer will check, and therefore what to check yourself first.
 - [ ] An incremental script is genuinely new — no already-applied script was edited
 - [ ] Re-runnable scripts are idempotent
 - [ ] The table variables (`##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`,
-      `##position_snapshots_table##`, `##cursor_table##`, `##ticks_table##`) used instead of literal names
+      `##position_snapshots_table##`, `##cursor_table##`, `##ticks_table##`, `##positions_table##`) used instead
+      of literal names
 - [ ] ClickHouse: `----break----` between statements, `##cluster_name_suffix##` on every DDL statement
 - [ ] ClickHouse: the script is safe to re-enter after failing partway — there are no transactions
 - [ ] New identifiers pass the identifier rule, and new free-form values are escaped or bound
@@ -120,7 +121,7 @@ What a reviewer will check, and therefore what to check yourself first.
 A schema change is the most common contribution. It should contain, in one PR:
 
 1. `psql/20260315_01_add_broker_id.sql` — the incremental script, in the folder of the engine that holds the
-   table (`clickhouse/` for a change to the ticks table)
+   table (`clickhouse/` for a change to the ticks or positions table)
 2. Updated `users/` grants in **both** folders, if the change adds an object the exporter must reach
 3. The table's page in `docs/PSQL/` or `docs/ClickHouse/` updated: the column in **Final SQL** and **Columns**,
    the new script in **Scripts**. The Final SQL stays a single definition of the table as it now stands, never a

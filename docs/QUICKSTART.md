@@ -83,7 +83,7 @@ Full list: [Configuration](CONFIGURATION.md), or `./migrate.sh --help`.
   names, cluster name, and every `--users` name. See [Security](SECURITY.md).
 - **ClickHouse needs `----break----` between statements** — one statement per HTTP request. PostgreSQL does not,
   and a file with no separator runs as a single command inside one transaction.
-- **ClickHouse 24.x is the minimum server version.**
+- **ClickHouse 24.x is the minimum server version** — 24.10 for the refreshable `positions_state` view.
 
 ---
 

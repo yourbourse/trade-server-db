@@ -16,7 +16,7 @@ ClickHouse · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 
 | | |
 |---|---|
-| Engine | ClickHouse — the one entity the trade server exports there |
+| Engine | ClickHouse |
 | Default name | `ticks` — renamed with `--variables ticks_table=…` |
 | Written by | The trade server's `tick` pipeline — `"entity": "tick"`, `"target": "clickhouse"` — over the native protocol |
 | One row per | Change of a symbol's best bid or best ask |
@@ -31,8 +31,8 @@ Prices include the symbol's markup and not the group markups. A symbol produces 
 its `throttling` setting allows — up to 1000 price updates per second in the Admin REST API, where `0` turns
 throttling off and every update is published.
 
-There is no cursor table and no view on ClickHouse: a ClickHouse pipeline keeps its export position on disk, and the
-exporter does nothing but insert.
+There is no cursor table on ClickHouse and no view over the ticks: a ClickHouse pipeline keeps its export position
+on disk, and the exporter does nothing but insert.
 
 ---
 
@@ -86,7 +86,7 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 | Column | Type | Notes |
 |--------|------|-------|
 | `sender_id` | `UInt64` | The trade server instance, from the pipeline's `sender_id`. Every server exporting into one database must use a different value, or their rows overwrite each other |
-| `sequence` | `UInt64` | The order in which this server instance inserted its rows. Restarts from the beginning with the instance |
+| `sequence` | `UInt64` | The order in which this server inserted its rows. Grows monotonically per `sender_id`, across restarts |
 | `batch_time` | `DateTime64(6, 'UTC')` | When the batch that carried the row was created. Every row of one insert has the same value |
 | `created_time` | `DateTime64(6, 'UTC')` | When the trade server received the latest price update the publication includes |
 | `symbol_id` | `UInt64` | Unique identifier of the instrument |
@@ -126,7 +126,10 @@ sequence)` are one tick whatever their prices, and the merge keeps the copy inse
 exporting into one database needs its own `sender_id`.
 
 ClickHouse has no unique index, so unlike PostgreSQL a duplicate is not rejected on insert: both copies exist until
-a background merge collapses them. Two copies inside one insert are the exception: the insert collapses them itself.
+a background merge collapses them. Two copies inside one insert are collapsed by the insert itself on other
+accounts, but not on the exporter's: its settings turn `optimize_on_insert` off, so a tick duplicated within one batch
+stays on disk until the parts merge, and `FINAL` hides it until then — see
+[Users & Permissions](../USERS_AND_PERMISSIONS.md#clickhouse).
 A re-send that falls in the next month still collapses, because the copy keeps its original's `created_time` and so
 its partition. With `--cluster`, the replicated engine may already drop a re-sent batch whose
 insert block is identical to one it has seen. See [Deduplication](../SCHEMA_REFERENCE.md#deduplication).
@@ -158,8 +161,8 @@ zero or missing `created_time`, which reads as 1970, included.
 
 - Add `FINAL` to read every row once before the parts have merged. It costs more than a plain read; for aggregates
   over large ranges, deduplicate in the query (`argMax` by the key) or accept the small window of duplication.
-- Sort by `created_time`, not by `sequence`, to read ticks in time order. `sequence` is numbered per server
-  instance and starts again after a restart.
+- Sort by `created_time` to read ticks in time order. `sequence` gives the order the server wrote them in, and
+  keeps growing across restarts.
 - Filter on `sender_id` and `short_symbol_name`: they are the primary key. A filter on `symbol_id` alone cannot use
   it. Filter on `created_time`, not `batch_time`, to skip whole months.
 - A side of the book with no quotes is a zero price **and** a zero volume — check the volume to tell an empty side
