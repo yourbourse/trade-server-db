@@ -21,12 +21,12 @@
 -- Markers: every snapshot marker carries position_id = 0, so marker_sequence, which is the sequence for a marker
 -- and 0 for a position, keeps each marker distinct under the sorting key and markers never replace each other.
 --
--- Partitioning by sender_id keeps the senders apart, so FINAL can work one partition at a time. The parts of a
--- partition are force-merged once they are min_age_to_force_merge_seconds old, whether or not new rows arrive, so
--- the versions of one position do not stay apart for long. The Delete retention in post/positions_ttl.sql relies
--- on it: a Delete row may only expire once it has been merged with the earlier versions of its position.
+-- Partitioning by sender_id keeps the senders apart, so FINAL can work one partition at a time.
 --
--- Retention is not part of the definition: post/positions_ttl.sql sets the TTL that removes Delete rows.
+-- Merges and retention are not part of the definition: post/positions_ttl.sql sets min_age_to_force_merge_seconds,
+-- which force-merges the parts of a partition whether or not new rows arrive, and then the TTL that removes Delete
+-- rows and relies on those merges. The post phase always runs after this script, and the script there re-runs
+-- whenever either value changes.
 --
 -- The name is qualified with the database because ON CLUSTER carries the statement to nodes whose default
 -- database is not this one.
@@ -81,5 +81,4 @@ CREATE TABLE IF NOT EXISTS ##database_name##.##positions_table## ##cluster_name_
 )
 ENGINE = ##replacing_merge_tree_engine##(sequence)
 PARTITION BY sender_id
-ORDER BY (sender_id, position_id, marker_sequence)
-SETTINGS min_age_to_force_merge_seconds = 600;
+ORDER BY (sender_id, position_id, marker_sequence);

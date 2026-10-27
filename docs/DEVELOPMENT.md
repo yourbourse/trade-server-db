@@ -154,7 +154,7 @@ trade-server-db/
 │   ├── 20261023_01_create_positions.sql    incremental
 │   ├── views/positions_state_live.sql      re-runnable, the state of the positions computed on every read
 │   ├── post/positions_state.sql            the refreshable view over it, re-runs when positions_state_refresh_seconds changes
-│   ├── post/positions_ttl.sql              the Delete rows' retention, re-runs when positions_delete_ttl_days changes
+│   ├── post/positions_ttl.sql              the forced merge age and the Delete rows' retention, re-runs when either changes
 │   ├── post/run_on_every_build.sql         re-runnable
 │   ├── post/ticks_ttl.sql                  the ticks retention, re-runs when ticks_ttl_days changes
 │   ├── users/exporter.sql                  re-runnable, one pass per --users entry

@@ -241,6 +241,33 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     }
 
     /// <summary>
+    /// CREATE TABLE runs once, so a new merge age reaches an existing table through post/positions_ttl.sql.
+    /// </summary>
+    [Fact(DisplayName = "Retention Should replace the forced merge age when the migration re-runs with a new one")]
+    public void Retention_Should_replace_the_forced_merge_age_when_the_migration_re_runs_with_a_new_one()
+    {
+        // arrange
+        var request = CreateRequest();
+        AssertSuccessful(CreateRunner().Run(request));
+
+        // act
+        AssertSuccessful(CreateRunner().Run(WithVariables(request, "positions_min_age_to_force_merge_seconds=120")));
+
+        // assert
+        Assert.Equal(AgreedTable(forceMergeSeconds: 120), ShowCreate(request.ConnectionString, "positions"));
+    }
+
+    [Fact(DisplayName = "Retention Should apply the forced merge age from the variables on a new database")]
+    public void Retention_Should_apply_the_forced_merge_age_from_the_variables_on_a_new_database()
+    {
+        // act
+        var connectionString = Migrate("positions_min_age_to_force_merge_seconds=120");
+
+        // assert
+        Assert.Equal(AgreedTable(forceMergeSeconds: 120), ShowCreate(connectionString, "positions"));
+    }
+
+    /// <summary>
     /// Only Delete rows expire: an old Upsert is a position still open, and the markers carry the watermark.
     /// </summary>
     [Fact(DisplayName = "Retention Should remove a Delete row older than the retention and keep every other row")]
@@ -297,9 +324,8 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     public void Retention_Should_see_a_Delete_row_merged_with_its_position_by_the_forced_merges_alone_before_it_expires()
     {
         // arrange, the snapshot and the close in two batches, so in two parts
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}", "positions_min_age_to_force_merge_seconds=1");
         AssertSuccessful(CreateRunner().Run(request));
-        Execute(request.ConnectionString, "ALTER TABLE positions MODIFY SETTING min_age_to_force_merge_seconds = 1");
 
         Insert(request.ConnectionString, Snapshot(1, Sender, 1, 2));
         Insert(request.ConnectionString, Delete(5, 2));

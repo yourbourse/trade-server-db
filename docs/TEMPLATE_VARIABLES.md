@@ -84,7 +84,7 @@ views — each is derived from its event log by a trigger, not written by the ex
 
 ## ClickHouse only
 
-These seven are defined only when the provider is ClickHouse. Using them in a PostgreSQL script fails the run as
+These eight are defined only when the provider is ClickHouse. Using them in a PostgreSQL script fails the run as
 an unresolved placeholder.
 
 | Variable | Without `--cluster` | With `--cluster my_cluster` |
@@ -95,6 +95,7 @@ an unresolved placeholder.
 | `##replacing_merge_tree_engine##` | `ReplacingMergeTree` | `ReplicatedReplacingMergeTree` |
 | `##ticks_ttl_days##` | `31` | `31` |
 | `##positions_delete_ttl_days##` | `30` | `30` |
+| `##positions_min_age_to_force_merge_seconds##` | `600` | `600` |
 | `##positions_state_refresh_seconds##` | `30` | `30` |
 
 `##ticks_ttl_days##` is the retention of the ticks table, in days, written into its `TTL` by
@@ -107,6 +108,13 @@ changes the script's processed content, so it re-runs and the new retention repl
 of the table, which must have collapsed a `Delete` row with its position's earlier versions before it expires, so do
 not cut it down towards how long the merges could fall behind. See
 [positions → The TTL relies on the forced merges](ClickHouse/positions.md#the-ttl-relies-on-the-forced-merges).
+
+`##positions_min_age_to_force_merge_seconds##` is the `min_age_to_force_merge_seconds` of the positions table: how
+old, in seconds, every part of a partition must be before ClickHouse merges them regardless of size.
+`clickhouse/post/positions_ttl.sql` applies it with `MODIFY SETTING`, before the `TTL`, and re-runs when the value
+changes. The
+migrator refuses a run in which `##positions_delete_ttl_days##`, in seconds, is less than ten times this value. See
+[positions → Setting the merge age](ClickHouse/positions.md#setting-the-merge-age).
 
 `##positions_state_refresh_seconds##` is the refresh period of the `positions_state` view, in seconds.
 `clickhouse/post/positions_state.sql` creates the view with it and applies it with `MODIFY REFRESH`, and re-runs
@@ -204,6 +212,7 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##user_name##` | same |
 | `##ticks_ttl_days##`, `##positions_delete_ttl_days##` | a positive integer — it is written into `MODIFY TTL` as text |
 | `##positions_state_refresh_seconds##` | a positive integer — it is written into `REFRESH EVERY` and `MODIFY REFRESH` as text |
+| `##positions_min_age_to_force_merge_seconds##` | a positive integer — it is written into `MODIFY SETTING` as text — and `##positions_delete_ttl_days##` × 86,400 must be at least ten times it |
 
 An empty value passes — that is how `##cluster_name##` collapses on a single instance.
 
