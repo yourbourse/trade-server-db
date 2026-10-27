@@ -83,15 +83,15 @@ CREATE TABLE positions
 
     close_market_price              Decimal(38, 12)                                                            NOT NULL,
     close_group_markup              Int32                                                                      NOT NULL,
-    pl                              Decimal(38, 8)                                                             NOT NULL,
-    margin                          Decimal(38, 8)                                                             NOT NULL,
-    asset_or_liability              Decimal(38, 8)                                                             NOT NULL,
+    pl                              Decimal(38, 12)                                                            NOT NULL,
+    margin                          Decimal(38, 12)                                                            NOT NULL,
+    asset_or_liability              Decimal(38, 12)                                                            NOT NULL,
     profit_conversion_rate          Float64                                                                    NOT NULL,
     margin_conversion_rate          Float64                                                                    NOT NULL,
 
-    swaps                           Decimal(38, 8)                                                             NOT NULL,
-    commission                      Decimal(38, 8)                                                             NOT NULL,
-    fee                             Decimal(38, 8)                                                             NOT NULL,
+    swaps                           Decimal(38, 12)                                                            NOT NULL,
+    commission                      Decimal(38, 12)                                                            NOT NULL,
+    fee                             Decimal(38, 12)                                                            NOT NULL,
 
     price_decimal_places            UInt8                                                                      NOT NULL,
     account_currency_decimal_places UInt8                                                                      NOT NULL,
@@ -144,14 +144,14 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 | `take_profit_order_id` | `UInt64` | The take-profit order |
 | `close_market_price` | `Decimal(38, 12)` | Market price the position would close at |
 | `close_group_markup` | `Int32` | Group markup on the close price |
-| `pl` | `Decimal(38, 8)` | Profit or loss of the position |
-| `margin` | `Decimal(38, 8)` | Margin of the position |
-| `asset_or_liability` | `Decimal(38, 8)` | Asset or liability of the position |
+| `pl` | `Decimal(38, 12)` | Profit or loss of the position |
+| `margin` | `Decimal(38, 12)` | Margin of the position |
+| `asset_or_liability` | `Decimal(38, 12)` | Asset or liability of the position |
 | `profit_conversion_rate` | `Float64` | Rate converting profit into the account currency |
 | `margin_conversion_rate` | `Float64` | Rate converting margin into the account currency |
-| `swaps` | `Decimal(38, 8)` | Swaps accumulated |
-| `commission` | `Decimal(38, 8)` | Commission |
-| `fee` | `Decimal(38, 8)` | Fees |
+| `swaps` | `Decimal(38, 12)` | Swaps accumulated |
+| `commission` | `Decimal(38, 12)` | Commission |
+| `fee` | `Decimal(38, 12)` | Fees |
 | `price_decimal_places` | `UInt8` | Decimal places of the instrument's price |
 | `account_currency_decimal_places` | `UInt8` | Decimal places of the account currency |
 | `created` | `DateTime64(6, 'UTC')` | When the position was opened |

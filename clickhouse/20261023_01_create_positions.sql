@@ -58,15 +58,15 @@ CREATE TABLE IF NOT EXISTS ##database_name##.##positions_table## ##cluster_name_
 
     close_market_price              Decimal(38, 12)                                                              NOT NULL,
     close_group_markup              Int32                                                                        NOT NULL,
-    pl                              Decimal(38, 8)                                                               NOT NULL,
-    margin                          Decimal(38, 8)                                                               NOT NULL,
-    asset_or_liability              Decimal(38, 8)                                                               NOT NULL,
+    pl                              Decimal(38, 12)                                                              NOT NULL,
+    margin                          Decimal(38, 12)                                                              NOT NULL,
+    asset_or_liability              Decimal(38, 12)                                                              NOT NULL,
     profit_conversion_rate          Float64                                                                      NOT NULL,
     margin_conversion_rate          Float64                                                                      NOT NULL,
 
-    swaps                           Decimal(38, 8)                                                               NOT NULL,
-    commission                      Decimal(38, 8)                                                               NOT NULL,
-    fee                             Decimal(38, 8)                                                               NOT NULL,
+    swaps                           Decimal(38, 12)                                                              NOT NULL,
+    commission                      Decimal(38, 12)                                                              NOT NULL,
+    fee                             Decimal(38, 12)                                                              NOT NULL,
 
     price_decimal_places            UInt8                                                                        NOT NULL,
     account_currency_decimal_places UInt8                                                                        NOT NULL,
