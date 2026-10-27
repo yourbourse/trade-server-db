@@ -16,6 +16,7 @@
 //  * permission is obtained from Your Bourse Limited.
 //  */
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using ClickHouse.Driver.ADO;
 using DbUp.Engine;
@@ -63,8 +64,15 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultPositionsStateLiveView = "positions_state_live";
     private const string DefaultPositionsStateRefreshSeconds = "30";
     private const string DefaultPositionsDeleteTtlDays = "30";
+    private const string DefaultPositionsMinAgeToForceMergeSeconds = "600";
     private const string DefaultTradesHistoryView = "trades_history";
     private const string DefaultCashTransfersView = "cash_transfers";
+
+    /// <summary>
+    /// How many times the Delete retention must exceed the forced merge age. The retention is a margin over the
+    /// merges, so a value that only just covers them leaves no room for merges that fall behind.
+    /// </summary>
+    private const int MinDeleteTtlToForceMergeRatio = 10;
 
     /// <summary>
     /// The variables naming a table the trade server writes to, in the order the migration log reports them.
@@ -137,7 +145,8 @@ public class MigrationHandler : IMigrationHandler
     [
         "ticks_ttl_days",
         "positions_state_refresh_seconds",
-        "positions_delete_ttl_days"
+        "positions_delete_ttl_days",
+        "positions_min_age_to_force_merge_seconds"
     ];
 
     /// <summary>
@@ -358,6 +367,7 @@ public class MigrationHandler : IMigrationHandler
             variables["ticks_ttl_days"] = DefaultTicksTtlDays;
             variables["positions_state_refresh_seconds"] = DefaultPositionsStateRefreshSeconds;
             variables["positions_delete_ttl_days"] = DefaultPositionsDeleteTtlDays;
+            variables["positions_min_age_to_force_merge_seconds"] = DefaultPositionsMinAgeToForceMergeSeconds;
         }
 
         // command line variables are applied last so they can override any of the derived values
@@ -401,7 +411,39 @@ public class MigrationHandler : IMigrationHandler
             }
         }
 
+        ValidateDeleteTtlAgainstForceMerge(variables);
+
         return variables;
+    }
+
+    /// <summary>
+    /// Refuses a Delete retention that is not far above the forced merge age of the positions table.
+    /// </summary>
+    /// <remarks>
+    /// A Delete row may only expire once the forced merges have collapsed it with the earlier versions of its
+    /// position, otherwise the closed position comes back. The retention is the margin over those merges, so it
+    /// has to be at least <see cref="MinDeleteTtlToForceMergeRatio"/> times the merge age. Both values have
+    /// already passed <see cref="SqlSafety.ValidatePositiveInteger"/>.
+    /// </remarks>
+    private static void ValidateDeleteTtlAgainstForceMerge(IReadOnlyDictionary<string, string> variables)
+    {
+        if (!variables.TryGetValue("positions_delete_ttl_days", out var days) ||
+            !variables.TryGetValue("positions_min_age_to_force_merge_seconds", out var seconds))
+        {
+            return;
+        }
+
+        var ttlSeconds = ulong.Parse(days, CultureInfo.InvariantCulture) * 86_400UL;
+        var forceMergeSeconds = ulong.Parse(seconds, CultureInfo.InvariantCulture);
+
+        if (ttlSeconds < forceMergeSeconds * MinDeleteTtlToForceMergeRatio)
+        {
+            throw new SchemaMigrationException(
+                $"##positions_delete_ttl_days## {days} ({ttlSeconds} seconds) must be at least " +
+                $"{MinDeleteTtlToForceMergeRatio} times ##positions_min_age_to_force_merge_seconds## {seconds}. " +
+                "A Delete row may only expire long after the forced merges have collapsed it with its position, " +
+                "otherwise the closed position comes back. Raise the retention or lower the merge age.");
+        }
     }
 
     /// <summary>

@@ -22,7 +22,7 @@ ClickHouse · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 | One row per | Change of an open position — `Upsert` or `Delete` — or a `SnapshotStart` / `SnapshotEnd` marker |
 | Delivery | Append-only, at-least-once |
 | Versioned by | `ReplacingMergeTree(sequence)` on `(sender_id, position_id, marker_sequence)`, when parts merge |
-| Retention | `Delete` rows only, 30 days by default, by `batch_time` — `--variables positions_delete_ttl_days=…` |
+| Retention | `Delete` rows only, 30 days by default, by `batch_time` — `--variables positions_delete_ttl_days=…`; relies on the forced merges, every 600 seconds by default — `--variables positions_min_age_to_force_merge_seconds=…` |
 | Read through | [`positions_state_live`](positions_state_live.md), computed on every read, and [`positions_state`](positions_state.md), the same rows refreshed on a schedule — one row per open position |
 | Grants | `exporter`: `INSERT` · `ro`: `SELECT` |
 
@@ -51,9 +51,9 @@ does nothing but insert.
 ## Final SQL
 
 The table as it stands once the two scripts that build it have run, on a single instance with the default name and
-the default 30-day retention of `Delete` rows. The `CREATE TABLE` comes from the incremental script; the `TTL` is
-laid on afterwards by the re-runnable `post/positions_ttl.sql`, so that a deployment can change the retention
-without a new script.
+the defaults: a 30-day retention of `Delete` rows and a 600-second merge age. The `CREATE TABLE` comes from the
+incremental script; `min_age_to_force_merge_seconds` and the `TTL` are laid on afterwards by the re-runnable
+`post/positions_ttl.sql`, so that a deployment can change either without a new script.
 
 ```sql
 CREATE TABLE positions
@@ -179,7 +179,7 @@ Every column is `NOT NULL`. The four service columns come first. On a snapshot m
 | `ReplacingMergeTree(sequence)` | Each position is one row in the end: of the rows with the same sorting key, the merge keeps the one with the highest `sequence`, so a re-sent or late batch never overwrites a newer change |
 | `ORDER BY (sender_id, position_id, marker_sequence)` | For a position `marker_sequence` is `0`, so the key is the position itself. Every marker has `position_id = 0`; `marker_sequence` gives each its own key, so markers never replace each other |
 | `PARTITION BY sender_id` | One partition per sender keeps the senders apart, so `FINAL` can work one partition at a time — see [`positions_state_live`](positions_state_live.md#final-sql) |
-| `min_age_to_force_merge_seconds = 600` | The parts of a partition are force-merged once every one of them is ten minutes old, with or without new inserts, so the versions of one position do not stay apart for long. The `Delete` retention depends on it — see [The TTL relies on the forced merges](#the-ttl-relies-on-the-forced-merges) |
+| `min_age_to_force_merge_seconds` (600) | The parts of a partition are force-merged once every one of them is `positions_min_age_to_force_merge_seconds` seconds old — ten minutes by default — with or without new inserts, so the versions of one position do not stay apart for long. The `Delete` retention depends on it — see [The TTL relies on the forced merges](#the-ttl-relies-on-the-forced-merges) |
 
 The sorting key and `sequence` decide what collapses. Two rows of one position collapse to the one with the higher
 `sequence`, whatever their `event_type`: a `Delete` replaces the `Upsert`s before it, and an `Upsert` with a higher
@@ -219,12 +219,40 @@ Two settings work together to rule that out:
 
 | Setting | Role |
 |---------|------|
-| `min_age_to_force_merge_seconds = 600` | Guarantees the collapse. Once every part of a partition is ten minutes old, ClickHouse merges them whether or not new rows arrive: the merge scheduler wakes on its own timer, not on inserts. Without it the size-based merge selection may leave a small part holding one `Delete` row beside a large part for ever |
+| `positions_min_age_to_force_merge_seconds` (600) | Guarantees the collapse. Once every part of a partition is this many seconds old — ten minutes by default — ClickHouse merges them whether or not new rows arrive: the merge scheduler wakes on its own timer, not on inserts. Without it the size-based merge selection may leave a small part holding one `Delete` row beside a large part for ever |
 | `positions_delete_ttl_days` (30) | Waits for the collapse. Thirty days is not how long a merge takes — that is minutes — but a margin far above it, so a `Delete` row is only ever removed from a part that has long been merged with its position's earlier versions |
 
 So the TTL is safe because of the forced merges, not on its own. Keep both: dropping
 `min_age_to_force_merge_seconds` makes any retention unsafe, and a retention cut down towards the time the merges
 can fall behind — a server down, merges stopped, the disk too full to merge — removes the margin.
+
+### Setting the merge age
+
+A deployment sets the merge age with `--variables positions_min_age_to_force_merge_seconds=N`; `N` must be a positive
+integer. `post/positions_ttl.sql` applies it with `ALTER TABLE … MODIFY SETTING min_age_to_force_merge_seconds = N`,
+just before the `TTL`, so the table never carries the `TTL` without the forced merges. A new value changes the
+script's processed content, so it re-runs and reaches the existing table.
+
+The migrator keeps the margin from shrinking away: it refuses a run in which `positions_delete_ttl_days`, counted in
+seconds, is less than ten times `positions_min_age_to_force_merge_seconds`, before any script runs.
+
+| `positions_delete_ttl_days` | Longest `positions_min_age_to_force_merge_seconds` |
+|-----------------------------|----------------------------------------------------|
+| 1 | 8,640 (2.4 hours) |
+| 7 | 60,480 (16.8 hours) |
+| 30 (default) | 259,200 (3 days) |
+
+Ten times is the floor the migrator enforces, not a recommendation: the default pair, 30 days over 600 seconds, keeps
+a margin more than 4,000 times the merge age. A smaller merge age merges sooner but more often, so a busy table pays
+for it in merge load; a larger one keeps more unmerged versions for `FINAL` to sort out on every read.
+
+```bash
+# merge every five minutes, keep Delete rows for a week
+--variables positions_min_age_to_force_merge_seconds=300 positions_delete_ttl_days=7
+
+# refused: 1 day is 86,400 seconds, less than 10 × 10,000
+--variables positions_min_age_to_force_merge_seconds=10000 positions_delete_ttl_days=1
+```
 
 The age is counted from `batch_time`, not from the moment the row arrived, and the margin shrinks by however late a
 row arrives:
@@ -251,7 +279,7 @@ row arrives:
 - Filter on `sender_id`: it is the partition and the start of the sorting key. Pair every id with it — see
   [Every id is scoped to its sender](../SCHEMA_REFERENCE.md#every-id-is-scoped-to-its-sender).
 - The history of one position is its rows without `FINAL`, by `sequence` — as far as the merges have not already
-  collapsed it, which `min_age_to_force_merge_seconds` makes a matter of minutes. This table is not an audit log.
+  collapsed it, which `min_age_to_force_merge_seconds` makes a matter of minutes by default. This table is not an audit log.
 
 ```sql
 -- the latest version of one position, Delete included
@@ -275,8 +303,8 @@ LIMIT 10;
 
 | Script | Phase | Contributes |
 |--------|-------|-------------|
-| [`clickhouse/20261023_01_create_positions.sql`](../../clickhouse/20261023_01_create_positions.sql) | incremental | The table: columns, engine, partitioning, sorting key, `min_age_to_force_merge_seconds` |
-| [`clickhouse/post/positions_ttl.sql`](../../clickhouse/post/positions_ttl.sql) | post | The `TTL` on `Delete` rows. Re-runs when `positions_delete_ttl_days` changes |
+| [`clickhouse/20261023_01_create_positions.sql`](../../clickhouse/20261023_01_create_positions.sql) | incremental | The table: columns, engine, partitioning, sorting key |
+| [`clickhouse/post/positions_ttl.sql`](../../clickhouse/post/positions_ttl.sql) | post | `min_age_to_force_merge_seconds`, then the `TTL` on `Delete` rows. Re-runs when `positions_min_age_to_force_merge_seconds` or `positions_delete_ttl_days` changes |
 | [`clickhouse/users/exporter.sql`](../../clickhouse/users/exporter.sql), [`clickhouse/users/ro.sql`](../../clickhouse/users/ro.sql) | users | `INSERT` for `role_<database>_exporter`, `SELECT` for `role_<database>_ro` — see [Users & Permissions](../USERS_AND_PERMISSIONS.md#clickhouse) |
 
 The views over the table are created later in the run: [`positions_state_live`](positions_state_live.md) by

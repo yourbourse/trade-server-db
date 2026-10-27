@@ -566,6 +566,7 @@ public class MigrationHandlerTests
     [InlineData("positions_state_live_view", "positions_state_live")]
     [InlineData("positions_state_refresh_seconds", "30")]
     [InlineData("positions_delete_ttl_days", "30")]
+    [InlineData("positions_min_age_to_force_merge_seconds", "600")]
     public void BuildVariables_Should_default_the_positions_objects_and_settings_to_their_documented_values(string variable, string expected)
     {
         // act
@@ -587,11 +588,13 @@ public class MigrationHandlerTests
         // assert
         Assert.DoesNotContain("positions_state_refresh_seconds", variables.Keys);
         Assert.DoesNotContain("positions_delete_ttl_days", variables.Keys);
+        Assert.DoesNotContain("positions_min_age_to_force_merge_seconds", variables.Keys);
     }
 
     [Theory(DisplayName = "BuildVariables Should let --variables change a positions setting")]
     [InlineData("positions_state_refresh_seconds")]
     [InlineData("positions_delete_ttl_days")]
+    [InlineData("positions_min_age_to_force_merge_seconds")]
     public void BuildVariables_Should_let_variables_change_a_positions_setting(string variable)
     {
         // arrange
@@ -612,6 +615,8 @@ public class MigrationHandlerTests
     [InlineData("positions_state_refresh_seconds", "30 SECOND; DROP TABLE positions")]
     [InlineData("positions_delete_ttl_days", "-1")]
     [InlineData("positions_delete_ttl_days", "1.5")]
+    [InlineData("positions_min_age_to_force_merge_seconds", "0")]
+    [InlineData("positions_min_age_to_force_merge_seconds", "600; DROP TABLE positions")]
     public void BuildVariables_Should_refuse_a_positions_setting_that_is_not_a_positive_whole_number(string variable, string value)
     {
         // arrange
@@ -623,5 +628,56 @@ public class MigrationHandlerTests
 
         // assert
         Assert.Contains($"##{variable}##", exception.Message);
+    }
+
+    /// <summary>
+    /// The Delete retention is a margin over the forced merges, so it must be at least ten times the merge age.
+    /// One day is 86,400 seconds, so 8,640 seconds is the longest merge age a one day retention allows.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should require the Delete retention to be at least ten times the forced merge age")]
+    [InlineData("1", "8640", true)]
+    [InlineData("1", "8641", false)]
+    [InlineData("30", "259200", true)]
+    [InlineData("30", "259201", false)]
+    [InlineData("1", "4294967295", false)]
+    public void BuildVariables_Should_require_the_Delete_retention_to_be_at_least_ten_times_the_forced_merge_age(string days, string seconds, bool accepted)
+    {
+        // arrange
+        var options = new CommandLineOptions
+        {
+            Variables = [$"positions_delete_ttl_days={days}", $"positions_min_age_to_force_merge_seconds={seconds}"]
+        };
+
+        // act
+        var exception = Record.Exception(() => MigrationHandler.BuildVariables(DatabaseProvider.ClickHouse, "trading", null, options));
+
+        // assert
+        if (accepted)
+        {
+            Assert.Null(exception);
+        }
+        else
+        {
+            var migrationException = Assert.IsType<SchemaMigrationException>(exception);
+            Assert.Contains("##positions_delete_ttl_days##", migrationException.Message);
+            Assert.Contains("##positions_min_age_to_force_merge_seconds##", migrationException.Message);
+        }
+    }
+
+    /// <summary>
+    /// A merge age changed on its own is checked against the default retention of 30 days, 2,592,000 seconds.
+    /// </summary>
+    [Fact(DisplayName = "BuildVariables Should check a new forced merge age against the default Delete retention")]
+    public void BuildVariables_Should_check_a_new_forced_merge_age_against_the_default_Delete_retention()
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = ["positions_min_age_to_force_merge_seconds=259201"] };
+
+        // act
+        var exception = Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.ClickHouse, "trading", null, options));
+
+        // assert
+        Assert.Contains("at least 10 times", exception.Message);
     }
 }

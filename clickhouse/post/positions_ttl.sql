@@ -14,6 +14,15 @@
 -- The TTL lives here rather than in the CREATE TABLE so that a deployment sets it with
 -- --variables positions_delete_ttl_days=N: the value changes the processed content, so the MD5 in the journal
 -- changes and the script re-runs. With the default, it runs once.
+--
+-- min_age_to_force_merge_seconds is set here too, before the TTL, for the same reason: a deployment sets it with
+-- --variables positions_min_age_to_force_merge_seconds=N and the script re-runs when it changes. Coming first, it
+-- is in place before the TTL ever is. The migrator refuses a retention shorter than ten times the merge age.
+
+ALTER TABLE ##database_name##.##positions_table## ##cluster_name_suffix##
+MODIFY SETTING min_age_to_force_merge_seconds = ##positions_min_age_to_force_merge_seconds##;
+
+----break----
 
 ALTER TABLE ##database_name##.##positions_table## ##cluster_name_suffix##
 MODIFY TTL toDateTime(batch_time) + INTERVAL ##positions_delete_ttl_days## DAY DELETE WHERE event_type = 'Delete';

@@ -222,7 +222,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     /// <summary>
     /// The table the migration leaves, as SHOW CREATE TABLE prints it: the DDL in ClickHouse's canonical form.
     /// </summary>
-    protected static string AgreedTable(string table = "positions", int deleteTtlDays = 30)
+    protected static string AgreedTable(string table = "positions", int deleteTtlDays = 30, int forceMergeSeconds = 600)
     {
         // the raw string takes this file's line endings, which a Windows checkout makes CRLF
         return $"""
@@ -268,7 +268,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
                 PARTITION BY sender_id
                 ORDER BY (sender_id, position_id, marker_sequence)
                 TTL toDateTime(batch_time) + toIntervalDay({deleteTtlDays}) WHERE event_type = 'Delete'
-                SETTINGS min_age_to_force_merge_seconds = 600, index_granularity = 8192
+                SETTINGS index_granularity = 8192, min_age_to_force_merge_seconds = {forceMergeSeconds}
                 """.ReplaceLineEndings("\n");
     }
 
