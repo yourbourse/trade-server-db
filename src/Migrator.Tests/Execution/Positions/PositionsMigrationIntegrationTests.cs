@@ -21,7 +21,7 @@ using Xunit.Abstractions;
 namespace YB.TradeServer.Db.Migrator.Tests.Execution.Positions;
 
 /// <summary>
-/// What the migration makes of the positions table and the positions_state and positions_state_live views: their
+/// What the migration makes of the position_events table and the positions and positions_live views: their
 /// definitions, re-runs, the refresh period, retention and grants.
 /// </summary>
 [Trait("Category", "Integration")]
@@ -30,57 +30,57 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     /// <summary>
     /// SHOW CREATE TABLE in full: fails on any change to a column, type, key, TTL or setting.
     /// </summary>
-    [Fact(DisplayName = "Schema Should create the positions table with the agreed columns, engine, keys and retention")]
-    public void Schema_Should_create_the_positions_table_with_the_agreed_columns_engine_keys_and_retention()
+    [Fact(DisplayName = "Schema Should create the position_events table with the agreed columns, engine, keys and retention")]
+    public void Schema_Should_create_the_position_events_table_with_the_agreed_columns_engine_keys_and_retention()
     {
         // arrange, act
         var connectionString = Migrate();
 
         // assert
-        Assert.Equal(AgreedTable(), ShowCreate(connectionString, "positions"));
+        Assert.Equal(AgreedTable(), ShowCreate(connectionString, "position_events"));
     }
 
-    [Fact(DisplayName = "Schema Should create the positions_state view refreshed every 30 seconds into a MergeTree")]
-    public void Schema_Should_create_the_positions_state_view_refreshed_every_30_seconds_into_a_MergeTree()
+    [Fact(DisplayName = "Schema Should create the positions view refreshed every 30 seconds into a MergeTree")]
+    public void Schema_Should_create_the_positions_view_refreshed_every_30_seconds_into_a_MergeTree()
     {
         // arrange, act
         var connectionString = Migrate();
 
         // assert
-        var view = ShowCreate(connectionString, "positions_state");
+        var view = ShowCreate(connectionString, "positions");
 
-        Assert.StartsWith("CREATE MATERIALIZED VIEW positions_state", view);
+        Assert.StartsWith("CREATE MATERIALIZED VIEW positions", view);
         Assert.Contains("REFRESH EVERY 30 SECOND", view);
         Assert.Contains("ENGINE = MergeTree", view);
         Assert.Contains("ORDER BY (sender_id, position_id)", view);
-        Assert.Contains("FROM positions_state_live", view);
+        Assert.Contains("FROM positions_live", view);
     }
 
     /// <summary>
-    /// The one definition of the state: a plain view reading positions with FINAL, as the reader who queries it.
+    /// The one definition of the state: a plain view reading position_events with FINAL, as the reader who queries it.
     /// </summary>
-    [Fact(DisplayName = "Schema Should create the positions_state_live view over positions with FINAL")]
-    public void Schema_Should_create_the_positions_state_live_view_over_positions_with_FINAL()
+    [Fact(DisplayName = "Schema Should create the positions_live view over positions with FINAL")]
+    public void Schema_Should_create_the_positions_live_view_over_positions_with_FINAL()
     {
         // arrange, act
         var connectionString = Migrate();
 
         // assert
-        var view = ShowCreate(connectionString, "positions_state_live");
+        var view = ShowCreate(connectionString, "positions_live");
 
-        Assert.StartsWith("CREATE VIEW positions_state_live", view);
+        Assert.StartsWith("CREATE VIEW positions_live", view);
         Assert.DoesNotContain("DEFINER", view); // the default, INVOKER, is not printed
-        Assert.Contains("FROM positions AS positions\nFINAL", view);
+        Assert.Contains("FROM position_events AS position_events\nFINAL", view);
         Assert.Equal("View", Scalar<string>(connectionString,
-            "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'positions_state_live'"));
+            "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'positions_live'"));
     }
 
     /// <summary>
     /// Both views expose every column the exporter writes, in the table's order, and not marker_sequence.
     /// </summary>
     [Theory(DisplayName = "Schema Should give a positions view every exported column and no marker_sequence")]
-    [InlineData("positions_state")]
-    [InlineData("positions_state_live")]
+    [InlineData("positions")]
+    [InlineData("positions_live")]
     public void Schema_Should_give_a_positions_view_every_exported_column_and_no_marker_sequence(string view)
     {
         // arrange, act
@@ -92,13 +92,13 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     }
 
     /// <summary>
-    /// views/ re-runs a changed script; CREATE OR REPLACE swaps the live view's query, and positions_state follows it.
+    /// views/ re-runs a changed script; CREATE OR REPLACE swaps the live view's query, and positions follows it.
     /// </summary>
-    [Fact(DisplayName = "Migration Should replace the live view and keep positions_state reading it when the live script re-runs")]
-    public void Migration_Should_replace_the_live_view_and_keep_positions_state_reading_it_when_the_live_script_re_runs()
+    [Fact(DisplayName = "Migration Should replace the live view and keep positions reading it when the live script re-runs")]
+    public void Migration_Should_replace_the_live_view_and_keep_positions_reading_it_when_the_live_script_re_runs()
     {
         // arrange
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        var request = CreateRequest($"positions_refresh_seconds={NoScheduledRefresh}");
         AssertSuccessful(CreateRunner().Run(request));
 
         Insert(request.ConnectionString, Snapshot(1, Sender, 1));
@@ -119,9 +119,9 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     public void Migration_Should_keep_one_journal_entry_per_positions_script_across_a_change_of_both_settings()
     {
         // arrange
-        const string refreshEntry = @"^\[clickhouse/post\] positions_state\.sql::[0-9a-f]{32}$";
-        const string liveEntry = @"^\[clickhouse/views\] positions_state_live\.sql::[0-9a-f]{32}$";
-        const string retentionEntry = @"^\[clickhouse/post\] positions_ttl\.sql::[0-9a-f]{32}$";
+        const string refreshEntry = @"^\[clickhouse/post\] positions\.sql::[0-9a-f]{32}$";
+        const string liveEntry = @"^\[clickhouse/views\] positions_live\.sql::[0-9a-f]{32}$";
+        const string retentionEntry = @"^\[clickhouse/post\] position_events_ttl\.sql::[0-9a-f]{32}$";
 
         var request = CreateRequest();
         AssertSuccessful(CreateRunner().Run(request));
@@ -129,20 +129,20 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         var before = PositionsJournalEntries(request.ConnectionString);
 
         // act
-        AssertSuccessful(CreateRunner().Run(WithVariables(request, "positions_state_refresh_seconds=5", "positions_delete_ttl_days=7")));
+        AssertSuccessful(CreateRunner().Run(WithVariables(request, "positions_refresh_seconds=5", "position_events_delete_ttl_days=7")));
 
         // assert, the create and live view scripts once and untouched, the post scripts once each under a new hash
         var after = PositionsJournalEntries(request.ConnectionString);
 
         Assert.Collection(before,
-            refresh => Assert.Matches(refreshEntry, refresh),
             retention => Assert.Matches(retentionEntry, retention),
+            refresh => Assert.Matches(refreshEntry, refresh),
             live => Assert.Matches(liveEntry, live),
-            table => Assert.Equal("[clickhouse] 20261023_01_create_positions.sql", table));
+            table => Assert.Equal("[clickhouse] 20261023_01_create_position_events.sql", table));
 
         Assert.Collection(after,
-            refresh => Assert.Matches(refreshEntry, refresh),
             retention => Assert.Matches(retentionEntry, retention),
+            refresh => Assert.Matches(refreshEntry, refresh),
             live => Assert.Equal(before[2], live),
             table => Assert.Equal(before[3], table));
 
@@ -157,7 +157,7 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     public void Migration_Should_keep_the_stored_positions_and_their_state_through_a_re_run_and_a_forced_re_run()
     {
         // arrange, a refresh only on demand, so the state read afterwards is the one computed before the re-runs
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        var request = CreateRequest($"positions_refresh_seconds={NoScheduledRefresh}");
         AssertSuccessful(CreateRunner().Run(request));
 
         Insert(request.ConnectionString, Snapshot(1, Sender, 1, 2));
@@ -179,11 +179,11 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         Assert.Equal([1L, 2L, 3L, 4L, 5L], Sequences(request.ConnectionString));
     }
 
-    [Fact(DisplayName = "Migration Should create, refresh and grant a renamed positions table and view")]
-    public void Migration_Should_create_refresh_and_grant_a_renamed_positions_table_and_view()
+    [Fact(DisplayName = "Migration Should create, refresh and grant a renamed position_events table and view")]
+    public void Migration_Should_create_refresh_and_grant_a_renamed_position_events_table_and_view()
     {
         // arrange
-        var request = CreateRequest("positions_table=position_changes", "positions_state_view=open_positions", "positions_state_live_view=open_positions_live");
+        var request = CreateRequest("position_events_table=position_changes", "positions_view=open_positions", "positions_live_view=open_positions_live");
 
         // act
         AssertSuccessful(CreateRunner().Run(request));
@@ -192,7 +192,7 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         Assert.Equal(["open_positions", "open_positions_live", "position_changes", "schema_versions", "ticks"], Tables(request.ConnectionString));
         Assert.Equal(AgreedTable("position_changes"), ShowCreate(request.ConnectionString, "position_changes"));
         Assert.Contains("FROM open_positions_live", ShowCreate(request.ConnectionString, "open_positions"));
-        Assert.Contains("FROM position_changes AS positions\nFINAL", ShowCreate(request.ConnectionString, "open_positions_live"));
+        Assert.Contains("FROM position_changes AS position_events\nFINAL", ShowCreate(request.ConnectionString, "open_positions_live"));
 
         Execute(ExporterConnectionString(request), InsertInto("position_changes", Snapshot(1, Sender, 1)));
         Refresh(request.ConnectionString, "open_positions");
@@ -209,20 +209,20 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     public void Refresh_Should_switch_the_view_to_a_new_refresh_period_and_keep_its_rows_when_the_migration_re_runs()
     {
         // arrange
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        var request = CreateRequest($"positions_refresh_seconds={NoScheduledRefresh}");
         AssertSuccessful(CreateRunner().Run(request));
 
         Insert(request.ConnectionString, Snapshot(1, Sender, 1));
         Refresh(request.ConnectionString);
 
         // act
-        var changed = CreateRunner().Run(WithVariables(request, "positions_state_refresh_seconds=5"));
+        var changed = CreateRunner().Run(WithVariables(request, "positions_refresh_seconds=5"));
 
         // assert
         AssertSuccessful(changed);
 
         Assert.Equal(1, changed.Sum(step => step.Result.Scripts.Count()));
-        Assert.Contains("REFRESH EVERY 5 SECOND", ShowCreate(request.ConnectionString, "positions_state"));
+        Assert.Contains("REFRESH EVERY 5 SECOND", ShowCreate(request.ConnectionString, "positions"));
         Assert.Equal(["7/1: 1"], State(request.ConnectionString));
     }
 
@@ -234,14 +234,14 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         AssertSuccessful(CreateRunner().Run(request));
 
         // act
-        AssertSuccessful(CreateRunner().Run(WithVariables(request, "positions_delete_ttl_days=7")));
+        AssertSuccessful(CreateRunner().Run(WithVariables(request, "position_events_delete_ttl_days=7")));
 
         // assert
-        Assert.Equal(AgreedTable(deleteTtlDays: 7), ShowCreate(request.ConnectionString, "positions"));
+        Assert.Equal(AgreedTable(deleteTtlDays: 7), ShowCreate(request.ConnectionString, "position_events"));
     }
 
     /// <summary>
-    /// CREATE TABLE runs once, so a new merge age reaches an existing table through post/positions_ttl.sql.
+    /// CREATE TABLE runs once, so a new merge age reaches an existing table through post/position_events_ttl.sql.
     /// </summary>
     [Fact(DisplayName = "Retention Should replace the forced merge age when the migration re-runs with a new one")]
     public void Retention_Should_replace_the_forced_merge_age_when_the_migration_re_runs_with_a_new_one()
@@ -251,20 +251,20 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         AssertSuccessful(CreateRunner().Run(request));
 
         // act
-        AssertSuccessful(CreateRunner().Run(WithVariables(request, "positions_min_age_to_force_merge_seconds=120")));
+        AssertSuccessful(CreateRunner().Run(WithVariables(request, "position_events_min_age_to_force_merge_seconds=120")));
 
         // assert
-        Assert.Equal(AgreedTable(forceMergeSeconds: 120), ShowCreate(request.ConnectionString, "positions"));
+        Assert.Equal(AgreedTable(forceMergeSeconds: 120), ShowCreate(request.ConnectionString, "position_events"));
     }
 
     [Fact(DisplayName = "Retention Should apply the forced merge age from the variables on a new database")]
     public void Retention_Should_apply_the_forced_merge_age_from_the_variables_on_a_new_database()
     {
         // act
-        var connectionString = Migrate("positions_min_age_to_force_merge_seconds=120");
+        var connectionString = Migrate("position_events_min_age_to_force_merge_seconds=120");
 
         // assert
-        Assert.Equal(AgreedTable(forceMergeSeconds: 120), ShowCreate(connectionString, "positions"));
+        Assert.Equal(AgreedTable(forceMergeSeconds: 120), ShowCreate(connectionString, "position_events"));
     }
 
     /// <summary>
@@ -297,21 +297,21 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     public void Retention_Should_keep_a_closed_position_closed_once_its_Delete_row_has_expired()
     {
         // arrange, a position snapshotted, then closed, and the merge collapsing it into its Delete row
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        var request = CreateRequest($"positions_refresh_seconds={NoScheduledRefresh}");
         AssertSuccessful(CreateRunner().Run(request));
 
         Insert(request.ConnectionString, Snapshot(1, Sender, 1, 2));
         Insert(request.ConnectionString, Delete(5, 2));
-        Execute(request.ConnectionString, "OPTIMIZE TABLE positions FINAL");
+        Execute(request.ConnectionString, "OPTIMIZE TABLE position_events FINAL");
 
         // act, the Delete row ages past the retention
         Execute(request.ConnectionString,
-            "ALTER TABLE positions UPDATE batch_time = batch_time - INTERVAL 60 DAY WHERE position_id = 2 SETTINGS mutations_sync = 2");
+            "ALTER TABLE position_events UPDATE batch_time = batch_time - INTERVAL 60 DAY WHERE position_id = 2 SETTINGS mutations_sync = 2");
         ApplyRetention(request.ConnectionString);
         Refresh(request.ConnectionString);
 
         // assert, the position is gone from the table, not only from the view
-        Assert.Equal(0, Scalar<long>(request.ConnectionString, "SELECT count() FROM positions WHERE position_id = 2"));
+        Assert.Equal(0, Scalar<long>(request.ConnectionString, "SELECT count() FROM position_events WHERE position_id = 2"));
         Assert.Equal(["7/1: 1"], State(request.ConnectionString));
     }
 
@@ -324,7 +324,7 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     public void Retention_Should_see_a_Delete_row_merged_with_its_position_by_the_forced_merges_alone_before_it_expires()
     {
         // arrange, the snapshot and the close in two batches, so in two parts
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}", "positions_min_age_to_force_merge_seconds=1");
+        var request = CreateRequest($"positions_refresh_seconds={NoScheduledRefresh}", "position_events_min_age_to_force_merge_seconds=1");
         AssertSuccessful(CreateRunner().Run(request));
 
         Insert(request.ConnectionString, Snapshot(1, Sender, 1, 2));
@@ -332,16 +332,16 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
 
         // act, nothing but waiting
         var merged = WaitUntil(TimeSpan.FromMinutes(3),
-            () => Scalar<long>(request.ConnectionString, "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'positions' AND active") == 1);
+            () => Scalar<long>(request.ConnectionString, "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'position_events' AND active") == 1);
 
         // assert, one part, and in it position 2 is its Delete row alone - read without FINAL
         Assert.True(merged, "the parts were not merged by themselves within three minutes");
         Assert.Equal(["5 Delete"], Strings(request.ConnectionString,
-            "SELECT concat(toString(sequence), ' ', toString(event_type)) FROM positions WHERE position_id = 2"));
+            "SELECT concat(toString(sequence), ' ', toString(event_type)) FROM position_events WHERE position_id = 2"));
 
         // and once that row expires, the position stays closed
         Execute(request.ConnectionString,
-            "ALTER TABLE positions UPDATE batch_time = batch_time - INTERVAL 60 DAY WHERE position_id = 2 SETTINGS mutations_sync = 2");
+            "ALTER TABLE position_events UPDATE batch_time = batch_time - INTERVAL 60 DAY WHERE position_id = 2 SETTINGS mutations_sync = 2");
         ApplyRetention(request.ConnectionString);
 
         AssertState(request.ConnectionString, ["7/1: 1"]);
@@ -372,14 +372,14 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
     public void Retention_Should_bring_a_closed_position_back_when_its_Delete_row_arrives_already_expired()
     {
         // arrange
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        var request = CreateRequest($"positions_refresh_seconds={NoScheduledRefresh}");
         AssertSuccessful(CreateRunner().Run(request));
 
         Insert(request.ConnectionString, Snapshot(1, Sender, 1, 2));
 
         // act, a Delete stamped 60 days back, past the default 30
         Insert(request.ConnectionString, Delete(5, 2) with { BatchTime = DaysAgo(60) });
-        Execute(request.ConnectionString, "OPTIMIZE TABLE positions FINAL");
+        Execute(request.ConnectionString, "OPTIMIZE TABLE position_events FINAL");
         Refresh(request.ConnectionString);
 
         // assert
@@ -402,24 +402,24 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         Insert(exporter, Snapshot(1, Sender, 1));
 
         // assert
-        Assert.Equal(3, Count(request.ConnectionString, "positions"));
+        Assert.Equal(3, Count(request.ConnectionString, "position_events"));
 
+        AssertDenied(exporter, "SELECT count() FROM position_events");
+        AssertDenied(exporter, "SELECT count() FROM position_events FINAL");
         AssertDenied(exporter, "SELECT count() FROM positions");
-        AssertDenied(exporter, "SELECT count() FROM positions FINAL");
-        AssertDenied(exporter, "SELECT count() FROM positions_state");
-        AssertDenied(exporter, "SELECT count() FROM positions_state_live");
-        AssertDenied(exporter, "ALTER TABLE positions DELETE WHERE 1 = 1");
-        AssertDenied(exporter, "DELETE FROM positions WHERE 1 = 1");
-        AssertDenied(exporter, "TRUNCATE TABLE positions");
-        AssertDenied(exporter, "OPTIMIZE TABLE positions FINAL");
-        AssertDenied(exporter, "ALTER TABLE positions MODIFY TTL toDateTime(batch_time) + INTERVAL 1 DAY");
-        AssertDenied(exporter, "SYSTEM REFRESH VIEW positions_state");
-        AssertDenied(exporter, "ALTER TABLE positions_state MODIFY REFRESH EVERY 1 SECOND");
-        AssertDenied(exporter, "DROP TABLE positions_state");
-        AssertDenied(exporter, "DROP VIEW positions_state_live");
+        AssertDenied(exporter, "SELECT count() FROM positions_live");
+        AssertDenied(exporter, "ALTER TABLE position_events DELETE WHERE 1 = 1");
+        AssertDenied(exporter, "DELETE FROM position_events WHERE 1 = 1");
+        AssertDenied(exporter, "TRUNCATE TABLE position_events");
+        AssertDenied(exporter, "OPTIMIZE TABLE position_events FINAL");
+        AssertDenied(exporter, "ALTER TABLE position_events MODIFY TTL toDateTime(batch_time) + INTERVAL 1 DAY");
+        AssertDenied(exporter, "SYSTEM REFRESH VIEW positions");
+        AssertDenied(exporter, "ALTER TABLE positions MODIFY REFRESH EVERY 1 SECOND");
         AssertDenied(exporter, "DROP TABLE positions");
+        AssertDenied(exporter, "DROP VIEW positions_live");
+        AssertDenied(exporter, "DROP TABLE position_events");
 
-        Assert.Equal(3, Count(request.ConnectionString, "positions"));
+        Assert.Equal(3, Count(request.ConnectionString, "position_events"));
     }
 
     [Fact(DisplayName = "Grants Should let the reader read positions and their state and do nothing else to them")]
@@ -434,21 +434,21 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         var reader = ReaderConnectionString(request);
 
         // act, assert
-        Assert.Equal(3, Count(reader, "positions"));
-        Assert.Equal(3, Count(reader, "positions FINAL"));
+        Assert.Equal(3, Count(reader, "position_events"));
+        Assert.Equal(3, Count(reader, "position_events FINAL"));
         Assert.Equal(["7/1: 1"], State(reader));
-        Assert.Equal(["7/1: 1"], State(reader, "positions_state_live"));
+        Assert.Equal(["7/1: 1"], State(reader, "positions_live"));
 
         AssertDenied(reader, InsertSql(Upsert(4, 2)));
-        AssertDenied(reader, "ALTER TABLE positions DELETE WHERE 1 = 1");
-        AssertDenied(reader, "TRUNCATE TABLE positions");
-        AssertDenied(reader, "OPTIMIZE TABLE positions FINAL");
-        AssertDenied(reader, "SYSTEM REFRESH VIEW positions_state");
-        AssertDenied(reader, "DROP TABLE positions_state");
-        AssertDenied(reader, "DROP VIEW positions_state_live");
+        AssertDenied(reader, "ALTER TABLE position_events DELETE WHERE 1 = 1");
+        AssertDenied(reader, "TRUNCATE TABLE position_events");
+        AssertDenied(reader, "OPTIMIZE TABLE position_events FINAL");
+        AssertDenied(reader, "SYSTEM REFRESH VIEW positions");
         AssertDenied(reader, "DROP TABLE positions");
+        AssertDenied(reader, "DROP VIEW positions_live");
+        AssertDenied(reader, "DROP TABLE position_events");
 
-        Assert.Equal(3, Count(request.ConnectionString, "positions"));
+        Assert.Equal(3, Count(request.ConnectionString, "position_events"));
     }
 
     /// <summary>
@@ -483,12 +483,12 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         // act, assert
         Insert(ExporterConnectionString(first), Upsert(1, 1));
 
-        AssertDenied(ExporterConnectionString(first), InsertInto($"{second.DatabaseName}.positions", Upsert(1, 1)));
+        AssertDenied(ExporterConnectionString(first), InsertInto($"{second.DatabaseName}.position_events", Upsert(1, 1)));
+        AssertDenied(ReaderConnectionString(first), $"SELECT count() FROM {second.DatabaseName}.position_events");
         AssertDenied(ReaderConnectionString(first), $"SELECT count() FROM {second.DatabaseName}.positions");
-        AssertDenied(ReaderConnectionString(first), $"SELECT count() FROM {second.DatabaseName}.positions_state");
-        AssertDenied(ReaderConnectionString(first), $"SELECT count() FROM {second.DatabaseName}.positions_state_live");
+        AssertDenied(ReaderConnectionString(first), $"SELECT count() FROM {second.DatabaseName}.positions_live");
 
-        Assert.Equal(1, Count(first.ConnectionString, "positions"));
-        Assert.Equal(0, Count(second.ConnectionString, "positions"));
+        Assert.Equal(1, Count(first.ConnectionString, "position_events"));
+        Assert.Equal(0, Count(second.ConnectionString, "position_events"));
     }
 }

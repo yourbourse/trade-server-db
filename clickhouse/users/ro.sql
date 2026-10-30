@@ -23,24 +23,24 @@ ON ##database_name##.##ticks_table## TO role_##database_name##_ro;
 
 ----break----
 
--- positions, the change stream
+-- position_events, the change stream
 GRANT ##cluster_name_suffix##
 SELECT
-ON ##database_name##.##positions_table## TO role_##database_name##_ro;
+ON ##database_name##.##position_events_table## TO role_##database_name##_ro;
 
 ----break----
 
--- positions_state, the current state as of the last refresh
+-- positions, the current state as of the last refresh
 GRANT ##cluster_name_suffix##
 SELECT
-ON ##database_name##.##positions_state_view## TO role_##database_name##_ro;
+ON ##database_name##.##positions_view## TO role_##database_name##_ro;
 
 ----break----
 
--- positions_state_live, the current state computed on every read; it runs as the reader, who reads positions above
+-- positions_live, the current state computed on every read; it runs as the reader, who reads positions above
 GRANT ##cluster_name_suffix##
 SELECT
-ON ##database_name##.##positions_state_live_view## TO role_##database_name##_ro;
+ON ##database_name##.##positions_live_view## TO role_##database_name##_ro;
 
 ----break----
 

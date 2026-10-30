@@ -242,7 +242,7 @@ Now the same against ClickHouse:
 
 > **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ticks and
 > positions are the entities the trade server exports to ClickHouse, so the run creates the `ticks` and
-> `positions` tables, the `positions_state_live` and `positions_state` views over positions, the journal, the users and their grants, and none
+> `position_events` tables, the `positions_live` and `positions` views over positions, the journal, the users and their grants, and none
 > of the PostgreSQL tables or views. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
@@ -260,8 +260,8 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
 ```sql
--- ClickHouse: expects positions, positions_state, positions_state_live, schema_versions and ticks;
--- the filter hides the internal target table of positions_state
+-- ClickHouse: expects positions, positions, positions_live, schema_versions and ticks;
+-- the filter hides the internal target table of positions
 SELECT name FROM system.tables WHERE database = 'trade_demo' AND NOT startsWith(name, '.') ORDER BY name;
 ```
 

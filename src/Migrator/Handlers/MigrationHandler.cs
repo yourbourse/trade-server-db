@@ -59,12 +59,12 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultGroupsResyncView = "groups_resync";
     private const string DefaultTicksTable = "ticks";
     private const string DefaultTicksTtlDays = "31";
-    private const string DefaultPositionsTable = "positions";
-    private const string DefaultPositionsStateView = "positions_state";
-    private const string DefaultPositionsStateLiveView = "positions_state_live";
-    private const string DefaultPositionsStateRefreshSeconds = "30";
-    private const string DefaultPositionsDeleteTtlDays = "30";
-    private const string DefaultPositionsMinAgeToForceMergeSeconds = "600";
+    private const string DefaultPositionEventsTable = "position_events";
+    private const string DefaultPositionsView = "positions";
+    private const string DefaultPositionsLiveView = "positions_live";
+    private const string DefaultPositionsRefreshSeconds = "30";
+    private const string DefaultPositionEventsDeleteTtlDays = "30";
+    private const string DefaultPositionEventsMinAgeToForceMergeSeconds = "600";
     private const string DefaultTradesHistoryView = "trades_history";
     private const string DefaultCashTransfersView = "cash_transfers";
 
@@ -89,7 +89,7 @@ public class MigrationHandler : IMigrationHandler
         "group_events_table",
         "cursor_table",
         "ticks_table",
-        "positions_table"
+        "position_events_table"
     ];
 
     /// <summary>
@@ -108,8 +108,8 @@ public class MigrationHandler : IMigrationHandler
         "clients_resync_view",
         "symbols_resync_view",
         "groups_resync_view",
-        "positions_state_view",
-        "positions_state_live_view"
+        "positions_view",
+        "positions_live_view"
     ];
 
     /// <summary>
@@ -144,9 +144,9 @@ public class MigrationHandler : IMigrationHandler
     private static readonly string[] numberVariables =
     [
         "ticks_ttl_days",
-        "positions_state_refresh_seconds",
-        "positions_delete_ttl_days",
-        "positions_min_age_to_force_merge_seconds"
+        "positions_refresh_seconds",
+        "position_events_delete_ttl_days",
+        "position_events_min_age_to_force_merge_seconds"
     ];
 
     /// <summary>
@@ -181,7 +181,7 @@ public class MigrationHandler : IMigrationHandler
         ["groups_table"] = (12, "trg_project_"),
         ["cursor_table"] = (0, ""),
         ["ticks_table"] = (0, ""),
-        ["positions_table"] = (0, "")
+        ["position_events_table"] = (0, "")
     };
 
     /// <summary>
@@ -345,9 +345,9 @@ public class MigrationHandler : IMigrationHandler
             ["groups_table"] = DefaultGroupsTable,
             ["groups_resync_view"] = DefaultGroupsResyncView,
             ["ticks_table"] = DefaultTicksTable,
-            ["positions_table"] = DefaultPositionsTable,
-            ["positions_state_view"] = DefaultPositionsStateView,
-            ["positions_state_live_view"] = DefaultPositionsStateLiveView,
+            ["position_events_table"] = DefaultPositionEventsTable,
+            ["positions_view"] = DefaultPositionsView,
+            ["positions_live_view"] = DefaultPositionsLiveView,
             ["trades_history_view"] = DefaultTradesHistoryView,
             ["cash_transfers_view"] = DefaultCashTransfersView
         };
@@ -365,9 +365,9 @@ public class MigrationHandler : IMigrationHandler
             variables["replacing_merge_tree_engine"] = clustered ? "ReplicatedReplacingMergeTree" : "ReplacingMergeTree";
 
             variables["ticks_ttl_days"] = DefaultTicksTtlDays;
-            variables["positions_state_refresh_seconds"] = DefaultPositionsStateRefreshSeconds;
-            variables["positions_delete_ttl_days"] = DefaultPositionsDeleteTtlDays;
-            variables["positions_min_age_to_force_merge_seconds"] = DefaultPositionsMinAgeToForceMergeSeconds;
+            variables["positions_refresh_seconds"] = DefaultPositionsRefreshSeconds;
+            variables["position_events_delete_ttl_days"] = DefaultPositionEventsDeleteTtlDays;
+            variables["position_events_min_age_to_force_merge_seconds"] = DefaultPositionEventsMinAgeToForceMergeSeconds;
         }
 
         // command line variables are applied last so they can override any of the derived values
@@ -417,7 +417,7 @@ public class MigrationHandler : IMigrationHandler
     }
 
     /// <summary>
-    /// Refuses a Delete retention that is not far above the forced merge age of the positions table.
+    /// Refuses a Delete retention that is not far above the forced merge age of the position_events table.
     /// </summary>
     /// <remarks>
     /// A Delete row may only expire once the forced merges have collapsed it with the earlier versions of its
@@ -427,8 +427,8 @@ public class MigrationHandler : IMigrationHandler
     /// </remarks>
     private static void ValidateDeleteTtlAgainstForceMerge(IReadOnlyDictionary<string, string> variables)
     {
-        if (!variables.TryGetValue("positions_delete_ttl_days", out var days) ||
-            !variables.TryGetValue("positions_min_age_to_force_merge_seconds", out var seconds))
+        if (!variables.TryGetValue("position_events_delete_ttl_days", out var days) ||
+            !variables.TryGetValue("position_events_min_age_to_force_merge_seconds", out var seconds))
         {
             return;
         }
@@ -439,8 +439,8 @@ public class MigrationHandler : IMigrationHandler
         if (ttlSeconds < forceMergeSeconds * MinDeleteTtlToForceMergeRatio)
         {
             throw new SchemaMigrationException(
-                $"##positions_delete_ttl_days## {days} ({ttlSeconds} seconds) must be at least " +
-                $"{MinDeleteTtlToForceMergeRatio} times ##positions_min_age_to_force_merge_seconds## {seconds}. " +
+                $"##position_events_delete_ttl_days## {days} ({ttlSeconds} seconds) must be at least " +
+                $"{MinDeleteTtlToForceMergeRatio} times ##position_events_min_age_to_force_merge_seconds## {seconds}. " +
                 "A Delete row may only expire long after the forced merges have collapsed it with its position, " +
                 "otherwise the closed position comes back. Raise the retention or lower the merge age.");
         }

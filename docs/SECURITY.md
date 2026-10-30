@@ -70,7 +70,7 @@ the intersection of what both engines accept as an unquoted identifier, capped a
 | `##position_snapshots_table##` | default or `--variables` |
 | `##cursor_table##` | default or `--variables` |
 | `##ticks_table##` | default or `--variables` |
-| `##positions_table##` | default or `--variables` |
+| `##position_events_table##` | default or `--variables` |
 | `##cluster_name##` | `--cluster` (empty passes) |
 | `##user_name##` | each `--users` entry |
 

@@ -39,8 +39,8 @@ disagree, the page says so.
 > **Important:** **The engines are not mirrors of each other.** The *Export Setup* guide sends the trades, the daily
 > statements and their snapshots, the event logs and the cursor to PostgreSQL only, and the ticks and positions to
 > ClickHouse only; a pipeline that pairs an entity with the other engine is rejected by the trade server. So `psql/`
-> creates the PostgreSQL tables, their projections and views, `clickhouse/` creates the ticks and positions tables
-> and the two views over positions, and both create the journal.
+> creates the PostgreSQL tables, their projections and views, `clickhouse/` creates the ticks and position_events tables
+> and the two views over position_events, and both create the journal.
 
 ---
 
@@ -110,20 +110,20 @@ touches them, so that a database already owning an object under one of the names
 | Entity | Page | Pipeline `entity` | Default name | Variable | One row per |
 |--------|------|-------------------|--------------|----------|-------------|
 | Ticks | [ticks](ClickHouse/ticks.md) | `tick` | `ticks` | `ticks_table` | Change of a symbol's best bid or best ask |
-| Positions | [positions](ClickHouse/positions.md) | `position` | `positions` | `positions_table` | Change of an open position, or a snapshot marker |
+| Positions | [position_events](ClickHouse/position_events.md) | `position` | `position_events` | `position_events_table` | Change of an open position, or a snapshot marker |
 | Journal | [schema_versions](ClickHouse/schema_versions.md) | — | `schema_versions` | `--journal-table` | Applied script |
 
 | View | Documented on | Over | Answers |
 |------|---------------|------|---------|
-| `positions_state_live` | [positions_state_live](ClickHouse/positions_state_live.md) | `positions` | The open positions of every sender, one row each, computed on every read — a plain view |
-| `positions_state` | [positions_state](ClickHouse/positions_state.md) | `positions_state_live` | The same rows, stored — a refreshable materialized view, recomputed every 30 seconds by default |
+| `positions_live` | [positions_live](ClickHouse/positions_live.md) | `position_events` | The open positions of every sender, one row each, computed on every read — a plain view |
+| `positions` | [positions](ClickHouse/positions.md) | `positions_live` | The same rows, stored — a refreshable materialized view, recomputed every 30 seconds by default |
 
 ClickHouse holds nothing else: no cursor table — a ClickHouse pipeline keeps its export position on disk — and no
 event logs with triggers. The current state of the positions is not maintained by a trigger, which ClickHouse does
-not have, but computed from the change stream by `positions_state_live` on every read, and stored by
-`positions_state` on a schedule; `positions_state` needs ClickHouse 24.10 or later. A reader of
-`positions_state_live` needs `SELECT` on `positions` too, because the view runs as its invoker. The view names are
-templated, `##positions_state_live_view##` and `##positions_state_view##`.
+not have, but computed from the change stream by `positions_live` on every read, and stored by
+`positions` on a schedule; `positions` needs ClickHouse 24.10 or later. A reader of
+`positions_live` needs `SELECT` on `position_events` too, because the view runs as its invoker. The view names are
+templated, `##positions_live_view##` and `##positions_view##`.
 
 ---
 
@@ -291,7 +291,7 @@ enforces it in its own way:
 | [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | PostgreSQL | `(sender_id, time_statement, position_id)` |
 | The event logs | PostgreSQL | **none** — see below |
 | [ticks](ClickHouse/ticks.md) | ClickHouse | `(sender_id, short_symbol_name, created_time, sequence)` |
-| [positions](ClickHouse/positions.md) | ClickHouse | `(sender_id, position_id, marker_sequence)`, keeping the highest `sequence` |
+| [position_events](ClickHouse/position_events.md) | ClickHouse | `(sender_id, position_id, marker_sequence)`, keeping the highest `sequence` |
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
@@ -377,7 +377,7 @@ the guide's by hand after migrating: the migrator's names are the ones these pag
 If the trade server's export configuration uses non-default table names, every run must pass the same
 `--variables trades_table=… daily_statements_table=… order_snapshots_table=… position_snapshots_table=…
 trading_account_events_table=… client_events_table=… symbol_events_table=… group_events_table=… cursor_table=…` on
-PostgreSQL, or `--variables ticks_table=… positions_table=… positions_state_live_view=… positions_state_view=…` on
+PostgreSQL, or `--variables ticks_table=… position_events_table=… positions_live_view=… positions_view=…` on
 ClickHouse. Nothing records the names on the database side, so a run without them falls back to the default names.
 It does not create a second set of tables — the create scripts are journalled by file name and never run again.
 Instead the first re-runnable script that names a default table fails, and the run with it:
@@ -385,8 +385,8 @@ Instead the first re-runnable script that names a default table fails, and the r
 | Engine | Fails in | Left behind |
 |--------|----------|-------------|
 | PostgreSQL | the first view or users script that names a default table — `views/cash_transfers.sql` for a forgotten `trades_table`, with `relation "trades" does not exist` | nothing: the failing script rolls back in its own transaction, and the run stops there |
-| ClickHouse | the first re-runnable script that names a default table, `UNKNOWN_TABLE` — `views/positions_state_live.sql` for a forgotten `positions_table`, `post/ticks_ttl.sql` for `ticks_table` | for `ticks_table`, grants on a `ticks` table that does not exist, `INSERT` for the exporter role and `SELECT` for the read-only one, because the users phase runs before `post/`; for `positions_table`, nothing, because the views phase runs before the users phase |
-| ClickHouse, a view name | nothing fails: `views/positions_state_live.sql` and `post/positions_state.sql` re-run under the default names and create a second `positions_state_live` or `positions_state` beside the renamed one | the extra view, and the `ro` grants on it |
+| ClickHouse | the first re-runnable script that names a default table, `UNKNOWN_TABLE` — `views/positions_live.sql` for a forgotten `position_events_table`, `post/ticks_ttl.sql` for `ticks_table` | for `ticks_table`, grants on a `ticks` table that does not exist, `INSERT` for the exporter role and `SELECT` for the read-only one, because the users phase runs before `post/`; for `position_events_table`, nothing, because the views phase runs before the users phase |
+| ClickHouse, a view name | nothing fails: `views/positions_live.sql` and `post/positions.sql` re-run under the default names and create a second `positions_live` or `positions` beside the renamed one | the extra view, and the `ro` grants on it |
 
 Run again with the variables to recover. On ClickHouse that run does not take the stray grants back, so revoke them
 by hand:

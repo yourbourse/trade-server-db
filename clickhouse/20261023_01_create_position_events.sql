@@ -2,8 +2,8 @@
 
 -- Positions exported by the trade server: a change stream with one row per change of an open position, plus the
 -- markers that bracket each full snapshot. The current state is read from the views over this table:
--- positions_state_live, computed on every read (views/positions_state_live.sql), and positions_state, the same
--- rows refreshed on a schedule (post/positions_state.sql).
+-- positions_live, computed on every read (views/positions_live.sql), and positions, the same
+-- rows refreshed on a schedule (post/positions.sql).
 --
 -- Event types:
 --   Upsert        - the position as it now stands
@@ -23,7 +23,7 @@
 --
 -- Partitioning by sender_id keeps the senders apart, so FINAL can work one partition at a time.
 --
--- Merges and retention are not part of the definition: post/positions_ttl.sql sets min_age_to_force_merge_seconds,
+-- Merges and retention are not part of the definition: post/position_events_ttl.sql sets min_age_to_force_merge_seconds,
 -- which force-merges the parts of a partition whether or not new rows arrive, and then the TTL that removes Delete
 -- rows and relies on those merges. The post phase always runs after this script, and the script there re-runs
 -- whenever either value changes.
@@ -31,7 +31,7 @@
 -- The name is qualified with the database because ON CLUSTER carries the statement to nodes whose default
 -- database is not this one.
 
-CREATE TABLE IF NOT EXISTS ##database_name##.##positions_table## ##cluster_name_suffix##
+CREATE TABLE IF NOT EXISTS ##database_name##.##position_events_table## ##cluster_name_suffix##
 (
     -- Service columns
     sender_id                       UInt64                                                                       NOT NULL,

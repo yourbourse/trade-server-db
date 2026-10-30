@@ -239,7 +239,7 @@ public class MigrationHandlerTests
     /// this list, the integration fixture, and the documentation - has to gain the name at the same time. An
     /// exact assertion is what makes adding one here fail loudly instead of somewhere further away.
     ///
-    /// <c>ticks_table</c> and the positions table and views are listed even though only the
+    /// <c>ticks_table</c> and the position_events table and views are listed even though only the
     /// ClickHouse scripts use them: they are defined for both providers so a script does not have to care which
     /// engine it runs on.
     /// </remarks>
@@ -265,9 +265,9 @@ public class MigrationHandlerTests
         "groups_table",
         "groups_resync_view",
         "ticks_table",
-        "positions_table",
-        "positions_state_view",
-        "positions_state_live_view",
+        "position_events_table",
+        "positions_view",
+        "positions_live_view",
         "trades_history_view",
         "cash_transfers_view"
     ];
@@ -536,11 +536,11 @@ public class MigrationHandlerTests
             "trades_table", "daily_statements_table", "order_snapshots_table", "position_snapshots_table",
             "trading_account_events_table", "trading_accounts_table", "client_events_table", "clients_table",
             "symbol_events_table", "symbols_table", "group_events_table", "groups_table",
-            "cursor_table", "ticks_table", "positions_table"
+            "cursor_table", "ticks_table", "position_events_table"
         ];
 
         // act, assert, a name one character too long for its prefix must be refused for every one that has a
-        // derived name; cursor_table, ticks_table and positions_table have none, so they take the full 63
+        // derived name; cursor_table, ticks_table and position_events_table have none, so they take the full 63
         foreach (var variable in prefixed)
         {
             var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', 63)}"] };
@@ -548,7 +548,7 @@ public class MigrationHandlerTests
             var exception = Record.Exception(
                 () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
 
-            if (variable is "cursor_table" or "ticks_table" or "positions_table")
+            if (variable is "cursor_table" or "ticks_table" or "position_events_table")
             {
                 Assert.Null(exception);
             }
@@ -561,12 +561,12 @@ public class MigrationHandlerTests
     }
 
     [Theory(DisplayName = "BuildVariables Should default the positions objects and settings to their documented values")]
-    [InlineData("positions_table", "positions")]
-    [InlineData("positions_state_view", "positions_state")]
-    [InlineData("positions_state_live_view", "positions_state_live")]
-    [InlineData("positions_state_refresh_seconds", "30")]
-    [InlineData("positions_delete_ttl_days", "30")]
-    [InlineData("positions_min_age_to_force_merge_seconds", "600")]
+    [InlineData("position_events_table", "position_events")]
+    [InlineData("positions_view", "positions")]
+    [InlineData("positions_live_view", "positions_live")]
+    [InlineData("positions_refresh_seconds", "30")]
+    [InlineData("position_events_delete_ttl_days", "30")]
+    [InlineData("position_events_min_age_to_force_merge_seconds", "600")]
     public void BuildVariables_Should_default_the_positions_objects_and_settings_to_their_documented_values(string variable, string expected)
     {
         // act
@@ -586,15 +586,15 @@ public class MigrationHandlerTests
         var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
 
         // assert
-        Assert.DoesNotContain("positions_state_refresh_seconds", variables.Keys);
-        Assert.DoesNotContain("positions_delete_ttl_days", variables.Keys);
-        Assert.DoesNotContain("positions_min_age_to_force_merge_seconds", variables.Keys);
+        Assert.DoesNotContain("positions_refresh_seconds", variables.Keys);
+        Assert.DoesNotContain("position_events_delete_ttl_days", variables.Keys);
+        Assert.DoesNotContain("position_events_min_age_to_force_merge_seconds", variables.Keys);
     }
 
     [Theory(DisplayName = "BuildVariables Should let --variables change a positions setting")]
-    [InlineData("positions_state_refresh_seconds")]
-    [InlineData("positions_delete_ttl_days")]
-    [InlineData("positions_min_age_to_force_merge_seconds")]
+    [InlineData("positions_refresh_seconds")]
+    [InlineData("position_events_delete_ttl_days")]
+    [InlineData("position_events_min_age_to_force_merge_seconds")]
     public void BuildVariables_Should_let_variables_change_a_positions_setting(string variable)
     {
         // arrange
@@ -611,12 +611,12 @@ public class MigrationHandlerTests
     /// Both are written into DDL as text, so anything but a positive whole number is refused before a script runs.
     /// </summary>
     [Theory(DisplayName = "BuildVariables Should refuse a positions setting that is not a positive whole number")]
-    [InlineData("positions_state_refresh_seconds", "0")]
-    [InlineData("positions_state_refresh_seconds", "30 SECOND; DROP TABLE positions")]
-    [InlineData("positions_delete_ttl_days", "-1")]
-    [InlineData("positions_delete_ttl_days", "1.5")]
-    [InlineData("positions_min_age_to_force_merge_seconds", "0")]
-    [InlineData("positions_min_age_to_force_merge_seconds", "600; DROP TABLE positions")]
+    [InlineData("positions_refresh_seconds", "0")]
+    [InlineData("positions_refresh_seconds", "30 SECOND; DROP TABLE position_events")]
+    [InlineData("position_events_delete_ttl_days", "-1")]
+    [InlineData("position_events_delete_ttl_days", "1.5")]
+    [InlineData("position_events_min_age_to_force_merge_seconds", "0")]
+    [InlineData("position_events_min_age_to_force_merge_seconds", "600; DROP TABLE position_events")]
     public void BuildVariables_Should_refuse_a_positions_setting_that_is_not_a_positive_whole_number(string variable, string value)
     {
         // arrange
@@ -645,7 +645,7 @@ public class MigrationHandlerTests
         // arrange
         var options = new CommandLineOptions
         {
-            Variables = [$"positions_delete_ttl_days={days}", $"positions_min_age_to_force_merge_seconds={seconds}"]
+            Variables = [$"position_events_delete_ttl_days={days}", $"position_events_min_age_to_force_merge_seconds={seconds}"]
         };
 
         // act
@@ -659,8 +659,8 @@ public class MigrationHandlerTests
         else
         {
             var migrationException = Assert.IsType<SchemaMigrationException>(exception);
-            Assert.Contains("##positions_delete_ttl_days##", migrationException.Message);
-            Assert.Contains("##positions_min_age_to_force_merge_seconds##", migrationException.Message);
+            Assert.Contains("##position_events_delete_ttl_days##", migrationException.Message);
+            Assert.Contains("##position_events_min_age_to_force_merge_seconds##", migrationException.Message);
         }
     }
 
@@ -671,7 +671,7 @@ public class MigrationHandlerTests
     public void BuildVariables_Should_check_a_new_forced_merge_age_against_the_default_Delete_retention()
     {
         // arrange
-        var options = new CommandLineOptions { Variables = ["positions_min_age_to_force_merge_seconds=259201"] };
+        var options = new CommandLineOptions { Variables = ["position_events_min_age_to_force_merge_seconds=259201"] };
 
         // act
         var exception = Assert.Throws<SchemaMigrationException>(
