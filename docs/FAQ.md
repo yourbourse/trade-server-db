@@ -15,8 +15,8 @@
 ### What is this repository?
 
 The schema for the databases the **trade server** exports trading data into, plus the tool that applies it. The
-trade server writes trades, daily statements and an export cursor to PostgreSQL and ticks to ClickHouse; this
-repository owns the other half — creating and evolving the tables, indexes and users that the export needs.
+trade server writes trades, daily statements and an export cursor to PostgreSQL and ticks and positions to
+ClickHouse; this repository owns the other half — creating and evolving the tables, indexes and users that the export needs.
 
 ### Why plain SQL rather than a code-first migration tool?
 
@@ -39,7 +39,7 @@ re-runnable scripts re-run only when their content changes. A second run reports
 ### Which engine should I use?
 
 Both, if you export both kinds of entity. The trade server sends trades, daily statements, their snapshots and
-the export cursor to PostgreSQL and ticks to ClickHouse, and rejects a pipeline that pairs an entity with the
+the export cursor to PostgreSQL and ticks and positions to ClickHouse, and rejects a pipeline that pairs an entity with the
 other engine. Run the migrator once per engine you export to; each run creates that engine's tables.
 
 ---
@@ -106,23 +106,24 @@ anything. The migrator logs a warning and reports everything as pending rather t
 
 Nine on PostgreSQL that the trade server writes to — `trades`, `daily_statements_export`,
 `daily_statements_order_snapshots`, `daily_statements_position_snapshots`, `trading_account_events`,
-`client_events`, `symbol_events`, `group_events` and `export_cursor` — one on ClickHouse — `ticks` — plus the four
-tables the migrator creates and a trigger maintains from an event log, `trading_accounts`, `clients`, `symbols`
-and `groups`, and its own `schema_versions` journal on each engine. Each exported table matches one export
+`client_events`, `symbol_events`, `group_events` and `export_cursor` — two on ClickHouse — `ticks` and
+`position_events` — plus the four tables the migrator creates and a trigger maintains from an event log,
+`trading_accounts`, `clients`, `symbols` and `groups`, the `positions_live` and `positions` views over
+`position_events`, and its own `schema_versions` journal on each engine. Each exported table matches one export
 pipeline in the trade server's `export_config.json`, and the PostgreSQL pipelines share the one cursor table. Each
 table has its own page with its final SQL and its columns, indexed in [Schema Reference](SCHEMA_REFERENCE.md).
 
 ### Can I rename the exported tables?
 
 Yes — every one of them is configurable in the trade server's export configuration, and the scripts template all
-ten names. Pass the ones you renamed on every run:
+eleven names. Pass the ones you renamed on every run:
 
 ```bash
 --variables trades_table=trades_export cursor_table=trades_export_cursor daily_statements_table=statements_export
 ```
 
 ```bash
---variables ticks_table=market_ticks
+--variables ticks_table=market_ticks position_events_table=open_positions
 ```
 
 Nothing records the names on the database side, so a run without them falls back to the default names. It does
@@ -138,8 +139,11 @@ keys — join on `(sender_id, time_statement, trading_account_id)`.
 
 ### Does the migrator create the ClickHouse tables?
 
-**Yes** — the one there is. ClickHouse receives ticks and nothing else, so `clickhouse/20260922_01_create_ticks.sql`
-creates the `ticks` table and the `users/` phase grants on it. The PostgreSQL tables have no ClickHouse
+**Yes** — both of them. ClickHouse receives ticks and positions and nothing else, so
+`clickhouse/20260922_01_create_ticks.sql` creates the `ticks` table, `clickhouse/20261023_01_create_position_events.sql`
+the `position_events` table, `clickhouse/views/positions_live.sql` the `positions_live` view over it,
+`clickhouse/post/positions.sql` the `positions` view over that, and the `users/` phase grants on all
+four. The PostgreSQL tables have no ClickHouse
 counterpart, because the trade server never writes those entities there.
 
 ### Why is there no cursor table on ClickHouse?
@@ -152,7 +156,8 @@ consequences.
 
 Each table has its own deduplication key — `(sender_id, trade_id)` on trades,
 `(sender_id, time_statement, trading_account_id)` on statements, the same pair plus `order_id` or `position_id` on
-the snapshots, and `(sender_id, short_symbol_name, created_time, sequence)` on ticks:
+the snapshots, `(sender_id, short_symbol_name, created_time, sequence)` on ticks, and
+`(sender_id, position_id, marker_sequence)` on position_events, where the row with the highest `sequence` wins:
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
@@ -275,7 +280,8 @@ Yes — one new `DbUp.<Engine>` project plus a handful of switch statements. The
 
 ### Which ClickHouse and PostgreSQL versions are supported?
 
-ClickHouse **24.x or newer** (the driver sends settings older servers reject). PostgreSQL **14+**. CI and the
+ClickHouse **24.x or newer** (the driver sends settings older servers reject), and **24.10 or newer** for the
+refreshable `positions` view, whose script fails on an older server. PostgreSQL **14+**. CI and the
 compose file run the newest stable releases of both — ClickHouse 26.7 and PostgreSQL 18.
 
 ### Why is the SQL at the repository root instead of under `src/`?

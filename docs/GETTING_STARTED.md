@@ -240,9 +240,10 @@ Now the same against ClickHouse:
 ./migrate.sh --provider clickhouse --connection-string "Host=localhost;Port=18223;Database=trade_demo;Username=default;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd"
 ```
 
-> **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ticks are the
-> one entity the trade server exports to ClickHouse, so the run creates the `ticks` table, the journal, the
-> users and their grants, and none of the PostgreSQL tables or views. See
+> **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ticks and
+> positions are the entities the trade server exports to ClickHouse, so the run creates the `ticks` and
+> `position_events` tables, the `positions_live` and `positions` views over positions, the journal, the users and their grants, and none
+> of the PostgreSQL tables or views. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
 ---
@@ -259,8 +260,9 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
 ```sql
--- ClickHouse: expects ticks and schema_versions
-SHOW TABLES FROM trade_demo;
+-- ClickHouse: expects positions, positions, positions_live, schema_versions and ticks;
+-- the filter hides the internal target table of positions
+SELECT name FROM system.tables WHERE database = 'trade_demo' AND NOT startsWith(name, '.') ORDER BY name;
 ```
 
 **The journal recorded the run.**

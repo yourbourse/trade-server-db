@@ -131,6 +131,14 @@ The ClickHouse [`ticks`](ClickHouse/ticks.md) table has its suites in `Execution
 | `TicksMigrationIntegrationTests.cs` | The table as `SHOW CREATE TABLE` prints it, re-runs, renaming, adopting a hand-made table, retention and grants |
 | `TicksDataIntegrationTests.cs` | What ClickHouse 26.7 does with ticks under that DDL: deduplication, partitioning, index use and value limits |
 
+The [`position_events`](ClickHouse/position_events.md) table and its [`positions_live`](ClickHouse/positions_live.md)
+and [`positions`](ClickHouse/positions.md) views have theirs in `Execution/Positions/`, on the helpers in `PositionsTestBase.cs`:
+
+| Test file | Covers |
+|-----------|--------|
+| `PositionsMigrationIntegrationTests.cs` | The table and both views as ClickHouse prints them, re-runs, the live view replaced on a forced re-run with `positions` following it, renaming, retention, the refresh period and grants |
+| `PositionsDataIntegrationTests.cs` | What ClickHouse 26.7 does with positions under that DDL: versioning, the snapshot markers, and what the views show through each step of the snapshot protocol — every state asserted on both, `positions` refreshed first by `AssertState`, and a change visible in the live view at once and in `positions` after the next refresh |
+
 Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
 overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`. That file is loaded whatever
 `ASPNETCORE_ENVIRONMENT` says, so a run from an IDE needs no setup.
@@ -143,6 +151,10 @@ overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`
 trade-server-db/
 ├── clickhouse/                         ClickHouse scripts
 │   ├── 20260922_01_create_ticks.sql        incremental (folder root)
+│   ├── 20261023_01_create_position_events.sql    incremental
+│   ├── views/positions_live.sql      re-runnable, the state of the positions computed on every read
+│   ├── post/positions.sql            the refreshable view over it, re-runs when positions_refresh_seconds changes
+│   ├── post/position_events_ttl.sql              the forced merge age and the Delete rows' retention, re-runs when either changes
 │   ├── post/run_on_every_build.sql         re-runnable
 │   ├── post/ticks_ttl.sql                  the ticks retention, re-runs when ticks_ttl_days changes
 │   ├── users/exporter.sql                  re-runnable, one pass per --users entry

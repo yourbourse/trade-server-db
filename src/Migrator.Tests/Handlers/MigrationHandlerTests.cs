@@ -239,8 +239,9 @@ public class MigrationHandlerTests
     /// this list, the integration fixture, and the documentation - has to gain the name at the same time. An
     /// exact assertion is what makes adding one here fail loudly instead of somewhere further away.
     ///
-    /// <c>ticks_table</c> is listed even though only the ClickHouse scripts use it: it is defined for both
-    /// providers so a script does not have to care which engine it runs on.
+    /// <c>ticks_table</c> and the position_events table and views are listed even though only the
+    /// ClickHouse scripts use them: they are defined for both providers so a script does not have to care which
+    /// engine it runs on.
     /// </remarks>
     private static readonly string[] postgresVariables =
     [
@@ -264,6 +265,9 @@ public class MigrationHandlerTests
         "groups_table",
         "groups_resync_view",
         "ticks_table",
+        "position_events_table",
+        "positions_view",
+        "positions_live_view",
         "trades_history_view",
         "cash_transfers_view"
     ];
@@ -532,11 +536,11 @@ public class MigrationHandlerTests
             "trades_table", "daily_statements_table", "order_snapshots_table", "position_snapshots_table",
             "trading_account_events_table", "trading_accounts_table", "client_events_table", "clients_table",
             "symbol_events_table", "symbols_table", "group_events_table", "groups_table",
-            "cursor_table", "ticks_table"
+            "cursor_table", "ticks_table", "position_events_table"
         ];
 
         // act, assert, a name one character too long for its prefix must be refused for every one that has a
-        // derived name; cursor_table and ticks_table have none, so they take the full 63
+        // derived name; cursor_table, ticks_table and position_events_table have none, so they take the full 63
         foreach (var variable in prefixed)
         {
             var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', 63)}"] };
@@ -544,7 +548,7 @@ public class MigrationHandlerTests
             var exception = Record.Exception(
                 () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
 
-            if (variable is "cursor_table" or "ticks_table")
+            if (variable is "cursor_table" or "ticks_table" or "position_events_table")
             {
                 Assert.Null(exception);
             }
@@ -554,5 +558,126 @@ public class MigrationHandlerTests
                 Assert.Contains("leaves no room", exception.Message);
             }
         }
+    }
+
+    [Theory(DisplayName = "BuildVariables Should default the positions objects and settings to their documented values")]
+    [InlineData("position_events_table", "position_events")]
+    [InlineData("positions_view", "positions")]
+    [InlineData("positions_live_view", "positions_live")]
+    [InlineData("positions_refresh_seconds", "30")]
+    [InlineData("position_events_delete_ttl_days", "30")]
+    [InlineData("position_events_min_age_to_force_merge_seconds", "600")]
+    public void BuildVariables_Should_default_the_positions_objects_and_settings_to_their_documented_values(string variable, string expected)
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.ClickHouse, "trading", null, new());
+
+        // assert
+        Assert.Equal(expected, variables[variable]);
+    }
+
+    /// <summary>
+    /// The refresh period and the retention are ClickHouse settings; no PostgreSQL script could use them.
+    /// </summary>
+    [Fact(DisplayName = "BuildVariables Should define the positions settings for ClickHouse only")]
+    public void BuildVariables_Should_define_the_positions_settings_for_ClickHouse_only()
+    {
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, new());
+
+        // assert
+        Assert.DoesNotContain("positions_refresh_seconds", variables.Keys);
+        Assert.DoesNotContain("position_events_delete_ttl_days", variables.Keys);
+        Assert.DoesNotContain("position_events_min_age_to_force_merge_seconds", variables.Keys);
+    }
+
+    [Theory(DisplayName = "BuildVariables Should let --variables change a positions setting")]
+    [InlineData("positions_refresh_seconds")]
+    [InlineData("position_events_delete_ttl_days")]
+    [InlineData("position_events_min_age_to_force_merge_seconds")]
+    public void BuildVariables_Should_let_variables_change_a_positions_setting(string variable)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}=5"] };
+
+        // act
+        var variables = MigrationHandler.BuildVariables(DatabaseProvider.ClickHouse, "trading", null, options);
+
+        // assert
+        Assert.Equal("5", variables[variable]);
+    }
+
+    /// <summary>
+    /// Both are written into DDL as text, so anything but a positive whole number is refused before a script runs.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should refuse a positions setting that is not a positive whole number")]
+    [InlineData("positions_refresh_seconds", "0")]
+    [InlineData("positions_refresh_seconds", "30 SECOND; DROP TABLE position_events")]
+    [InlineData("position_events_delete_ttl_days", "-1")]
+    [InlineData("position_events_delete_ttl_days", "1.5")]
+    [InlineData("position_events_min_age_to_force_merge_seconds", "0")]
+    [InlineData("position_events_min_age_to_force_merge_seconds", "600; DROP TABLE position_events")]
+    public void BuildVariables_Should_refuse_a_positions_setting_that_is_not_a_positive_whole_number(string variable, string value)
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = [$"{variable}={value}"] };
+
+        // act
+        var exception = Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.ClickHouse, "trading", null, options));
+
+        // assert
+        Assert.Contains($"##{variable}##", exception.Message);
+    }
+
+    /// <summary>
+    /// The Delete retention is a margin over the forced merges, so it must be at least ten times the merge age.
+    /// One day is 86,400 seconds, so 8,640 seconds is the longest merge age a one day retention allows.
+    /// </summary>
+    [Theory(DisplayName = "BuildVariables Should require the Delete retention to be at least ten times the forced merge age")]
+    [InlineData("1", "8640", true)]
+    [InlineData("1", "8641", false)]
+    [InlineData("30", "259200", true)]
+    [InlineData("30", "259201", false)]
+    [InlineData("1", "4294967295", false)]
+    public void BuildVariables_Should_require_the_Delete_retention_to_be_at_least_ten_times_the_forced_merge_age(string days, string seconds, bool accepted)
+    {
+        // arrange
+        var options = new CommandLineOptions
+        {
+            Variables = [$"position_events_delete_ttl_days={days}", $"position_events_min_age_to_force_merge_seconds={seconds}"]
+        };
+
+        // act
+        var exception = Record.Exception(() => MigrationHandler.BuildVariables(DatabaseProvider.ClickHouse, "trading", null, options));
+
+        // assert
+        if (accepted)
+        {
+            Assert.Null(exception);
+        }
+        else
+        {
+            var migrationException = Assert.IsType<SchemaMigrationException>(exception);
+            Assert.Contains("##position_events_delete_ttl_days##", migrationException.Message);
+            Assert.Contains("##position_events_min_age_to_force_merge_seconds##", migrationException.Message);
+        }
+    }
+
+    /// <summary>
+    /// A merge age changed on its own is checked against the default retention of 30 days, 2,592,000 seconds.
+    /// </summary>
+    [Fact(DisplayName = "BuildVariables Should check a new forced merge age against the default Delete retention")]
+    public void BuildVariables_Should_check_a_new_forced_merge_age_against_the_default_Delete_retention()
+    {
+        // arrange
+        var options = new CommandLineOptions { Variables = ["position_events_min_age_to_force_merge_seconds=259201"] };
+
+        // act
+        var exception = Assert.Throws<SchemaMigrationException>(
+            () => MigrationHandler.BuildVariables(DatabaseProvider.ClickHouse, "trading", null, options));
+
+        // assert
+        Assert.Contains("at least 10 times", exception.Message);
     }
 }

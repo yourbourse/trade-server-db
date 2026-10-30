@@ -16,7 +16,7 @@ The *Export Setup* guide describes two accounts, and the `users/` phase provisio
 
 | Access level | Script | Purpose | Rights |
 |--------------|--------|---------|--------|
-| `exporter` | `users/exporter.sql` | The account the trade server authenticates as | PostgreSQL: `INSERT`, `SELECT` on the exported tables and `INSERT`, `SELECT`, `UPDATE` on the cursor. ClickHouse: `INSERT` on the ticks table |
+| `exporter` | `users/exporter.sql` | The account the trade server authenticates as | PostgreSQL: `INSERT`, `SELECT` on the exported tables and `INSERT`, `SELECT`, `UPDATE` on the cursor. ClickHouse: `INSERT` on the ticks and position_events tables |
 | `ro` | `users/ro.sql` | Reporting and support access | `SELECT` on every table and view |
 
 The exporter deliberately has **no DDL rights and no DELETE** — the export is append-only and never removes or
@@ -166,8 +166,11 @@ The views are granted to `ro` only — the exporter writes rows, it does not rea
 own privileges, so `SELECT` on `trades` does not reach through to a view over it; the grant has to name the view.
 The `views/` phase runs before `users/`, so both exist by the time the grants are applied.
 
-> **Note:** This is PostgreSQL only. ClickHouse holds no views, and its `ro` role is granted the ticks table
-> alone. See [Schema Reference → Views](SCHEMA_REFERENCE.md#views).
+> **Note:** The same holds on ClickHouse for its two views, `positions_live` and `positions`: `ro` is
+> granted each by name beside the ticks and position_events tables, and `exporter` is granted neither.
+> `positions_live` runs as its invoker, so reading it also takes `SELECT` on `position_events`, which `ro` has.
+> `positions` is created in `post/`, after the grants; ClickHouse accepts a grant on an object that does not
+> exist yet. See [Schema Reference → ClickHouse](SCHEMA_REFERENCE.md#clickhouse).
 
 The role is created only if missing, and the password is then set unconditionally — so re-running is safe and
 also rotates the password.
@@ -183,13 +186,15 @@ also rotates the password.
 ## ClickHouse
 
 ClickHouse separates roles from users, so the script creates a role named after the database, grants on it, then
-creates the user and assigns the role. The only table on ClickHouse is the ticks table, created by
-`clickhouse/20260922_01_create_ticks.sql` in the incremental phase, before the grants are applied:
+creates the user and assigns the role. ClickHouse holds the ticks and position_events tables, created in the incremental
+phase before the grants are applied, and the `positions_live` and `positions` views over positions:
 
 ```sql
 CREATE ROLE IF NOT EXISTS role_##database_name##_exporter ##cluster_name_suffix##;
 
 GRANT ##cluster_name_suffix## INSERT ON ##database_name##.##ticks_table## TO role_##database_name##_exporter;
+
+GRANT ##cluster_name_suffix## INSERT ON ##database_name##.##position_events_table## TO role_##database_name##_exporter;
 
 CREATE USER IF NOT EXISTS ##user_name## ##cluster_name_suffix##
 IDENTIFIED WITH sha256_password BY '##user_password##'
@@ -199,11 +204,31 @@ DEFAULT ROLE role_##database_name##_exporter;
 | Grant | exporter | ro |
 |-------|----------|-----|
 | `ticks` | `INSERT` | `SELECT` |
+| `position_events` | `INSERT` | `SELECT` |
+| `positions_live` | — | `SELECT` |
+| `positions` | — | `SELECT` |
 
 `INSERT` alone, because that is all the exporter does: a ClickHouse pipeline sends `INSERT INTO … VALUES` over
-the native protocol and never reads, and it has no cursor table — it keeps its export position on disk. A right
+the native protocol and never reads, and it has no cursor table — it keeps its export position on disk. The
+exporter needs nothing on the two views: it never reads, and `positions` is refreshed by the server as the
+account that ran the migration. A right
 added here later is picked up on the next migration, because the edit changes the MD5 the script is journalled
 under.
+
+The exporter script's last statement gives the account two settings of its own:
+
+```sql
+ALTER USER ##user_name## ##cluster_name_suffix##
+SETTINGS optimize_on_insert = 0, materialize_statistics_on_insert = 0;
+```
+
+They keep work off the insert path: the replaced rows of a `ReplacingMergeTree` are collapsed by the merges and by
+`FINAL` reads, and column statistics are built by the merges. They apply to every insert the account makes, ticks
+included, so a row duplicated **within one batch** is no longer collapsed on the way in — it stays on disk until the
+parts merge, and `FINAL` hides it until then. Another account inserting into the same table still collapses such a
+row on insert. The statement is an `ALTER USER` rather than part of `CREATE USER`, so an account created by an
+earlier run gets the settings too. An account later re-provisioned as `ro` keeps them; they only affect inserts, and
+`ro` cannot insert.
 
 | Detail | Why it is like that |
 |--------|---------------------|
@@ -250,8 +275,9 @@ The access level is just a file name, so a third role needs no code change:
 1. Create `psql/users/<access>.sql` and `clickhouse/users/<access>.sql`.
 2. Use `##user_name##` and `##user_password##` for the account, and the table variables of the engine —
    `##trades_table##`, `##daily_statements_table##`, `##order_snapshots_table##`, `##position_snapshots_table##`
-   and `##cursor_table##` on PostgreSQL, `##ticks_table##` on ClickHouse — plus the view variables
-   `##trades_history_view##` and `##cash_transfers_view##` on PostgreSQL, and `##database_name##`.
+   and `##cursor_table##` on PostgreSQL, `##ticks_table##` and `##position_events_table##` on ClickHouse — plus the view
+   variables `##trades_history_view##` and `##cash_transfers_view##` on PostgreSQL and `##positions_view##`
+   and `##positions_live_view##` on ClickHouse, and `##database_name##`.
 3. Follow the existing pattern: create if missing, then set the password unconditionally, then grant. The script
    must be idempotent — it is re-runnable.
 4. ClickHouse: one statement per `----break----`, and `##cluster_name_suffix##` on every statement.
