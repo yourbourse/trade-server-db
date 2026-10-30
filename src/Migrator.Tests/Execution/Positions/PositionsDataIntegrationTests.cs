@@ -21,8 +21,8 @@ using Xunit.Abstractions;
 namespace YB.TradeServer.Db.Migrator.Tests.Execution.Positions;
 
 /// <summary>
-/// What ClickHouse does with the positions change stream under the table's definition, and what the positions_state
-/// and positions_state_live views make of it: snapshots and their watermark, versioning, deletes, markers and partitioning.
+/// What ClickHouse does with the position_events change stream under the table's definition, and what the positions
+/// and positions_live views make of it: snapshots and their watermark, versioning, deletes, markers and partitioning.
 /// </summary>
 /// <remarks>
 /// Every test migrates with an hour-long refresh period and refreshes on demand, so no scheduled refresh can land
@@ -33,7 +33,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
 {
     private string MigrateForState()
     {
-        return Migrate($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        return Migrate($"positions_refresh_seconds={NoScheduledRefresh}");
     }
 
     [Fact(DisplayName = "Workflow Should show the positions of a completed snapshot")]
@@ -158,10 +158,10 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
     }
 
     /// <summary>
-    /// positions_state is a table filled by the last refresh; positions_state_live computes the state on every read.
+    /// positions is a table filled by the last refresh; positions_live computes the state on every read.
     /// </summary>
-    [Fact(DisplayName = "Workflow Should show a change in the live view at once and in positions_state after the next refresh")]
-    public void Workflow_Should_show_a_change_in_the_live_view_at_once_and_in_positions_state_after_the_next_refresh()
+    [Fact(DisplayName = "Workflow Should show a change in the live view at once and in positions after the next refresh")]
+    public void Workflow_Should_show_a_change_in_the_live_view_at_once_and_in_positions_after_the_next_refresh()
     {
         // arrange
         var connectionString = MigrateForState();
@@ -172,7 +172,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         Insert(connectionString, Upsert(4, 1, "2"));
 
         // assert
-        Assert.Equal(["7/1: 2"], State(connectionString, "positions_state_live"));
+        Assert.Equal(["7/1: 2"], State(connectionString, "positions_live"));
         Assert.Equal(["7/1: 1"], State(connectionString));
 
         AssertState(connectionString, ["7/1: 2"]);
@@ -186,7 +186,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
     {
         // arrange, merges held so that "before the merge" is not a race
         var connectionString = MigrateForState();
-        Execute(connectionString, "SYSTEM STOP MERGES positions");
+        Execute(connectionString, "SYSTEM STOP MERGES position_events");
 
         var batch = Snapshot(1, Sender, 1, 2);
 
@@ -195,15 +195,15 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         Insert(connectionString, [.. batch.Select(row => row with { BatchTime = HoursAgo(0) })]);
 
         // assert
-        Assert.Equal(8, Count(connectionString, "positions"));
-        Assert.Equal(4, Count(connectionString, "positions FINAL"));
+        Assert.Equal(8, Count(connectionString, "position_events"));
+        Assert.Equal(4, Count(connectionString, "position_events FINAL"));
         AssertState(connectionString, ["7/1: 1", "7/2: 1"]);
 
         // and the merge keeps one copy of each
-        Execute(connectionString, "SYSTEM START MERGES positions");
-        Execute(connectionString, "OPTIMIZE TABLE positions FINAL");
+        Execute(connectionString, "SYSTEM START MERGES position_events");
+        Execute(connectionString, "OPTIMIZE TABLE position_events FINAL");
 
-        Assert.Equal(4, Count(connectionString, "positions"));
+        Assert.Equal(4, Count(connectionString, "position_events"));
     }
 
     /// <summary>
@@ -223,9 +223,9 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         // assert
         AssertState(connectionString, ["7/1: 3"]);
 
-        Execute(connectionString, "OPTIMIZE TABLE positions FINAL");
+        Execute(connectionString, "OPTIMIZE TABLE position_events FINAL");
 
-        Assert.Equal(["3"], Strings(connectionString, "SELECT toString(volume) FROM positions WHERE position_id = 1"));
+        Assert.Equal(["3"], Strings(connectionString, "SELECT toString(volume) FROM position_events WHERE position_id = 1"));
     }
 
     /// <summary>
@@ -258,11 +258,11 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         // act, two snapshots, merged
         Insert(connectionString, Snapshot(1, Sender, 1));
         Insert(connectionString, Snapshot(4, Sender, 1));
-        Execute(connectionString, "OPTIMIZE TABLE positions FINAL");
+        Execute(connectionString, "OPTIMIZE TABLE position_events FINAL");
 
         // assert, four markers and the latest version of the one position
         Assert.Equal(["0: 1 SnapshotStart", "0: 3 SnapshotEnd", "0: 4 SnapshotStart", "0: 6 SnapshotEnd", "1: 5 Upsert"], Strings(connectionString,
-            "SELECT concat(toString(position_id), ': ', toString(sequence), ' ', toString(event_type)) FROM positions ORDER BY position_id, sequence"));
+            "SELECT concat(toString(position_id), ': ', toString(sequence), ' ', toString(event_type)) FROM position_events ORDER BY position_id, sequence"));
     }
 
     [Fact(DisplayName = "Invariant Should materialize marker_sequence as the sequence of a marker and 0 for a position")]
@@ -276,7 +276,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
 
         // assert
         Assert.Equal(["1: 1", "2: 0", "3: 3"], Strings(connectionString,
-            "SELECT concat(toString(sequence), ': ', toString(marker_sequence)) FROM positions ORDER BY sequence"));
+            "SELECT concat(toString(sequence), ': ', toString(marker_sequence)) FROM position_events ORDER BY sequence"));
     }
 
     [Fact(DisplayName = "Invariant Should partition by sender")]
@@ -289,7 +289,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         Insert(connectionString, Upsert(1, 1), Upsert(1, 1, senderId: OtherSender));
 
         // assert
-        Assert.Equal(["7", "8"], Strings(connectionString, "SELECT _partition_id FROM positions ORDER BY sender_id"));
+        Assert.Equal(["7", "8"], Strings(connectionString, "SELECT _partition_id FROM position_events ORDER BY sender_id"));
     }
 
     /// <summary>
@@ -305,7 +305,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         Insert(connectionString, Upsert(1, 1, "1.999999999"));
 
         // assert
-        Assert.Equal(["1.99999999"], Strings(connectionString, "SELECT toString(volume) FROM positions"));
+        Assert.Equal(["1.99999999"], Strings(connectionString, "SELECT toString(volume) FROM position_events"));
     }
 
     /// <summary>
@@ -315,13 +315,13 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
     public void Edge_case_Should_refuse_the_whole_batch_when_one_volume_overflows_its_column()
     {
         // arrange
-        var request = CreateRequest($"positions_state_refresh_seconds={NoScheduledRefresh}");
+        var request = CreateRequest($"positions_refresh_seconds={NoScheduledRefresh}");
         AssertSuccessful(CreateRunner().Run(request));
 
         // act, assert, a volume needing 11 integer digits mid-batch
         AssertError(ExporterConnectionString(request),
             InsertSql(Upsert(1, 1), Upsert(2, 2, "10000000000"), Upsert(3, 3)), ArgumentOutOfBound);
 
-        Assert.Equal(0, Count(request.ConnectionString, "positions"));
+        Assert.Equal(0, Count(request.ConnectionString, "position_events"));
     }
 }

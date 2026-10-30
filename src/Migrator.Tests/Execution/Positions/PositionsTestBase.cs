@@ -59,7 +59,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     /// <summary>
     /// Provisions and migrates a database; returns its connection string.
     /// </summary>
-    /// <param name="variables">--variables entries, such as <c>positions_delete_ttl_days=7</c>.</param>
+    /// <param name="variables">--variables entries, such as <c>position_events_delete_ttl_days=7</c>.</param>
     protected string Migrate(params string[] variables)
     {
         var request = CreateRequest(variables);
@@ -152,7 +152,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
 
     protected static string InsertSql(params Row[] rows)
     {
-        return InsertInto("positions", rows);
+        return InsertInto("position_events", rows);
     }
 
     /// <summary>
@@ -168,13 +168,13 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     /// </summary>
     protected static void ApplyRetention(string connectionString)
     {
-        Execute(connectionString, "ALTER TABLE positions MATERIALIZE TTL SETTINGS mutations_sync = 2");
+        Execute(connectionString, "ALTER TABLE position_events MATERIALIZE TTL SETTINGS mutations_sync = 2");
     }
 
     /// <summary>
     /// Refreshes the view now rather than on its schedule, and waits for the refresh to finish.
     /// </summary>
-    protected static void Refresh(string connectionString, string view = "positions_state")
+    protected static void Refresh(string connectionString, string view = "positions")
     {
         Execute(connectionString, $"SYSTEM REFRESH VIEW {view}");
         Execute(connectionString, $"SYSTEM WAIT VIEW {view}");
@@ -187,14 +187,14 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     /// <summary>
     /// The view as text, one "sender/position: volume" per open position.
     /// </summary>
-    protected static List<string> State(string connectionString, string view = "positions_state")
+    protected static List<string> State(string connectionString, string view = "positions")
     {
         return Strings(connectionString,
             $"SELECT concat(toString(sender_id), '/', toString(position_id), ': ', toString(volume)) FROM {view} ORDER BY sender_id, position_id");
     }
 
     /// <summary>
-    /// Refreshes positions_state and asserts both views show the expected open positions: the stored state after a
+    /// Refreshes positions and asserts both views show the expected open positions: the stored state after a
     /// refresh is the live one.
     /// </summary>
     protected static void AssertState(string connectionString, IEnumerable<string> expected)
@@ -203,7 +203,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
 
         var positions = expected.ToList();
 
-        Assert.Equal(positions, State(connectionString, "positions_state_live"));
+        Assert.Equal(positions, State(connectionString, "positions_live"));
         Assert.Equal(positions, State(connectionString));
     }
 
@@ -212,7 +212,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     /// </summary>
     protected static List<long> Sequences(string connectionString)
     {
-        return Longs(connectionString, "SELECT sequence FROM positions ORDER BY sender_id, sequence");
+        return Longs(connectionString, "SELECT sequence FROM position_events ORDER BY sender_id, sequence");
     }
 
     // ---------------------------------------------------------------------------------------------------
@@ -222,7 +222,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     /// <summary>
     /// The table the migration leaves, as SHOW CREATE TABLE prints it: the DDL in ClickHouse's canonical form.
     /// </summary>
-    protected static string AgreedTable(string table = "positions", int deleteTtlDays = 30, int forceMergeSeconds = 600)
+    protected static string AgreedTable(string table = "position_events", int deleteTtlDays = 30, int forceMergeSeconds = 600)
     {
         // the raw string takes this file's line endings, which a Windows checkout makes CRLF
         return $"""
@@ -276,7 +276,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     {
         return Strings(connectionString,
             "SELECT script_name FROM schema_versions " +
-            "WHERE script_name LIKE '%create_positions%' OR script_name LIKE '%positions_state%.sql::%' OR script_name LIKE '%positions_ttl.sql::%' " +
+            "WHERE script_name LIKE '%create_position_events%' OR script_name LIKE '%positions%.sql::%' OR script_name LIKE '%position_events_ttl.sql::%' " +
             "ORDER BY script_name");
     }
 }

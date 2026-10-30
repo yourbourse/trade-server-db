@@ -134,7 +134,7 @@ database here if a run does something surprising.
 
 ```
 ====================================
-Migrating Postgres database trading, tables: [trades_table=trades, daily_statements_table=daily_statements_export, order_snapshots_table=daily_statements_order_snapshots, position_snapshots_table=daily_statements_position_snapshots, trading_account_events_table=trading_account_events, client_events_table=client_events, symbol_events_table=symbol_events, group_events_table=group_events, cursor_table=export_cursor, ticks_table=ticks, positions_table=positions], users: [trade_exporter(exporter)]
+Migrating Postgres database trading, tables: [trades_table=trades, daily_statements_table=daily_statements_export, order_snapshots_table=daily_statements_order_snapshots, position_snapshots_table=daily_statements_position_snapshots, trading_account_events_table=trading_account_events, client_events_table=client_events, symbol_events_table=symbol_events, group_events_table=group_events, cursor_table=export_cursor, ticks_table=ticks, position_events_table=position_events], users: [trade_exporter(exporter)]
 ```
 
 The target line reports the **effective** values — after `--variables` overrides — so this is where you confirm
@@ -155,8 +155,8 @@ Executed scripts: 5
 ```
 
 One block per phase, `(root)` being the incremental phase. `No files for pre` means the phase had nothing to do:
-`pre/` ships empty on both providers. On ClickHouse, `views/` holds `positions_state_live`, and the refreshable
-`positions_state` over it is created by a `post/` script, because it selects from a view the views phase creates.
+`pre/` ships empty on both providers. On ClickHouse, `views/` holds `positions_live`, and the refreshable
+`positions` over it is created by a `post/` script, because it selects from a view the views phase creates.
 On the second run the counts are `0` everywhere except, if you passed `--force`, the re-runnable phases whose
 inputs you supplied.
 
@@ -189,7 +189,7 @@ would create local, unreplicated objects next to the replicated ones:
 | Statements | `ON CLUSTER 'my_cluster'` — DDL propagates to every node |
 | Table engines | `ReplicatedMergeTree`, `ReplicatedReplacingMergeTree` |
 | Journal | `ReplicatedMergeTree`, so every node agrees on what has been applied |
-| `positions_state` | Stays a plain `MergeTree` on every node; each node refreshes it from its own replica of `positions`, through its own `positions_state_live` |
+| `positions` | Stays a plain `MergeTree` on every node; each node refreshes it from its own replica of `position_events`, through its own `positions_live` |
 
 Point the connection string at one node; the cluster clause distributes the DDL. Every ClickHouse run checks
 that the database is not in read-only mode before applying anything, retrying with a doubling delay for up to

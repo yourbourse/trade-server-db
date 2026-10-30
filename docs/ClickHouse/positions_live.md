@@ -1,8 +1,8 @@
 <div align="center">
 
-# positions_state_live
+# positions_live
 
-**The open positions of every sender, one row each, computed on every read — a view over `positions`**
+**The open positions of every sender, one row each, computed on every read — a view over `position_events`**
 
 ClickHouse · view · [Schema Reference](../SCHEMA_REFERENCE.md)
 
@@ -17,23 +17,23 @@ ClickHouse · view · [Schema Reference](../SCHEMA_REFERENCE.md)
 | | |
 |---|---|
 | Engine | ClickHouse |
-| Kind | Plain view over [`positions`](positions.md), `SQL SECURITY INVOKER` |
-| Default name | `positions_state_live` — renamed with `--variables positions_state_live_view=…` |
+| Kind | Plain view over [`position_events`](position_events.md), `SQL SECURITY INVOKER` |
+| Default name | `positions_live` — renamed with `--variables positions_live_view=…` |
 | One row per | Open position of every sender, as of the latest complete snapshot and the changes after it |
-| Columns | Every column of `positions` except the `MATERIALIZED` `marker_sequence` |
+| Columns | Every column of `position_events` except the `MATERIALIZED` `marker_sequence` |
 | Freshness | Always current: the query runs on every read |
-| Grants | `ro`: `SELECT`, which also needs `SELECT` on `positions` · `exporter`: none |
+| Grants | `ro`: `SELECT`, which also needs `SELECT` on `position_events` · `exporter`: none |
 
-[`positions`](positions.md) is a change stream: every version of every position until the merges collapse them,
+[`position_events`](position_events.md) is a change stream: every version of every position until the merges collapse them,
 the `Delete` rows of closed positions, and the markers of each snapshot. This view turns it into the current state.
 It reads the table with `FINAL`, keeps the latest version of each position, drops the closed ones and the markers,
 and hides every position the latest complete snapshot no longer holds.
 
-This is **the one definition of the state**. [`positions_state`](positions_state.md) stores the same rows on a
+This is **the one definition of the state**. [`positions`](positions.md) stores the same rows on a
 schedule by selecting from this view, so a change to the query here reaches it on its next refresh.
 
 The trade server never reads or writes it. The view name is templated so that a database already owning an object
-called `positions_state_live` can move ours aside.
+called `positions_live` can move ours aside.
 
 ---
 
@@ -42,42 +42,42 @@ called `positions_state_live` can move ours aside.
 The view as the migrator creates it, under the default names.
 
 ```sql
-CREATE OR REPLACE VIEW positions_state_live
+CREATE OR REPLACE VIEW positions_live
 AS
 WITH
     snapshot_ends AS
     (
         SELECT sender_id, max(sequence) AS end_sequence
-        FROM positions
+        FROM position_events
         WHERE position_id = 0 AND event_type = 'SnapshotEnd'
         GROUP BY sender_id
     ),
     watermarks AS
     (
         SELECT starts.sender_id, max(starts.sequence) AS watermark
-        FROM positions AS starts
+        FROM position_events AS starts
         INNER JOIN snapshot_ends ON starts.sender_id = snapshot_ends.sender_id
         WHERE starts.position_id = 0
           AND starts.event_type = 'SnapshotStart'
           AND starts.sequence < snapshot_ends.end_sequence
         GROUP BY starts.sender_id
     )
-SELECT positions.*
-FROM positions AS positions FINAL
-INNER JOIN watermarks ON positions.sender_id = watermarks.sender_id
-WHERE positions.position_id != 0
-  AND positions.event_type = 'Upsert'
-  AND positions.sequence >= watermarks.watermark
+SELECT position_events.*
+FROM position_events AS position_events FINAL
+INNER JOIN watermarks ON position_events.sender_id = watermarks.sender_id
+WHERE position_events.position_id != 0
+  AND position_events.event_type = 'Upsert'
+  AND position_events.sequence >= watermarks.watermark
 SETTINGS do_not_merge_across_partitions_select_final = 1;
 ```
 
 With `--cluster my_cluster` the statement runs `ON CLUSTER 'my_cluster'`, and every node's view reads its own
-replica of `positions`.
+replica of `position_events`.
 
 The view runs with the rights of whoever reads it — `SQL SECURITY INVOKER`, the default for a plain view, which
-`SHOW CREATE TABLE` does not print. So a reader needs `SELECT` on `positions` as well as on the view.
+`SHOW CREATE TABLE` does not print. So a reader needs `SELECT` on `position_events` as well as on the view.
 
-`do_not_merge_across_partitions_select_final = 1` lets `FINAL` work one partition at a time. `positions` is
+`do_not_merge_across_partitions_select_final = 1` lets `FINAL` work one partition at a time. `position_events` is
 partitioned by `sender_id`, which is the start of its sorting key, so no two versions of one position are ever in
 different partitions and the result is the same.
 
@@ -85,8 +85,8 @@ different partitions and the result is the same.
 
 ## Columns
 
-Every column of [`positions`](positions.md#columns), with the same types and meanings, in the same order, except
-`marker_sequence` — a `MATERIALIZED` column, which `SELECT positions.*` does not return, and which is `0` on every
+Every column of [`position_events`](position_events.md#columns), with the same types and meanings, in the same order, except
+`marker_sequence` — a `MATERIALIZED` column, which `SELECT position_events.*` does not return, and which is `0` on every
 row the view keeps.
 
 `event_type` is always `Upsert` and `position_id` is never `0`. `sequence` and `batch_time` are those of the
@@ -116,8 +116,8 @@ position's earlier version at once.
 
 ### Worked example
 
-One sender, `sender_id = 1`. Each line is a row of `positions`; the right-hand column is what the view returns once
-that row has arrived — and what [`positions_state`](positions_state.md) holds after its next refresh.
+One sender, `sender_id = 1`. Each line is a row of `position_events`; the right-hand column is what the view returns once
+that row has arrived — and what [`positions`](positions.md) holds after its next refresh.
 
 | `sequence` | `event_type` | `position_id` | Watermark | View returns |
 |-----------:|--------------|--------------:|----------:|--------------|
@@ -144,23 +144,23 @@ The rules rely on `sequence` growing monotonically per sender: the watermark is 
 
 The two views return the same rows; they differ in when the work is done.
 
-| | `positions_state_live` | [`positions_state`](positions_state.md) |
+| | `positions_live` | [`positions`](positions.md) |
 |---|------------------------|------------------------------------------|
 | Kind | Plain view | Refreshable materialized view over this one |
-| Freshness | Current at every read | As old as the last refresh — up to `positions_state_refresh_seconds`, 30 by default, plus the time a refresh takes |
-| Cost per read | A `FINAL` read of the whole of `positions` | A read of a plain `MergeTree` table |
-| Grants a reader needs | `SELECT` on the view and on `positions` | `SELECT` on the view |
+| Freshness | Current at every read | As old as the last refresh — up to `positions_refresh_seconds`, 30 by default, plus the time a refresh takes |
+| Cost per read | A `FINAL` read of the whole of `position_events` | A read of a plain `MergeTree` table |
+| Grants a reader needs | `SELECT` on the view and on `position_events` | `SELECT` on the view |
 | Server version | any the migrator supports | 24.10 or later |
 
 Read this view when a change must be visible as soon as it lands — a support check on one account, a reconciliation
-against the server. Read `positions_state` for dashboards, reports and anything that queries often.
+against the server. Read `positions` for dashboards, reports and anything that queries often.
 
 ---
 
 ## Reading it
 
 - Read it as a plain table: no `FINAL`, no filter on `event_type` or `position_id`. Every row is an open position.
-- Every read pays for the whole query — `FINAL` over `positions`, and the watermark join. A filter on `sender_id`
+- Every read pays for the whole query — `FINAL` over `position_events`, and the watermark join. A filter on `sender_id`
   narrows what the outer read returns; do not count on it to make the query cheaper.
 - Filter on `sender_id`, and pair every id with it — see
   [Every id is scoped to its sender](../SCHEMA_REFERENCE.md#every-id-is-scoped-to-its-sender). A sender with no
@@ -169,7 +169,7 @@ against the server. Read `positions_state` for dashboards, reports and anything 
 ```sql
 -- the open positions of one account, as they stand now
 SELECT position_id, symbol_name, side, volume, avg_open_price, pl
-FROM positions_state_live
+FROM positions_live
 WHERE sender_id = 1
   AND trading_account_id = 1001
 ORDER BY position_id;
@@ -181,20 +181,20 @@ ORDER BY position_id;
 
 | Script | Phase | Contributes |
 |--------|-------|-------------|
-| [`clickhouse/views/positions_state_live.sql`](../../clickhouse/views/positions_state_live.sql) | views | The view, as `CREATE OR REPLACE VIEW`. Re-runs when its content changes |
+| [`clickhouse/views/positions_live.sql`](../../clickhouse/views/positions_live.sql) | views | The view, as `CREATE OR REPLACE VIEW`. Re-runs when its content changes |
 | [`clickhouse/users/ro.sql`](../../clickhouse/users/ro.sql) | users | `SELECT` for `role_<database>_ro` — see [Users & Permissions](../USERS_AND_PERMISSIONS.md#clickhouse) |
 
 `CREATE OR REPLACE VIEW` makes a change to the query harmless to re-run: the next migration replaces the view in
-place, and [`positions_state`](positions_state.md), which selects from it, follows on its next refresh. The views
-phase runs after the incremental scripts, so `positions` exists by then, and before `post/`, where `positions_state`
+place, and [`positions`](positions.md), which selects from it, follows on its next refresh. The views
+phase runs after the incremental scripts, so `position_events` exists by then, and before `post/`, where `positions`
 is created over this view.
 
-The suites in `Execution/Positions/` cover the view alongside the table and `positions_state` — see
-[positions → Scripts](positions.md#scripts).
+The suites in `Execution/Positions/` cover the view alongside the table and `positions` — see
+[position_events → Scripts](position_events.md#scripts).
 
 ---
 
 ## See also
 
-[`positions`](positions.md) · [`positions_state`](positions_state.md) · [Schema Reference](../SCHEMA_REFERENCE.md) ·
+[`position_events`](position_events.md) · [`positions`](positions.md) · [Schema Reference](../SCHEMA_REFERENCE.md) ·
 [Users & Permissions](../USERS_AND_PERMISSIONS.md#clickhouse)

@@ -59,7 +59,7 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 |-----------|-------------|
 | [Schema Reference](SCHEMA_REFERENCE.md) | The source of truth for the schema: every table and view on both engines, the conventions they share, deduplication and caveats |
 | [PostgreSQL tables](SCHEMA_REFERENCE.md#postgresql) | One page per table and view — final SQL, columns, indexes and the scripts that built it |
-| [ClickHouse tables](SCHEMA_REFERENCE.md#clickhouse) | The same for `ticks`, `positions`, the `positions_state_live` and `positions_state` views and the ClickHouse journal |
+| [ClickHouse tables](SCHEMA_REFERENCE.md#clickhouse) | The same for `ticks`, `position_events`, the `positions_live` and `positions` views and the ClickHouse journal |
 | [Template Variables](TEMPLATE_VARIABLES.md) | Every `##variable##` the migrator substitutes, where its value comes from, and how it is validated |
 | [Security](SECURITY.md) | What is bound, what is validated, how passwords are escaped, and the threat model behind those choices |
 
@@ -96,7 +96,7 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 | Path | Purpose |
 |------|---------|
 | `psql/` | PostgreSQL scripts - root is incremental, `views/` `users/` `post/` are re-runnable |
-| `clickhouse/` | ClickHouse scripts - root is incremental (the ticks and positions tables), `views/` `users/` `post/` are re-runnable |
+| `clickhouse/` | ClickHouse scripts - root is incremental (the ticks and position_events tables), `views/` `users/` `post/` are re-runnable |
 | `src/Migrator/` | The CLI: option parsing, target resolution, phase orchestration |
 | `src/DbUp.PSQL/` | DbUp provider for PostgreSQL |
 | `src/DbUp.ClickHouse/` | DbUp provider for ClickHouse |
@@ -115,8 +115,8 @@ Already know your way around? **[Quick Start](QUICKSTART.md)** is two commands.
 | Event log tables | `trading_account_events`, `client_events`, `symbol_events`, `group_events` |
 | Cursor table | `export_cursor` |
 | Ticks table | `ticks` |
-| Positions table | `positions` |
-| Positions state views | `positions_state_live`, `positions_state` |
+| Positions table | `position_events` |
+| Positions state views | `positions_live`, `positions` |
 | Script folder | `psql` or `clickhouse`, after the provider |
 | Connection string | `$TSDB_CONNECTION_STRING` when `--connection-string` is absent |
 | Log file | `logs/migrator.log`, rolling daily, 10 files kept |

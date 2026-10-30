@@ -107,9 +107,9 @@ anything. The migrator logs a warning and reports everything as pending rather t
 Nine on PostgreSQL that the trade server writes to — `trades`, `daily_statements_export`,
 `daily_statements_order_snapshots`, `daily_statements_position_snapshots`, `trading_account_events`,
 `client_events`, `symbol_events`, `group_events` and `export_cursor` — two on ClickHouse — `ticks` and
-`positions` — plus the four tables the migrator creates and a trigger maintains from an event log,
-`trading_accounts`, `clients`, `symbols` and `groups`, the `positions_state_live` and `positions_state` views over
-`positions`, and its own `schema_versions` journal on each engine. Each exported table matches one export
+`position_events` — plus the four tables the migrator creates and a trigger maintains from an event log,
+`trading_accounts`, `clients`, `symbols` and `groups`, the `positions_live` and `positions` views over
+`position_events`, and its own `schema_versions` journal on each engine. Each exported table matches one export
 pipeline in the trade server's `export_config.json`, and the PostgreSQL pipelines share the one cursor table. Each
 table has its own page with its final SQL and its columns, indexed in [Schema Reference](SCHEMA_REFERENCE.md).
 
@@ -123,7 +123,7 @@ eleven names. Pass the ones you renamed on every run:
 ```
 
 ```bash
---variables ticks_table=market_ticks positions_table=open_positions
+--variables ticks_table=market_ticks position_events_table=open_positions
 ```
 
 Nothing records the names on the database side, so a run without them falls back to the default names. It does
@@ -140,9 +140,9 @@ keys — join on `(sender_id, time_statement, trading_account_id)`.
 ### Does the migrator create the ClickHouse tables?
 
 **Yes** — both of them. ClickHouse receives ticks and positions and nothing else, so
-`clickhouse/20260922_01_create_ticks.sql` creates the `ticks` table, `clickhouse/20261023_01_create_positions.sql`
-the `positions` table, `clickhouse/views/positions_state_live.sql` the `positions_state_live` view over it,
-`clickhouse/post/positions_state.sql` the `positions_state` view over that, and the `users/` phase grants on all
+`clickhouse/20260922_01_create_ticks.sql` creates the `ticks` table, `clickhouse/20261023_01_create_position_events.sql`
+the `position_events` table, `clickhouse/views/positions_live.sql` the `positions_live` view over it,
+`clickhouse/post/positions.sql` the `positions` view over that, and the `users/` phase grants on all
 four. The PostgreSQL tables have no ClickHouse
 counterpart, because the trade server never writes those entities there.
 
@@ -157,7 +157,7 @@ consequences.
 Each table has its own deduplication key — `(sender_id, trade_id)` on trades,
 `(sender_id, time_statement, trading_account_id)` on statements, the same pair plus `order_id` or `position_id` on
 the snapshots, `(sender_id, short_symbol_name, created_time, sequence)` on ticks, and
-`(sender_id, position_id, marker_sequence)` on positions, where the row with the highest `sequence` wins:
+`(sender_id, position_id, marker_sequence)` on position_events, where the row with the highest `sequence` wins:
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
@@ -281,7 +281,7 @@ Yes — one new `DbUp.<Engine>` project plus a handful of switch statements. The
 ### Which ClickHouse and PostgreSQL versions are supported?
 
 ClickHouse **24.x or newer** (the driver sends settings older servers reject), and **24.10 or newer** for the
-refreshable `positions_state` view, whose script fails on an older server. PostgreSQL **14+**. CI and the
+refreshable `positions` view, whose script fails on an older server. PostgreSQL **14+**. CI and the
 compose file run the newest stable releases of both — ClickHouse 26.7 and PostgreSQL 18.
 
 ### Why is the SQL at the repository root instead of under `src/`?
