@@ -20,7 +20,7 @@ ClickHouse · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 | Default name | `position_events` — renamed with `--variables position_events_table=…` |
 | Written by | The trade server's `position` pipeline — `"entity": "position"`, `"target": "clickhouse"` — over the native protocol |
 | One row per | Change of an open position — `Upsert` or `Delete` — or a `SnapshotStart` / `SnapshotEnd` marker |
-| Delivery | Append-only, at-least-once |
+| Writes | Append-only; the same row can arrive more than once |
 | Versioned by | `ReplacingMergeTree(sequence)` on `(sender_id, position_id, marker_sequence)`, when parts merge |
 | Retention | `Delete` rows only, 30 days by default, by `batch_time` — `--variables position_events_delete_ttl_days=…`; relies on the forced merges, every 600 seconds by default — `--variables position_events_min_age_to_force_merge_seconds=…` |
 | Read through | [`positions_live`](positions_live.md), computed on every read, and [`positions`](positions.md), the same rows refreshed on a schedule — one row per open position |
@@ -40,7 +40,7 @@ cheaper to read and up to a refresh period old — see
 | `SnapshotStart` | A full snapshot of the sender's open positions begins | `0` |
 | `SnapshotEnd` | The snapshot is complete | `0` |
 
-Between the two markers of a snapshot the server sends an `Upsert` for every position it holds open. What the
+Between the two markers of a snapshot lies an `Upsert` for every position open at the time. What the
 markers mean to a reader — the watermark — is explained on [`positions_live`](positions_live.md#the-snapshot-protocol).
 
 There is no cursor table on ClickHouse, and the exporter does nothing but insert.
@@ -182,14 +182,14 @@ Every column is `NOT NULL`. The four service columns come first. On a snapshot m
 
 The sorting key and `sequence` decide what collapses. Two rows of one position collapse to the one with the higher
 `sequence`, whatever their `event_type`: a `Delete` replaces the `Upsert`s before it, and an `Upsert` with a higher
-`sequence` replaces a `Delete`. Two rows with the same key and the same `sequence` — a re-sent batch — are one change,
+`sequence` replaces a `Delete`. Two rows with the same key and the same `sequence` — one change that arrived twice — are one change,
 and the merge keeps the copy inserted last.
 
 ClickHouse has no unique index, so a duplicate or an older version is not rejected on insert: every version exists
 until a background merge collapses them, and a plain read returns them all. The exporter's account inserts with
 `optimize_on_insert = 0`, so not even two versions inside one insert are collapsed on the way in — see
 [Users & Permissions](../USERS_AND_PERMISSIONS.md#clickhouse). With `--cluster`, the replicated engine may already
-drop a re-sent batch whose insert block is identical to one it has seen. See
+drop an insert block identical to one it has seen. See
 [Deduplication](../SCHEMA_REFERENCE.md#deduplication).
 
 ---
@@ -258,7 +258,7 @@ row arrives:
 
 > **Warning:** A `Delete` row whose `batch_time` is already older than the retention when it arrives is removed by the
 > TTL before any merge can collapse the position into it, and the position's last `Upsert` comes back. The same holds
-> for a batch re-sent after its `Delete` row has expired: its `Upsert` has nothing left to lose against. `batch_time`
+> for an `Upsert` that arrives again after its position's `Delete` row has expired: it has nothing left to lose against. `batch_time`
 > must be the time the batch was sent, never an older one carried over from the position.
 
 > **Warning:** Keep `position_events_delete_ttl_days` far below 28,976. `toDateTime(batch_time) + INTERVAL N DAY` cannot

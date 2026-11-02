@@ -18,7 +18,7 @@ PostgreSQL · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | PostgreSQL |
 | Default name | `client_events` — renamed with `--variables client_events_table=…` |
-| Written by | The trade server's `client` pipeline — `"entity": "client"`, `"target": "postgresql"`. A resync can be requested on demand with the Admin API's `POST /admin/export/snapshot`, `"entityType": "Client"` |
+| Written by | The trade server's `client` pipeline — `"entity": "client"`, `"target": "postgresql"` |
 | One row per | Event: a client's full state, a deletion, or a resync marker — in order |
 | Order | `id` — never `time_inserted`, which a whole batch shares |
 | Deduplicated by | Nothing — there is no deduplication key |

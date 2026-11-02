@@ -96,20 +96,20 @@ position's latest change.
 
 ## The snapshot protocol
 
-The server sends a position as an `Upsert` whenever it changes and as a `Delete` when it closes. From time to time
-it also sends a full snapshot: a `SnapshotStart`, an `Upsert` for every position it holds open, and a `SnapshotEnd`.
-The snapshot is what lets the view forget a position whose `Delete` never arrived: a position the server no longer
-knows is simply not in it.
+`position_events` carries a position as an `Upsert` for each change and a `Delete` when it closes, and full
+snapshots: a `SnapshotStart`, an `Upsert` for every position open at the time, and a `SnapshotEnd`. The snapshot is
+what lets the view forget a position whose `Delete` never arrived: a position that is not in the latest complete
+snapshot is hidden.
 
 For every sender the view computes a **watermark**: the `sequence` of the latest `SnapshotStart` that has a
 `SnapshotEnd` after it. Then:
 
 | Rule | Effect |
 |------|--------|
-| A position whose latest row is older than the watermark is hidden | It was not part of the latest complete snapshot, so the server no longer holds it |
+| A position whose latest row is older than the watermark is hidden | It was not part of the latest complete snapshot |
 | A position whose latest row is a `Delete` is hidden | It was closed |
 | A sender with no complete snapshot has no watermark | The sender is absent from the view until its first snapshot completes |
-| A snapshot still in progress does not move the watermark | Until its `SnapshotEnd` arrives the previous watermark stands, so a half-sent snapshot hides nothing |
+| A snapshot still in progress does not move the watermark | Until its `SnapshotEnd` arrives the previous watermark stands, so an incomplete snapshot hides nothing |
 
 The `Upsert`s of a snapshot in progress are changes like any other: one after the current watermark replaces the
 position's earlier version at once.
@@ -132,9 +132,8 @@ that row has arrived — and what [`positions`](positions.md) holds after its ne
 | 9 | `Upsert` | 11 | 1 | 11 (seq 9), 12 (seq 6) |
 | 10 | `SnapshotEnd` | 0 | 8 | 11 (seq 9) — 12 was not in the snapshot, its row 6 is older than the watermark |
 
-Position 12 disappears without a `Delete`: the snapshot from 8 to 10 did not contain it, so the server no longer
-holds it. Had the server sent another `SnapshotStart` at 11 and nothing more, the watermark would stay at 8 and the
-view would not change.
+Position 12 disappears without a `Delete`: the snapshot from 8 to 10 did not contain it. Had another `SnapshotStart`
+arrived at 11 and nothing more, the watermark would stay at 8 and the view would not change.
 
 The rules rely on `sequence` growing monotonically per sender: the watermark is a comparison of sequences.
 

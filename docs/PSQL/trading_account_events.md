@@ -142,12 +142,9 @@ For "which accounts are live and how is each configured", read [`trading_account
 this log already reduced. Read the log itself for an account's history, or to build a projection of your own.
 
 A **resync** is a bracketed range: a SnapshotStart, then an Upsert for every live account, then a SnapshotEnd. It is
-a full re-export of the accounts' state at that moment — the *Export Setup* guide names a server restart or an
-interrupted connection as occasions for one, and an administrator can request one at any time with the Admin API's
-`POST /admin/export/snapshot`, `"entityType": "TradingAccount"`, which needs the manager permission
-`initializeTradingAccountExport`. A consumer starting fresh treats the Upserts between a SnapshotStart and its
-SnapshotEnd as a consistent snapshot, and ignores what came before the SnapshotStart in its favour. An account the
-resync did not re-announce no longer exists.
+the accounts' full state at that moment; when the trade server sends one is described in the *Export Setup* guide. A
+consumer starting fresh treats the Upserts between a SnapshotStart and its SnapshotEnd as a consistent snapshot, and
+ignores what came before the SnapshotStart in its favour. An account the resync did not re-announce no longer exists.
 
 ```sql
 -- one account's history, in the order it was recorded

@@ -27,7 +27,7 @@ namespace YB.TradeServer.Db.Migrator.Tests.Execution.Ticks;
 public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputHelper output) : TicksTestBase(configBuilder, output)
 {
     /// <summary>
-    /// At-least-once delivery: the copy collapses only when the parts merge, and FINAL hides it until then.
+    /// The same rows arriving twice: the copy collapses only when the parts merge, and FINAL hides it until then.
     /// </summary>
     [Fact(DisplayName = "Workflow Should show a re-sent batch twice until the parts merge and once under FINAL")]
     public void Workflow_Should_show_a_re_sent_batch_twice_until_the_parts_merge_and_once_under_FINAL()
@@ -38,7 +38,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
 
         Tick[] batch = [new(1, At(0)), new(2, At(1)), new(3, At(2))];
 
-        // act, the confirmation is lost and the rows go again in a later batch
+        // act, the same rows arrive again in a later batch
         Insert(connectionString, batch);
         Insert(connectionString, [.. batch.Select(tick => tick with { BatchTime = At(60) })]);
 
@@ -63,7 +63,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
         Tick[] batch = [new(1, At(0)), new(2, At(1)), new(3, At(2))];
         Tick[] otherBatch = [.. batch.Select(tick => tick with { SenderId = OtherSender })];
 
-        // act, both publish the same book under the same numbering, and the other server re-sends
+        // act, both write the same book under the same numbering, and the other server's rows arrive twice
         Insert(connectionString, batch);
         Insert(connectionString, otherBatch);
         Insert(connectionString, otherBatch);
@@ -118,7 +118,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// Inserts are buffered (async_insert is on by default in 26.x); at-least-once still needs the refusal to come back.
+    /// Inserts are buffered (async_insert is on by default in 26.x); a refused insert still has to report the refusal.
     /// </summary>
     [Fact(DisplayName = "Workflow Should report a refused batch to the exporter itself")]
     public void Workflow_Should_report_a_refused_batch_to_the_exporter_itself()
@@ -202,7 +202,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
         var connectionString = Migrate(LongRetentionDays);
         var tick = new Tick(1, Utc("2026-01-31 23:59:59.5"), BatchTime: Utc("2026-01-31 23:59:59.9"));
 
-        // act, the confirmation is lost at midnight and the copy goes out in February's first batch
+        // act, the copy of a tick from just before midnight arrives in February's first batch
         Insert(connectionString, tick);
         Insert(connectionString, tick with { BatchTime = Utc("2026-02-01 00:00:05") });
         Execute(connectionString, "OPTIMIZE TABLE ticks FINAL");
@@ -251,7 +251,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
     [Fact(DisplayName = "Reading Should count the same deduplicating by the key in the query as under FINAL")]
     public void Reading_Should_count_the_same_deduplicating_by_the_key_in_the_query_as_under_FINAL()
     {
-        // arrange, a batch, its re-send carrying one new tick, and no merge
+        // arrange, a batch, its copy carrying one new tick, and no merge
         var connectionString = Migrate();
         Execute(connectionString, "SYSTEM STOP MERGES ticks");
 
@@ -292,7 +292,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// The exporter's account turns optimize_on_insert off, so its copy is kept like a re-sent one, until the merge.
+    /// The exporter's account turns optimize_on_insert off, so its copy is kept like one arriving in a later batch, until the merge.
     /// </summary>
     [Fact(DisplayName = "Edge case Should keep a tick the exporter duplicated within one batch until the parts merge")]
     public void Edge_case_Should_keep_a_tick_the_exporter_duplicated_within_one_batch_until_the_parts_merge()

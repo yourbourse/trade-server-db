@@ -239,21 +239,16 @@ client logs:
   `time_inserted`; ids are reused after deletion, which restarts the version sequence; and deletions and markers
   carry `version 0`.
 - **A resync sweeps at the end marker**, not the start, so the current-state table stays complete and readable for
-  the whole resync — which matters because a resync can follow every restart of the trade server. Between the
-  markers the table is a mixture of re-announced and not-yet-reached rows; the entity's `_resync` view says whether
-  a sender is in that window.
+  the whole resync. Between the markers the table is a mixture of re-announced and not-yet-reached rows; the
+  entity's `_resync` view says whether a sender is in that window.
 - **The trigger runs in the exporter's transaction**, so the table cannot lag behind the log, and a batch that fails
   to commit leaves no trace in it. That is also why `exporter` holds `INSERT`, `UPDATE` and `DELETE` on the derived
   tables.
 - **The projection script is re-runnable** and ends with a reconcile pass that replays the newest retained event per
   entity, so `--force` repairs a dropped trigger and corrects rows an earlier, buggy version of the projection wrote.
   The pass also re-applies a resync sweep the trigger missed because it was absent when the end marker arrived. No
-  reconcile can recover what the retention window has dropped — the authoritative repair for that is a resync from
-  the trade server.
-- **A resync can be requested on demand** with the Admin REST API: `POST /admin/export/snapshot` with
-  `"entityType"` `TradingAccount`, `Client`, `Group` or `Symbol` queues one, and the manager needs the matching
-  `initialize…Export` permission. The call returns `202 Accepted` as soon as the request is queued; the
-  `_resync` view shows when the resync has started and finished.
+  reconcile can recover what the retention window has dropped; only a new resync in the log replaces it. When the
+  trade server sends a resync is described in the *Export Setup* guide.
 - **There is no foreign key** from a derived row to its source event: events age out of retention long before the
   entity does, and a foreign key would make that purge fail or cascade.
 - **A column added later goes into both tables** in one incremental script, `NOT NULL` with a default on each.

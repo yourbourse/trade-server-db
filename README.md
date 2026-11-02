@@ -328,8 +328,8 @@ together.
 Every exported table is append-only. A unique index keeps a record from being stored twice — `(sender_id, trade_id)`
 on trades, and `(sender_id, time_statement, …)` on the statement and snapshot tables. A statement that hits one is
 rejected whole, so the index guards against duplicates but does not repair them. The four event logs have
-no such key — none carries a per-event id — so a re-sent event lands as a second row and the derived table absorbs
-it.
+no such key — none carries a per-event id — so an event that arrives twice lands as two rows and the derived table
+absorbs it.
 
 `export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
 pipelines share it.
@@ -337,11 +337,11 @@ pipelines share it.
 ### ClickHouse
 
 `ticks` holds the top of the order book of every symbol — the best bid and the best ask, each with its volume —
-one row per change, written whenever the trade server publishes prices. The definition is the ticks script of
+one row per change. The definition is the ticks script of
 the guide, column for column; only the table name, the cluster clause and the engine are templated.
 
-Delivery is at-least-once here too, and ClickHouse has no unique index, so the table is a `ReplacingMergeTree`
-sorted by `(sender_id, short_symbol_name, created_time, sequence)`: a re-sent batch collapses into the original
+The same row can arrive more than once, and ClickHouse has no unique index, so the table is a `ReplacingMergeTree`
+sorted by `(sender_id, short_symbol_name, created_time, sequence)`: a copy collapses into the original
 when the parts merge. Query with `FINAL` when duplicates must not be visible before that.
 
 `position_events` holds the open positions of every sender as a change stream: an `Upsert` or a `Delete` per change of a

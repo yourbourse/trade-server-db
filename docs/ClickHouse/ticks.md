@@ -20,16 +20,12 @@ ClickHouse · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 | Default name | `ticks` — renamed with `--variables ticks_table=…` |
 | Written by | The trade server's `tick` pipeline — `"entity": "tick"`, `"target": "clickhouse"` — over the native protocol |
 | One row per | Change of a symbol's best bid or best ask |
-| Delivery | Append-only, at-least-once |
+| Writes | Append-only; the same row can arrive more than once |
 | Deduplicated by | `ReplacingMergeTree` on `(sender_id, short_symbol_name, created_time, sequence)`, when parts merge |
 | Retention | 31 days by default, by `created_time` — `--variables ticks_ttl_days=…` |
 | Grants | `exporter`: `INSERT` · `ro`: `SELECT` |
 
-The trade server writes a tick when it publishes prices for a symbol and the best bid or the best ask differs from
-the previous publication. A change of price and a change of volume both count; a change deeper in the book does not.
-Prices include the symbol's markup and not the group markups. A symbol produces at most as many ticks per second as
-its `throttling` setting allows — up to 1000 price updates per second in the Admin REST API, where `0` turns
-throttling off and every update is published.
+Prices include the symbol's markup and not the group markups.
 
 There is no cursor table on ClickHouse and no view over the ticks, and the exporter does nothing but insert.
 
@@ -115,7 +111,7 @@ What the types do with a value that does not fit:
 
 | Choice | Why |
 |--------|-----|
-| `ReplacingMergeTree` | Delivery is at-least-once: after a lost connection the server re-sends the batch it could not confirm. Duplicates collapse on the sorting key when the parts merge, and they are identical rows, so no version column is needed |
+| `ReplacingMergeTree` | The same tick can arrive more than once. Copies collapse on the sorting key when the parts merge, and they are identical rows, so no version column is needed |
 | `PRIMARY KEY (sender_id, short_symbol_name)` | The sparse index held in memory stops at the symbol |
 | `ORDER BY (…, created_time, sequence)` | The sorting key goes on to `created_time` and `sequence`, so that two ticks of one symbol never collapse into each other |
 | `PARTITION BY toYYYYMM(created_time)` | Monthly partitions, by the UTC month of `created_time`, make the TTL cheap: a part is dropped whole once every row in it has expired |
@@ -129,8 +125,8 @@ a background merge collapses them. Two copies inside one insert are collapsed by
 accounts, but not on the exporter's: its settings turn `optimize_on_insert` off, so a tick duplicated within one batch
 stays on disk until the parts merge, and `FINAL` hides it until then — see
 [Users & Permissions](../USERS_AND_PERMISSIONS.md#clickhouse).
-A re-send that falls in the next month still collapses, because the copy keeps its original's `created_time` and so
-its partition. With `--cluster`, the replicated engine may already drop a re-sent batch whose
+A copy that arrives in the next month still collapses, because it carries its original's `created_time` and so
+its partition. With `--cluster`, the replicated engine may already drop a repeated batch whose
 insert block is identical to one it has seen. See [Deduplication](../SCHEMA_REFERENCE.md#deduplication).
 
 ---
@@ -150,7 +146,7 @@ positive integer.
 rewriting parts to cut single rows out. The monthly partitions keep that cheap, at a price: retention is a
 minimum, and a tick can outlive it while its part still holds a younger one, until a merge rewrites that part.
 
-Age is `created_time`, not `batch_time`, so a tick re-sent long after it was created still expires on time — and a
+Age is `created_time`, not `batch_time`, so a tick that arrives long after it was created still expires on time — and a
 tick stamped with a `created_time` already older than the retention is removed by the next TTL pass, silently — a
 zero or missing `created_time`, which reads as 1970, included.
 
@@ -166,10 +162,7 @@ zero or missing `created_time`, which reads as 1970, included.
   it. Filter on `created_time`, not `batch_time`, to skip whole months.
 - A side of the book with no quotes is a zero price **and** a zero volume — check the volume to tell an empty side
   from a price.
-- When a symbol's session closes the server writes one tick with both sides empty, stamped with the time of the
-  last price update before the close — not the time of the close; it shares `created_time` with that update, and
-  `sequence` orders the two. No ticks are written for the symbol while its session stays closed.
-- After a restart the first tick of every symbol is written even when it equals the last one before the restart.
+- Two ticks of one symbol can share `created_time`; `sequence`, part of the sorting key, keeps them apart.
 
 ```sql
 -- the book of one symbol over the last hour, every tick once
