@@ -1,7 +1,7 @@
 -- The role and user the trade server authenticates as.
 --
 -- The ClickHouse exporter does exactly one thing: INSERT INTO the ticks and position_events tables over the native
--- protocol. It never reads, and a ClickHouse pipeline has no cursor table, so INSERT on those two tables is the
+-- protocol. It never reads, and there is no cursor table on ClickHouse, so INSERT on those two tables is the
 -- whole grant. The positions views are read and refreshed by others, so the exporter needs nothing on them.
 -- A right added here later is picked up on the next migration, because the changed content changes the MD5
 -- this script is journalled under.
