@@ -209,7 +209,7 @@ DEFAULT ROLE role_##database_name##_exporter;
 | `positions` | — | `SELECT` |
 
 `INSERT` alone, because that is all the exporter does: a ClickHouse pipeline sends `INSERT INTO … VALUES` over
-the native protocol and never reads, and it has no cursor table — it keeps its export position on disk. The
+the native protocol and never reads, and there is no cursor table on ClickHouse. The
 exporter needs nothing on the two views: it never reads, and `positions` is refreshed by the server as the
 account that ran the migration. A right
 added here later is picked up on the next migration, because the edit changes the MD5 the script is journalled

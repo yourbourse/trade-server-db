@@ -41,7 +41,7 @@ public class TicksMigrationIntegrationTests(ConfigBuilder configBuilder, ITestOu
     }
 
     /// <summary>
-    /// No cursor table: a ClickHouse pipeline keeps its position on disk and only inserts. The views are the
+    /// No cursor table on ClickHouse. The views are the
     /// positions state, stored and live.
     /// </summary>
     [Fact(DisplayName = "Schema Should create the exported tables, the positions state views and the journal and nothing else")]

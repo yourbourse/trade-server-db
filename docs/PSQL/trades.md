@@ -38,9 +38,7 @@ The table holds two kinds of record, told apart by [`trade_type`](#trade_type):
 A reader almost always wants one kind or the other, which is what the two views over this table are for. Their
 filters are complements, so every row is visible through exactly one of them.
 
-The export cursor is written in the same transaction as each batch, so in normal operation a record is written
-exactly once; the unique index on `(sender_id, trade_id)` is a guard for the one case that bypasses the cursor — see
-[Indexes](#indexes).
+The unique index on `(sender_id, trade_id)` keeps a record from being stored twice — see [Indexes](#indexes).
 
 ---
 
@@ -282,16 +280,10 @@ The snapshot tables are different: there the exporter writes `NULL` for a value 
 | `idx_account_time_trades` | `(trading_account_id, time_created)` | An account's records over a period — the main reporting path, and `trades_history` |
 | `idx_transfers_account_time_trades` | `(trading_account_id, time_created) WHERE trade_type NOT IN (0, 1, 14, 15)` | The same query against `cash_transfers`. Partial, so it holds the cash movements only and reads a fraction of the pages |
 
-**The unique index is a guard, not a repair mechanism.** The exporter writes each batch with `COPY` in one
-transaction, and PostgreSQL rejects the whole transaction when any row in it violates the index. The exporter
-treats that as a permanent failure: it logs `failed to send batch ... dropping` and discards the **entire** batch —
-the rows in it that were not duplicates included. A duplicate cannot corrupt the table, but a batch that contains
-one is lost.
-
-In normal operation it never fires: on every connection the exporter compares its position with
-[`export_cursor`](export_cursor.md#what-the-exporter-does-on-connect) and skips past anything already committed.
-The one case that reaches the index is a lost local state file, which the trade server logs as an `ERROR`
-(`persistent state not loaded`).
+**The unique index is a guard, not a repair mechanism.** PostgreSQL rejects a row that duplicates one already
+stored, and with it the whole statement or transaction that carried it — the rows in it that were not duplicates
+included. A duplicate cannot corrupt the table. What the trade server does with a rejected batch is described in the
+*Export Setup* guide.
 
 What an index covers comes **before** the table name, because PostgreSQL truncates identifiers to 63 bytes: a long
 configured table name would otherwise leave two indexes with the same truncated name, and the second

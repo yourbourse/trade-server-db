@@ -148,9 +148,8 @@ counterpart, because the trade server never writes those entities there.
 
 ### Why is there no cursor table on ClickHouse?
 
-A ClickHouse pipeline keeps its export position on disk rather than in the database, so there is nothing for a
-cursor table to hold. After a crash it starts again from position 0 — the *Export Setup* guide describes the
-consequences.
+The ClickHouse tables are written without a cursor table, so the migrator creates none. How the trade server
+tracks its export to ClickHouse is described in the *Export Setup* guide.
 
 ### How are duplicate records handled?
 
@@ -161,12 +160,11 @@ the snapshots, `(sender_id, short_symbol_name, created_time, sequence)` on ticks
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
-| A record arrives twice | only when the cursor is bypassed — a lost local state file | after a lost connection, by design |
 | Mechanism | a `UNIQUE` index on the key | `ReplacingMergeTree` sorted by the key |
-| When | immediately — the **whole batch** is rejected and dropped | when parts merge |
+| When | immediately — the **whole statement** carrying it is rejected | when parts merge |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
 
-On PostgreSQL the key is a guard: the batch carrying a duplicate is lost, its new rows included. The event logs
+On PostgreSQL the key is a guard: the statement carrying a duplicate is rejected, its new rows included. The event logs
 have no key at all, so a re-sent event lands as a second row and the derived table absorbs it. See
 [Deduplication](SCHEMA_REFERENCE.md#deduplication).
 

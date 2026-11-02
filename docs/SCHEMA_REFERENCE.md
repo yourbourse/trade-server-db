@@ -118,7 +118,7 @@ touches them, so that a database already owning an object under one of the names
 | `positions_live` | [positions_live](ClickHouse/positions_live.md) | `position_events` | The open positions of every sender, one row each, computed on every read — a plain view |
 | `positions` | [positions](ClickHouse/positions.md) | `positions_live` | The same rows, stored — a refreshable materialized view, recomputed every 5 minutes by default |
 
-ClickHouse holds nothing else: no cursor table — a ClickHouse pipeline keeps its export position on disk — and no
+ClickHouse holds nothing else: no cursor table, and no
 event logs with triggers. The current state of the positions is not maintained by a trigger, which ClickHouse does
 not have, but computed from the change stream by `positions_live` on every read, and stored by
 `positions` on a schedule; `positions` needs ClickHouse 24.10 or later. A reader of
@@ -158,19 +158,14 @@ on an exported id leads with it, so the correct query is also the one the keys s
 Every exported table is **append-only**: only `export_cursor` is ever rewritten, and only the derived tables are
 ever deleted from — by their trigger.
 
-On PostgreSQL the exporter writes each batch with `COPY ... FROM STDIN`, naming its columns, in one transaction with
-the batch's cursor update. So:
-
 - **Column order is free; names and types are not.** Every column the exporter writes must exist under its name,
-  with the type on the entity's page. A mismatch is not detected at start-up — it surfaces later, when a batch is
-  rejected and dropped and the trade server logs an `ERROR` (`failed to send batch ... dropping`). Money and price
-  columns in particular must be `NUMERIC`; `DOUBLE PRECISION` is rejected.
-- **In normal operation a record is written once.** The cursor commits with the data, and on every connection the
-  exporter skips past whatever the cursor says is committed. The unique keys are a guard for the case that bypasses
-  the cursor — see [Deduplication](#deduplication).
+  with the type on the entity's page. Money and price columns in particular must be `NUMERIC`; `DOUBLE PRECISION`
+  is rejected. What the trade server does with a batch the database rejects is described in the *Export Setup*
+  guide.
+- **A unique key guards against a record stored twice** on PostgreSQL — see [Deduplication](#deduplication).
 
-On ClickHouse there is no cursor table and no transaction: after a lost connection the server re-sends the batch it
-could not confirm, so delivery there is **at-least-once**, and the table's sorting key absorbs the copies.
+On ClickHouse there is no cursor table and no transaction, and a table can receive the same row more than once; the
+table's sorting key absorbs the copies.
 
 ### Types
 
@@ -295,17 +290,13 @@ enforces it in its own way:
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
-| Why a record would arrive twice | Only when the cursor is bypassed: a lost local state file makes the pipeline re-export from position `0` | After a lost connection the server re-sends the batch it could not confirm |
 | Mechanism | a `UNIQUE` index on the key | `ReplacingMergeTree` sorted by the key |
 | When it applies | immediately, on insert | when parts merge — eventually |
-| Effect of a duplicate | the **whole batch** is rejected, and the exporter drops it — the new rows in it included | both rows exist until the merge collapses them |
+| Effect of a duplicate | the statement or transaction carrying it is rejected whole — the new rows in it included | both rows exist until the merge collapses them |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
 
-On PostgreSQL the key is a **guard, not a repair mechanism**. The exporter writes a batch in one transaction, so a
-single duplicate fails all of it; the exporter treats that as permanent, logs `failed to send batch ... dropping`
-and moves on. A duplicate cannot corrupt the table, but the batch carrying it is lost. In normal operation it never
-happens — the cursor keeps the exporter from re-sending what is committed — and the case that reaches the key is
-logged as an `ERROR` first. See [`export_cursor`](PSQL/export_cursor.md#what-the-exporter-does-on-connect).
+On PostgreSQL the key is a **guard, not a repair mechanism**: a single duplicate fails the whole statement or
+transaction that carries it. A duplicate cannot corrupt the table.
 
 ```sql
 -- ClickHouse: exact counts before a merge has happened

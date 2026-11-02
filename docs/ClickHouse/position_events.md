@@ -43,8 +43,7 @@ cheaper to read and up to a refresh period old — see
 Between the two markers of a snapshot the server sends an `Upsert` for every position it holds open. What the
 markers mean to a reader — the watermark — is explained on [`positions_live`](positions_live.md#the-snapshot-protocol).
 
-There is no cursor table on ClickHouse: a ClickHouse pipeline keeps its export position on disk, and the exporter
-does nothing but insert.
+There is no cursor table on ClickHouse, and the exporter does nothing but insert.
 
 ---
 

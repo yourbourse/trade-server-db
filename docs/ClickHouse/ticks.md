@@ -31,8 +31,7 @@ Prices include the symbol's markup and not the group markups. A symbol produces 
 its `throttling` setting allows — up to 1000 price updates per second in the Admin REST API, where `0` turns
 throttling off and every update is published.
 
-There is no cursor table on ClickHouse and no view over the ticks: a ClickHouse pipeline keeps its export position
-on disk, and the exporter does nothing but insert.
+There is no cursor table on ClickHouse and no view over the ticks, and the exporter does nothing but insert.
 
 ---
 

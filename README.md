@@ -325,16 +325,14 @@ A daily statement is exported as three rows in three tables — the statement it
 order and one per open position — all sharing the scheduled end-of-day `time_statement`, which is what ties them
 together.
 
-Every exported table is append-only. The export cursor commits with each batch, so in normal operation a record is
-written once; a unique index guards the case that bypasses the cursor — `(sender_id, trade_id)` on trades, and
-`(sender_id, time_statement, …)` on the statement and snapshot tables. A batch that hits one is rejected whole and
-dropped by the exporter, so the index guards against duplicates but does not repair them. The four event logs have
+Every exported table is append-only. A unique index keeps a record from being stored twice — `(sender_id, trade_id)`
+on trades, and `(sender_id, time_statement, …)` on the statement and snapshot tables. A statement that hits one is
+rejected whole, so the index guards against duplicates but does not repair them. The four event logs have
 no such key — none carries a per-event id — so a re-sent event lands as a second row and the derived table absorbs
 it.
 
 `export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
-pipelines share it. The cursor row and the batch of records are written in the same transaction, which is what
-makes the cursor authoritative.
+pipelines share it.
 
 ### ClickHouse
 
@@ -358,8 +356,7 @@ that return the same rows — one per open position, as of the latest complete s
 
 `positions` needs ClickHouse 24.10 or newer.
 
-There is no cursor table. A ClickHouse pipeline keeps its export position on disk rather than in the database,
-and the exporter does nothing but insert.
+There is no cursor table on ClickHouse, and the exporter does nothing but insert.
 
 ### Roles
 
