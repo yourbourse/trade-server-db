@@ -124,7 +124,7 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 | Column | Type | Notes |
 |--------|------|-------|
 | `sender_id` | `UInt64` | The trade server instance, from the pipeline's `sender_id`. Every server exporting into one database must use a different value, or their rows overwrite each other |
-| `sequence` | `UInt64` | The order of the change within its sender. Grows monotonically per sender; the version the engine keeps the highest of |
+| `sequence` | `UInt64` | The version of the change within its sender: of the rows with the same key, the engine keeps the one with the highest `sequence` |
 | `batch_time` | `DateTime64(6, 'UTC')` | When the batch that carried the row was created. Every row of one insert has the same value. The age the retention of `Delete` rows is measured by |
 | `event_type` | `Enum8` | `Upsert`, `Delete`, `SnapshotStart` or `SnapshotEnd` — see [Overview](#overview) |
 | `position_id` | `UInt64` | The position, unique within its sender. `0` on a snapshot marker |
@@ -175,7 +175,7 @@ Every column is `NOT NULL`. The four service columns come first. On a snapshot m
 
 | Choice | Why |
 |--------|-----|
-| `ReplacingMergeTree(sequence)` | Each position is one row in the end: of the rows with the same sorting key, the merge keeps the one with the highest `sequence`, so a re-sent or late batch never overwrites a newer change |
+| `ReplacingMergeTree(sequence)` | Each position is one row in the end: of the rows with the same sorting key, the merge keeps the one with the highest `sequence`, so a row with a lower `sequence` never replaces one with a higher, whatever order they arrive in |
 | `ORDER BY (sender_id, position_id, marker_sequence)` | For a position `marker_sequence` is `0`, so the key is the position itself. Every marker has `position_id = 0`; `marker_sequence` gives each its own key, so markers never replace each other |
 | `PARTITION BY sender_id` | One partition per sender keeps the senders apart, so `FINAL` can work one partition at a time — see [`positions_live`](positions_live.md#final-sql) |
 | `min_age_to_force_merge_seconds` (600) | The parts of a partition are force-merged once every one of them is `position_events_min_age_to_force_merge_seconds` seconds old — ten minutes by default — with or without new inserts, so the versions of one position do not stay apart for long. The `Delete` retention depends on it — see [The TTL relies on the forced merges](#the-ttl-relies-on-the-forced-merges) |

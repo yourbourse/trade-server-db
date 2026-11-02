@@ -207,7 +207,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
     }
 
     /// <summary>
-    /// ReplacingMergeTree(sequence): the highest sequence wins, so a late batch never overwrites a newer change.
+    /// ReplacingMergeTree(sequence): the highest sequence wins, whatever order the rows arrive in.
     /// </summary>
     [Fact(DisplayName = "Invariant Should keep the change with the highest sequence whatever the order it arrives in")]
     public void Invariant_Should_keep_the_change_with_the_highest_sequence_whatever_the_order_it_arrives_in()
