@@ -610,7 +610,7 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["merge_tree_engine"] = "MergeTree",
                 ["replacing_merge_tree_engine"] = "ReplacingMergeTree",
                 ["ticks_ttl_days"] = "31",
-                ["positions_refresh_seconds"] = "30",
+                ["positions_refresh_seconds"] = "300",
                 ["position_events_delete_ttl_days"] = "30",
                 ["position_events_min_age_to_force_merge_seconds"] = "600"
             },

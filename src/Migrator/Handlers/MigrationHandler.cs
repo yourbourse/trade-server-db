@@ -62,7 +62,7 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultPositionEventsTable = "position_events";
     private const string DefaultPositionsView = "positions";
     private const string DefaultPositionsLiveView = "positions_live";
-    private const string DefaultPositionsRefreshSeconds = "30";
+    private const string DefaultPositionsRefreshSeconds = "300";
     private const string DefaultPositionEventsDeleteTtlDays = "30";
     private const string DefaultPositionEventsMinAgeToForceMergeSeconds = "600";
     private const string DefaultTradesHistoryView = "trades_history";

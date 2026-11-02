@@ -354,7 +354,7 @@ that return the same rows — one per open position, as of the latest complete s
 | View | Default name | Kind |
 |---|---|---|
 | Positions state, live | [`positions_live`](docs/ClickHouse/positions_live.md) | a plain view: computed on every read, always current, a `FINAL` read of `position_events` per query |
-| Positions state | [`positions`](docs/ClickHouse/positions.md) | a refreshable materialized view over the live one: a plain table, recomputed every 30 seconds by default |
+| Positions state | [`positions`](docs/ClickHouse/positions.md) | a refreshable materialized view over the live one: a plain table, recomputed every 5 minutes by default |
 
 `positions` needs ClickHouse 24.10 or newer.
 

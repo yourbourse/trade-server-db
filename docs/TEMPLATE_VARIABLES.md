@@ -96,7 +96,7 @@ an unresolved placeholder.
 | `##ticks_ttl_days##` | `31` | `31` |
 | `##position_events_delete_ttl_days##` | `30` | `30` |
 | `##position_events_min_age_to_force_merge_seconds##` | `600` | `600` |
-| `##positions_refresh_seconds##` | `30` | `30` |
+| `##positions_refresh_seconds##` | `300` | `300` |
 
 `##ticks_ttl_days##` is the retention of the ticks table, in days, written into its `TTL` by
 `clickhouse/post/ticks_ttl.sql`. A deployment sets its own with `--variables ticks_ttl_days=N`; the changed value

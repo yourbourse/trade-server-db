@@ -40,8 +40,8 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         Assert.Equal(AgreedTable(), ShowCreate(connectionString, "position_events"));
     }
 
-    [Fact(DisplayName = "Schema Should create the positions view refreshed every 30 seconds into a MergeTree")]
-    public void Schema_Should_create_the_positions_view_refreshed_every_30_seconds_into_a_MergeTree()
+    [Fact(DisplayName = "Schema Should create the positions view refreshed every 5 minutes into a MergeTree")]
+    public void Schema_Should_create_the_positions_view_refreshed_every_5_minutes_into_a_MergeTree()
     {
         // arrange, act
         var connectionString = Migrate();
@@ -50,7 +50,7 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         var view = ShowCreate(connectionString, "positions");
 
         Assert.StartsWith("CREATE MATERIALIZED VIEW positions", view);
-        Assert.Contains("REFRESH EVERY 30 SECOND", view);
+        Assert.Contains("REFRESH EVERY 5 MINUTE", view);
         Assert.Contains("ENGINE = MergeTree", view);
         Assert.Contains("ORDER BY (sender_id, position_id)", view);
         Assert.Contains("FROM positions_live", view);
