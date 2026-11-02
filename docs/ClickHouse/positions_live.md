@@ -135,7 +135,7 @@ that row has arrived — and what [`positions`](positions.md) holds after its ne
 Position 12 disappears without a `Delete`: the snapshot from 8 to 10 did not contain it. Had another `SnapshotStart`
 arrived at 11 and nothing more, the watermark would stay at 8 and the view would not change.
 
-The rules rely on `sequence` growing monotonically per sender: the watermark is a comparison of sequences.
+The rules assume that, within a sender, a later row carries a higher `sequence`: the watermark is a comparison of sequences.
 
 ---
 

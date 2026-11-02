@@ -74,8 +74,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// sequence grows monotonically per sender across restarts, so the ticks written after one never collide with
-    /// those written before it - not even the first tick of a symbol, which repeats the last book before the restart.
+    /// Ticks whose sequence differs never collapse - not even one that repeats the book of the tick before it.
     /// </summary>
     [Fact(DisplayName = "Workflow Should keep the ticks of a restarted server, numbered on from where it stopped")]
     public void Workflow_Should_keep_the_ticks_of_a_restarted_server_numbered_on_from_where_it_stopped()
@@ -83,7 +82,7 @@ public class TicksDataIntegrationTests(ConfigBuilder configBuilder, ITestOutputH
         // arrange
         var connectionString = Migrate();
 
-        // act, three ticks, a restart, then the first tick again with the same book, and one more
+        // act, three ticks, then two more in a later batch, the first repeating the last book
         Insert(connectionString, new Tick(1, At(0)), new Tick(2, At(1)), new Tick(3, At(2), BidPrice: "1.0857"));
         Insert(connectionString, new Tick(4, At(10), BidPrice: "1.0857"), new Tick(5, At(11)));
         Execute(connectionString, "OPTIMIZE TABLE ticks FINAL");

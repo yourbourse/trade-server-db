@@ -81,7 +81,7 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 | Column | Type | Notes |
 |--------|------|-------|
 | `sender_id` | `UInt64` | The trade server instance, from the pipeline's `sender_id`. Every server exporting into one database must use a different value, or their rows overwrite each other |
-| `sequence` | `UInt64` | The order in which this server inserted its rows. Grows monotonically per `sender_id`, across restarts |
+| `sequence` | `UInt64` | A number the trade server gives the row. Part of the sorting key — see [Engine and keys](#engine-and-keys) |
 | `batch_time` | `DateTime64(6, 'UTC')` | When the batch that carried the row was created. Every row of one insert has the same value |
 | `created_time` | `DateTime64(6, 'UTC')` | When the trade server received the latest price update the publication includes |
 | `symbol_id` | `UInt64` | Unique identifier of the instrument |
@@ -113,7 +113,7 @@ What the types do with a value that does not fit:
 |--------|-----|
 | `ReplacingMergeTree` | The same tick can arrive more than once. Copies collapse on the sorting key when the parts merge, and they are identical rows, so no version column is needed |
 | `PRIMARY KEY (sender_id, short_symbol_name)` | The sparse index held in memory stops at the symbol |
-| `ORDER BY (…, created_time, sequence)` | The sorting key goes on to `created_time` and `sequence`, so that two ticks of one symbol never collapse into each other |
+| `ORDER BY (…, created_time, sequence)` | The sorting key goes on to `created_time` and `sequence`, so that two ticks of one symbol collapse only when both are equal |
 | `PARTITION BY toYYYYMM(created_time)` | Monthly partitions, by the UTC month of `created_time`, make the TTL cheap: a part is dropped whole once every row in it has expired |
 
 The sorting key alone decides what collapses. Two rows with the same `(sender_id, short_symbol_name, created_time,
@@ -156,8 +156,7 @@ zero or missing `created_time`, which reads as 1970, included.
 
 - Add `FINAL` to read every row once before the parts have merged. It costs more than a plain read; for aggregates
   over large ranges, deduplicate in the query (`argMax` by the key) or accept the small window of duplication.
-- Sort by `created_time` to read ticks in time order. `sequence` gives the order the server wrote them in, and
-  keeps growing across restarts.
+- Sort by `created_time` to read ticks in time order.
 - Filter on `sender_id` and `short_symbol_name`: they are the primary key. A filter on `symbol_id` alone cannot use
   it. Filter on `created_time`, not `batch_time`, to skip whole months.
 - A side of the book with no quotes is a zero price **and** a zero volume — check the volume to tell an empty side

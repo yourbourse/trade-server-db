@@ -15,7 +15,7 @@
 -- column type differs from the table's.
 --
 -- Versioning: ReplacingMergeTree keeps the row with the highest sequence for each (sender_id, position_id), so a
--- re-sent or late batch never overwrites a newer change. sequence grows monotonically per sender. Until the parts
+-- row with a lower sequence never replaces one with a higher, whatever order they arrive in. Until the parts
 -- merge a query sees every version unless it reads with FINAL.
 --
 -- Markers: every snapshot marker carries position_id = 0, so marker_sequence, which is the sequence for a marker
