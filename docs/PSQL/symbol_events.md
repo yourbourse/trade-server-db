@@ -18,7 +18,7 @@ PostgreSQL · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | PostgreSQL |
 | Default name | `symbol_events` — renamed with `--variables symbol_events_table=…` |
-| Written by | The trade server's symbol export pipeline. A resync can be requested on demand with the Admin API's `POST /admin/export/snapshot`, `"entityType": "Symbol"` |
+| Written by | The trade server's symbol export pipeline |
 | One row per | Event: a symbol's full configuration, a deletion, or a resync marker |
 | Order | `id` — never `time_inserted`, which a whole batch shares |
 | Deduplicated by | Nothing — there is no deduplication key |
@@ -218,8 +218,7 @@ CREATE INDEX idx_markers_symbol_events
 | anything else | Unknown to this schema — stored, not projected | — | — | — |
 
 The values are assumed to match the trading account and client logs, where the *Export Setup* guide names them
-Upsert, Delete, SnapshotStart and SnapshotEnd; for symbols the trade server team has yet to confirm them. A resync is
-also what the Admin API's `POST /admin/export/snapshot` with `"entityType": "Symbol"` starts.
+Upsert, Delete, SnapshotStart and SnapshotEnd; for symbols the trade server team has yet to confirm them.
 
 ---
 

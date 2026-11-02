@@ -86,7 +86,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
     }
 
     /// <summary>
-    /// A position the latest complete snapshot did not carry is one the server no longer knows, closed or not.
+    /// A position the latest complete snapshot did not carry is hidden, closed or not.
     /// </summary>
     [Fact(DisplayName = "Workflow Should hide the positions missing from the latest completed snapshot")]
     public void Workflow_Should_hide_the_positions_missing_from_the_latest_completed_snapshot()
@@ -96,7 +96,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         Insert(connectionString, Snapshot(1, Sender, 1, 2));
         Insert(connectionString, Upsert(5, 3));
 
-        // act, a later snapshot - after a restart, say - knows position 1 alone
+        // act, a later snapshot carries position 1 alone
         Insert(connectionString, Snapshot(6, Sender, 1));
 
         // assert
@@ -113,7 +113,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
         var connectionString = MigrateForState();
         Insert(connectionString, Snapshot(1, Sender, 1, 2));
 
-        // act, the next snapshot has re-sent position 1 and not yet position 2
+        // act, the next snapshot has carried position 1 and not yet position 2
         Insert(connectionString, SnapshotStart(5), Upsert(6, 1, "3"));
 
         // assert, position 2 stays, and position 1 shows its latest change
@@ -179,7 +179,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
     }
 
     /// <summary>
-    /// At-least-once delivery: the copy collapses when the parts merge, and FINAL hides it until then.
+    /// The same rows arriving twice: the copy collapses when the parts merge, and FINAL hides it until then.
     /// </summary>
     [Fact(DisplayName = "Workflow Should show a re-sent batch twice until the parts merge, once under FINAL and once in the view")]
     public void Workflow_Should_show_a_re_sent_batch_twice_until_the_parts_merge_once_under_FINAL_and_once_in_the_view()
@@ -190,7 +190,7 @@ public class PositionsDataIntegrationTests(ConfigBuilder configBuilder, ITestOut
 
         var batch = Snapshot(1, Sender, 1, 2);
 
-        // act, the confirmation is lost and the rows go again in a later batch
+        // act, the same rows arrive again in a later batch
         Insert(connectionString, batch);
         Insert(connectionString, [.. batch.Select(row => row with { BatchTime = HoursAgo(0) })]);
 

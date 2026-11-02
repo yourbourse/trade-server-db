@@ -8,8 +8,7 @@
 -- on the next refresh. CREATE OR REPLACE, so a changed query is applied by the next run of this script.
 --
 -- The watermark of a sender is the latest SnapshotStart that has a SnapshotEnd after it. A position whose last
--- change is older than the watermark was not part of the latest complete snapshot, so the server no longer knows
--- it and the view hides it. A sender appears in the view only once its first snapshot has completed; a snapshot
+-- change is older than the watermark was not part of the latest complete snapshot, and the view hides it. A sender appears in the view only once its first snapshot has completed; a snapshot
 -- still in progress changes nothing until its SnapshotEnd arrives.
 --
 -- The view runs with the rights of whoever reads it (SQL SECURITY INVOKER, the default for a plain view), so a

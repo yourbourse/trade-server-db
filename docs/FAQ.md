@@ -165,7 +165,7 @@ the snapshots, `(sender_id, short_symbol_name, created_time, sequence)` on ticks
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
 
 On PostgreSQL the key is a guard: the statement carrying a duplicate is rejected, its new rows included. The event logs
-have no key at all, so a re-sent event lands as a second row and the derived table absorbs it. See
+have no key at all, so an event that arrives twice lands as two rows and the derived table absorbs it. See
 [Deduplication](SCHEMA_REFERENCE.md#deduplication).
 
 ### Can I point the migrator at a database that was set up by hand?
