@@ -116,7 +116,7 @@ touches them, so that a database already owning an object under one of the names
 | View | Documented on | Over | Answers |
 |------|---------------|------|---------|
 | `positions_live` | [positions_live](ClickHouse/positions_live.md) | `position_events` | The open positions of every sender, one row each, computed on every read — a plain view |
-| `positions` | [positions](ClickHouse/positions.md) | `positions_live` | The same rows, stored — a refreshable materialized view, recomputed every 30 seconds by default |
+| `positions` | [positions](ClickHouse/positions.md) | `positions_live` | The same rows, stored — a refreshable materialized view, recomputed every 5 minutes by default |
 
 ClickHouse holds nothing else: no cursor table — a ClickHouse pipeline keeps its export position on disk — and no
 event logs with triggers. The current state of the positions is not maintained by a trigger, which ClickHouse does

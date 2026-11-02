@@ -564,7 +564,7 @@ public class MigrationHandlerTests
     [InlineData("position_events_table", "position_events")]
     [InlineData("positions_view", "positions")]
     [InlineData("positions_live_view", "positions_live")]
-    [InlineData("positions_refresh_seconds", "30")]
+    [InlineData("positions_refresh_seconds", "300")]
     [InlineData("position_events_delete_ttl_days", "30")]
     [InlineData("position_events_min_age_to_force_merge_seconds", "600")]
     public void BuildVariables_Should_default_the_positions_objects_and_settings_to_their_documented_values(string variable, string expected)

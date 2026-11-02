@@ -147,7 +147,7 @@ The two views return the same rows; they differ in when the work is done.
 | | `positions_live` | [`positions`](positions.md) |
 |---|------------------------|------------------------------------------|
 | Kind | Plain view | Refreshable materialized view over this one |
-| Freshness | Current at every read | As old as the last refresh — up to `positions_refresh_seconds`, 30 by default, plus the time a refresh takes |
+| Freshness | Current at every read | As old as the last refresh — up to `positions_refresh_seconds`, 300 by default, plus the time a refresh takes |
 | Cost per read | A `FINAL` read of the whole of `position_events` | A read of a plain `MergeTree` table |
 | Grants a reader needs | `SELECT` on the view and on `position_events` | `SELECT` on the view |
 | Server version | any the migrator supports | 24.10 or later |

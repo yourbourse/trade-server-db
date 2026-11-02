@@ -21,7 +21,7 @@ ClickHouse · view · [Schema Reference](../SCHEMA_REFERENCE.md)
 | Default name | `positions` — renamed with `--variables positions_view=…` |
 | One row per | Open position of every sender, as of the latest complete snapshot and the changes after it |
 | Columns | Those of `positions_live`: every column of `position_events` except `marker_sequence` |
-| Refresh | Every 30 seconds by default — `--variables positions_refresh_seconds=…` |
+| Refresh | Every 300 seconds (5 minutes) by default — `--variables positions_refresh_seconds=…` |
 | Grants | `ro`: `SELECT` · `exporter`: none |
 
 [`positions_live`](positions_live.md) computes the current state of the positions from the
@@ -41,11 +41,11 @@ called `positions` can move ours aside.
 ## Final SQL
 
 The view as it stands once the script that builds it has run, on a single instance with the default names and the
-default 30-second refresh.
+default 300-second refresh.
 
 ```sql
 CREATE MATERIALIZED VIEW positions
-REFRESH EVERY 30 SECOND
+REFRESH EVERY 300 SECOND
 ENGINE = MergeTree
 ORDER BY (sender_id, position_id)
 AS
@@ -73,7 +73,7 @@ order. `event_type` is always `Upsert` and `position_id` is never `0`.
 
 ## Refresh
 
-The view is refreshed every `positions_refresh_seconds` seconds, 30 by default. A refresh recomputes the
+The view is refreshed every `positions_refresh_seconds` seconds, 300 (5 minutes) by default. A refresh recomputes the
 whole result through `positions_live` and replaces the view's rows with it in one step, so a reader sees
 either the previous state or the new one, never a mix. A deployment sets its own period with
 `--variables positions_refresh_seconds=N`; `N` must be a positive integer.
