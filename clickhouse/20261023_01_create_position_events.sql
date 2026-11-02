@@ -11,7 +11,7 @@
 --   SnapshotStart - a full snapshot of the sender's open positions begins; position_id = 0
 --   SnapshotEnd   - the snapshot is complete; position_id = 0
 --
--- Column types must match the exporter's PositionDescriptor exactly: the native protocol rejects a block whose
+-- Column types must match what the exporter writes exactly: the native protocol rejects a block whose
 -- column type differs from the table's.
 --
 -- Versioning: ReplacingMergeTree keeps the row with the highest sequence for each (sender_id, position_id), so a

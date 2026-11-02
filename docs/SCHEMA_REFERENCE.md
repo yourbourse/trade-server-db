@@ -12,7 +12,7 @@
 
 ## Overview
 
-The trade server exports each entity to exactly one engine, so the two engines hold different tables. Every one of
+The two engines hold different tables. Every one of
 them is created by the migrator, in the database named by the connection string, and each has its own page — under
 `PSQL/` for [PostgreSQL](#postgresql) and `ClickHouse/` for [ClickHouse](#clickhouse) — named after its default table
 name.
@@ -36,11 +36,9 @@ what the exporter writes, and the trade server's Admin REST API, whose `TradingA
 `Symbol`, `Order`, `Position`, `Trade`, `Transfer` and `Statement` resources carry the same data. Where the two
 disagree, the page says so.
 
-> **Important:** **The engines are not mirrors of each other.** The *Export Setup* guide sends the trades, the daily
-> statements and their snapshots, the event logs and the cursor to PostgreSQL only, and the ticks and positions to
-> ClickHouse only; a pipeline that pairs an entity with the other engine is rejected by the trade server. So `psql/`
-> creates the PostgreSQL tables, their projections and views, `clickhouse/` creates the ticks and position_events tables
-> and the two views over position_events, and both create the journal.
+> **Important:** **The engines are not mirrors of each other.** `psql/` creates the trades, the daily statements and
+> their snapshots, the event logs, the cursor, their projections and views; `clickhouse/` creates the ticks and
+> position_events tables and the two views over position_events; both create the journal.
 
 ---
 
@@ -48,26 +46,23 @@ disagree, the page says so.
 
 ### Exported by the trade server
 
-Each table is written by one pipeline of the trade server's `export_config.json`, identified by its `entity`. The
-pipeline's `table` field names the table; a deployment that changed it passes the same name to every migration, as
+A deployment that gives a table another name passes the same name to every migration, as
 `--variables <variable>=<name>` — see [Renamed tables](#renamed-tables).
 
-| Entity | Page | Pipeline `entity` | Default name | Variable | One row per |
-|--------|------|-------------------|--------------|----------|-------------|
-| Export cursor | [export_cursor](PSQL/export_cursor.md) | every pipeline's `cursor_table` | `export_cursor` | `cursor_table` | PostgreSQL pipeline and sender |
-| Trades | [trades](PSQL/trades.md) | `trade` | `trades` | `trades_table` | Trade or cash movement |
-| Daily statements | [daily_statements_export](PSQL/daily_statements_export.md) | `daily_statement` | `daily_statements_export` | `daily_statements_table` | Account per statement run |
-| Daily order snapshots | [daily_statements_order_snapshots](PSQL/daily_statements_order_snapshots.md) | `daily_statement_order_snapshot` | `daily_statements_order_snapshots` | `order_snapshots_table` | Working order per statement run |
-| Daily position snapshots | [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | `daily_statement_position_snapshot` | `daily_statements_position_snapshots` | `position_snapshots_table` | Open position per statement run |
-| Trading account events | [trading_account_events](PSQL/trading_account_events.md) | `trading_account` | `trading_account_events` | `trading_account_events_table` | Trading account change or resync marker |
-| Client events | [client_events](PSQL/client_events.md) | `client` | `client_events` | `client_events_table` | Client change or resync marker |
-| Symbol events | [symbol_events](PSQL/symbol_events.md) | — | `symbol_events` | `symbol_events_table` | Symbol configuration change or resync marker |
-| Group events | [group_events](PSQL/group_events.md) | — | `group_events` | `group_events_table` | Group configuration change or resync marker |
+| Entity | Page | Default name | Variable | One row per |
+|--------|------|--------------|----------|-------------|
+| Export cursor | [export_cursor](PSQL/export_cursor.md) | `export_cursor` | `cursor_table` | Sender and exported table |
+| Trades | [trades](PSQL/trades.md) | `trades` | `trades_table` | Trade or cash movement |
+| Daily statements | [daily_statements_export](PSQL/daily_statements_export.md) | `daily_statements_export` | `daily_statements_table` | Account per statement run |
+| Daily order snapshots | [daily_statements_order_snapshots](PSQL/daily_statements_order_snapshots.md) | `daily_statements_order_snapshots` | `order_snapshots_table` | Working order per statement run |
+| Daily position snapshots | [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | `daily_statements_position_snapshots` | `position_snapshots_table` | Open position per statement run |
+| Trading account events | [trading_account_events](PSQL/trading_account_events.md) | `trading_account_events` | `trading_account_events_table` | Trading account change or resync marker |
+| Client events | [client_events](PSQL/client_events.md) | `client_events` | `client_events_table` | Client change or resync marker |
+| Symbol events | [symbol_events](PSQL/symbol_events.md) | `symbol_events` | `symbol_events_table` | Symbol configuration change or resync marker |
+| Group events | [group_events](PSQL/group_events.md) | `group_events` | `group_events_table` | Group configuration change or resync marker |
 
-> **Important:** The *Export Setup* guide's example configuration names the trades table **`trades_export`**; the
-> migrator's default is `trades`. A deployment that follows the guide's example migrates with
-> `--variables trades_table=trades_export`. Every other default here matches the guide, which does not cover the
-> symbol and group pipelines.
+> **Important:** The migrator's default name for the trades table is `trades`. A deployment whose trades table is
+> called `trades_export` migrates with `--variables trades_table=trades_export`.
 
 ### Derived by the migrator
 
@@ -107,11 +102,11 @@ touches them, so that a database already owning an object under one of the names
 
 ## ClickHouse
 
-| Entity | Page | Pipeline `entity` | Default name | Variable | One row per |
-|--------|------|-------------------|--------------|----------|-------------|
-| Ticks | [ticks](ClickHouse/ticks.md) | `tick` | `ticks` | `ticks_table` | Change of a symbol's best bid or best ask |
-| Positions | [position_events](ClickHouse/position_events.md) | `position` | `position_events` | `position_events_table` | Change of an open position, or a snapshot marker |
-| Journal | [schema_versions](ClickHouse/schema_versions.md) | — | `schema_versions` | `--journal-table` | Applied script |
+| Entity | Page | Default name | Variable | One row per |
+|--------|------|--------------|----------|-------------|
+| Ticks | [ticks](ClickHouse/ticks.md) | `ticks` | `ticks_table` | Change of a symbol's best bid or best ask |
+| Positions | [position_events](ClickHouse/position_events.md) | `position_events` | `position_events_table` | Change of an open position, or a snapshot marker |
+| Journal | [schema_versions](ClickHouse/schema_versions.md) | `schema_versions` | `--journal-table` | Applied script |
 
 | View | Documented on | Over | Answers |
 |------|---------------|------|---------|
@@ -200,7 +195,7 @@ members by name.
 ### Names
 
 Every table and view name is templated as a `##variable##` and can be renamed with `--variables` — see
-[Template Variables](TEMPLATE_VARIABLES.md). The names the trade server writes to mirror its export configuration;
+[Template Variables](TEMPLATE_VARIABLES.md). The exported table names can differ per deployment;
 the derived tables and the views are templated so that a database already owning an object under a default name
 can move ours aside.
 
@@ -219,7 +214,7 @@ Trading accounts, clients, symbols and groups are exported as an **event log** p
 derived from it. The mechanism is identical for all four.
 
 ```
-trade server ──COPY──► <entity>_events ──AFTER INSERT trigger──► <entity> table   (one row per live entity)
+trade server ───────► <entity>_events ──AFTER INSERT trigger──► <entity> table   (one row per live entity)
                              │
                              └──────────── <entity>_resync view                   (resync in progress?)
 ```
@@ -241,8 +236,8 @@ client logs:
 - **A resync sweeps at the end marker**, not the start, so the current-state table stays complete and readable for
   the whole resync. Between the markers the table is a mixture of re-announced and not-yet-reached rows; the
   entity's `_resync` view says whether a sender is in that window.
-- **The trigger runs in the exporter's transaction**, so the table cannot lag behind the log, and a batch that fails
-  to commit leaves no trace in it. That is also why `exporter` holds `INSERT`, `UPDATE` and `DELETE` on the derived
+- **The trigger runs in the transaction that inserts the event**, so the table cannot lag behind the log, and an
+  insert that fails to commit leaves no trace in it. That is also why `exporter` holds `INSERT`, `UPDATE` and `DELETE` on the derived
   tables.
 - **The projection script is re-runnable** and ends with a reconcile pass that replays the newest retained event per
   entity, so `--force` repairs a dropped trigger and corrects rows an earlier, buggy version of the projection wrote.
@@ -371,7 +366,7 @@ the guide's by hand after migrating: the migrator's names are the ones these pag
 
 ### Renamed tables
 
-If the trade server's export configuration uses non-default table names, every run must pass the same
+If a deployment uses non-default table names, every run must pass the same
 `--variables trades_table=… daily_statements_table=… order_snapshots_table=… position_snapshots_table=…
 trading_account_events_table=… client_events_table=… symbol_events_table=… group_events_table=… cursor_table=…` on
 PostgreSQL, or `--variables ticks_table=… position_events_table=… positions_live_view=… positions_view=…` on

@@ -35,7 +35,7 @@ Three properties of this tool shape every procedure below:
 
 ## First provisioning
 
-The order matters: schema first, users second, and the export pipeline only after both.
+The order matters: schema first, users second, and the export only after both.
 
 > **Important:** The two engines hold different tables — PostgreSQL the trades, the daily statements, the two
 > snapshot tables, the four event logs with the tables derived from them, and the cursor, ClickHouse the ticks and

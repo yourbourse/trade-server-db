@@ -2,7 +2,7 @@
 
 # Users & Permissions
 
-**The roles the export pipeline needs, and how the migrator provisions them**
+**The roles the export needs, and how the migrator provisions them**
 
 [The two roles](#the-two-roles) · [How the phase works](#how-the-users-phase-works) · [PostgreSQL](#postgresql) · [ClickHouse](#clickhouse) · [Rotation](#password-rotation) · [Adding a role](#adding-a-role)
 
@@ -208,8 +208,7 @@ DEFAULT ROLE role_##database_name##_exporter;
 | `positions_live` | — | `SELECT` |
 | `positions` | — | `SELECT` |
 
-`INSERT` alone, because that is all the exporter does: a ClickHouse pipeline sends `INSERT INTO … VALUES` over
-the native protocol and never reads, and there is no cursor table on ClickHouse. The
+`INSERT` alone: on ClickHouse the exporter only inserts, and there is no cursor table there. The
 exporter needs nothing on the two views: it never reads, and `positions` is refreshed by the server as the
 account that ran the migration. A right
 added here later is picked up on the next migration, because the edit changes the MD5 the script is journalled

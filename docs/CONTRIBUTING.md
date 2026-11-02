@@ -142,7 +142,7 @@ whether the change is breaking for anything reading the table.
 |-------|---------|
 | Edit an applied script | It will not re-run; the file and the deployed database drift apart silently |
 | Add a rollback script | There is no rollback here by design. Roll forward with a corrective script |
-| Hard-code a table name | The names are configurable in the trade server's export configuration |
+| Hard-code a table name | A deployment may give the exported tables other names |
 | Reach for `--variables` in a committed script | Committed scripts should work with the documented variables; `--variables` is for deployment-specific values |
 | Silence a warning | `TreatWarningsAsErrors` is on deliberately — fix the cause |
 

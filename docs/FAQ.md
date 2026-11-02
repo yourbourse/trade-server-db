@@ -38,9 +38,9 @@ re-runnable scripts re-run only when their content changes. A second run reports
 
 ### Which engine should I use?
 
-Both, if you export both kinds of entity. The trade server sends trades, daily statements, their snapshots and
-the export cursor to PostgreSQL and ticks and positions to ClickHouse, and rejects a pipeline that pairs an entity with the
-other engine. Run the migrator once per engine you export to; each run creates that engine's tables.
+Both, if you export both kinds of entity. PostgreSQL holds the trades, daily statements, their snapshots, the event
+logs and the export cursor, ClickHouse the ticks and positions. Run the migrator once per engine you export to; each
+run creates that engine's tables.
 
 ---
 
@@ -109,14 +109,12 @@ Nine on PostgreSQL that the trade server writes to — `trades`, `daily_statemen
 `client_events`, `symbol_events`, `group_events` and `export_cursor` — two on ClickHouse — `ticks` and
 `position_events` — plus the four tables the migrator creates and a trigger maintains from an event log,
 `trading_accounts`, `clients`, `symbols` and `groups`, the `positions_live` and `positions` views over
-`position_events`, and its own `schema_versions` journal on each engine. Each exported table matches one export
-pipeline in the trade server's `export_config.json`, and the PostgreSQL pipelines share the one cursor table. Each
+`position_events`, and its own `schema_versions` journal on each engine. The PostgreSQL tables share the one cursor table. Each
 table has its own page with its final SQL and its columns, indexed in [Schema Reference](SCHEMA_REFERENCE.md).
 
 ### Can I rename the exported tables?
 
-Yes — every one of them is configurable in the trade server's export configuration, and the scripts template all
-eleven names. Pass the ones you renamed on every run:
+Yes — the scripts template all eleven names. Pass the ones you renamed on every run:
 
 ```bash
 --variables trades_table=trades_export cursor_table=trades_export_cursor daily_statements_table=statements_export
@@ -144,7 +142,7 @@ keys — join on `(sender_id, time_statement, trading_account_id)`.
 the `position_events` table, `clickhouse/views/positions_live.sql` the `positions_live` view over it,
 `clickhouse/post/positions.sql` the `positions` view over that, and the `users/` phase grants on all
 four. The PostgreSQL tables have no ClickHouse
-counterpart, because the trade server never writes those entities there.
+counterpart.
 
 ### Why is there no cursor table on ClickHouse?
 

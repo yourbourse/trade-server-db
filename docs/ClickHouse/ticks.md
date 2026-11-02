@@ -18,7 +18,7 @@ ClickHouse · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | ClickHouse |
 | Default name | `ticks` — renamed with `--variables ticks_table=…` |
-| Written by | The trade server's `tick` pipeline — `"entity": "tick"`, `"target": "clickhouse"` — over the native protocol |
+| Written by | The trade server |
 | One row per | Change of a symbol's best bid or best ask |
 | Writes | Append-only; the same row can arrive more than once |
 | Deduplicated by | `ReplacingMergeTree` on `(sender_id, short_symbol_name, created_time, sequence)`, when parts merge |
@@ -80,7 +80,7 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `sender_id` | `UInt64` | The trade server instance, from the pipeline's `sender_id`. Every server exporting into one database must use a different value, or their rows overwrite each other |
+| `sender_id` | `UInt64` | The trade server instance. Every server exporting into one database must use a different value, or their rows overwrite each other |
 | `sequence` | `UInt64` | A number the trade server gives the row. Part of the sorting key — see [Engine and keys](#engine-and-keys) |
 | `batch_time` | `DateTime64(6, 'UTC')` | When the batch that carried the row was created. Every row of one insert has the same value |
 | `created_time` | `DateTime64(6, 'UTC')` | When the trade server received the latest price update the publication includes |

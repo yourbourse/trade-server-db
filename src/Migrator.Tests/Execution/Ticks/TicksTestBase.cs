@@ -156,7 +156,7 @@ public abstract class TicksTestBase(ConfigBuilder configBuilder, ITestOutputHelp
     }
 
     /// <summary>
-    /// One statement, one batch, the shape the exporter sends.
+    /// One statement, one batch.
     /// </summary>
     protected static void Insert(string connectionString, params Tick[] ticks)
     {

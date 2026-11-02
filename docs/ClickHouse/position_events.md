@@ -18,7 +18,7 @@ ClickHouse · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | ClickHouse |
 | Default name | `position_events` — renamed with `--variables position_events_table=…` |
-| Written by | The trade server's `position` pipeline — `"entity": "position"`, `"target": "clickhouse"` — over the native protocol |
+| Written by | The trade server |
 | One row per | Change of an open position — `Upsert` or `Delete` — or a `SnapshotStart` / `SnapshotEnd` marker |
 | Writes | Append-only; the same row can arrive more than once |
 | Versioned by | `ReplacingMergeTree(sequence)` on `(sender_id, position_id, marker_sequence)`, when parts merge |
@@ -123,7 +123,7 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `sender_id` | `UInt64` | The trade server instance, from the pipeline's `sender_id`. Every server exporting into one database must use a different value, or their rows overwrite each other |
+| `sender_id` | `UInt64` | The trade server instance. Every server exporting into one database must use a different value, or their rows overwrite each other |
 | `sequence` | `UInt64` | The version of the change within its sender: of the rows with the same key, the engine keeps the one with the highest `sequence` |
 | `batch_time` | `DateTime64(6, 'UTC')` | When the batch that carried the row was created. Every row of one insert has the same value. The age the retention of `Delete` rows is measured by |
 | `event_type` | `Enum8` | `Upsert`, `Delete`, `SnapshotStart` or `SnapshotEnd` — see [Overview](#overview) |
@@ -162,7 +162,7 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 Every column is `NOT NULL`. The four service columns come first. On a snapshot marker only the service columns and
 `position_id = 0` carry meaning.
 
-> **Important:** The column types must match the exporter's `PositionDescriptor` exactly. The native protocol
+> **Important:** The column types must match what the exporter writes exactly. The native protocol
 > refuses a block whose column type differs from the table's, so a table adopted with, say, `Decimal(38, 8)` where
 > the script has `Decimal(18, 8)` refuses every batch. `marker_sequence` is `MATERIALIZED`, so it is not part of the
 > insert and the exporter does not know about it.

@@ -18,7 +18,7 @@ PostgreSQL · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | PostgreSQL |
 | Default name | `client_events` — renamed with `--variables client_events_table=…` |
-| Written by | The trade server's `client` pipeline — `"entity": "client"`, `"target": "postgresql"` |
+| Written by | The trade server |
 | One row per | Event: a client's full state, a deletion, or a resync marker — in order |
 | Order | `id` — never `time_inserted`, which a whole batch shares |
 | Deduplicated by | Nothing — there is no deduplication key |
@@ -166,7 +166,7 @@ types in the agreed order* in `ClientsIntegrationTests` pins them.
 |--------|------|-------------|
 | `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key, and the write order: ordering by `id` reconstructs the history |
 | `time_inserted` | `TIMESTAMP WITH TIME ZONE` | When the row reached PostgreSQL; defaults to `now()`. A whole batch shares one, so it cannot order events. The column to purge the log by |
-| `sender_id` | `BIGINT` | The trade server instance that produced the event, from the pipeline's `sender_id` |
+| `sender_id` | `BIGINT` | The trade server instance that produced the event |
 | `event_type` | `SMALLINT` | See [Event types](#event-types) |
 | **Client** | | |
 | `client_id` | `BIGINT` | API `id`. The client. `0` on both markers. The identifier `trading_accounts.client_id` carries |

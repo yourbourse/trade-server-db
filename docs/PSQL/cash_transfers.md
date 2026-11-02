@@ -20,7 +20,7 @@ PostgreSQL · view · [Schema Reference](../SCHEMA_REFERENCE.md)
 | Kind | View over [`trades`](trades.md) |
 | Default name | `cash_transfers` — renamed with `--variables cash_transfers_view=…` |
 | Rows | Every `trade_type` except `0`, `1`, `14`, `15` — today `2`–`13` and `16`–`21` |
-| Columns | The 22 the transfer pipeline populates, plus `time_inserted` and `is_collateral` |
+| Columns | The 22 a cash movement carries, plus `time_inserted` and `is_collateral` |
 | Grants | `ro`: `SELECT` · `exporter`: none |
 
 Everything in `trades` that is not a trade — the non-trading records:
@@ -46,7 +46,7 @@ The filter is the **complement** of [`trades_history`](trades_history.md)'s rath
 types, so the two views partition the table: a trade type the trade server gains later shows up here instead of
 disappearing from both.
 
-The transfer pipeline populates a fixed subset of the `trades` columns, and this view is that subset. The rest hold
+A cash movement carries a fixed subset of the `trades` columns, and this view is that subset. The rest hold
 a default — `0`, or `NaN` for some numeric columns — and are not exposed, so nothing invites a reader to draw a
 conclusion from them.
 
@@ -103,7 +103,7 @@ WHERE trade_type NOT IN (
 
 | # | Column | Populated | Description | Source in the trade server |
 |---|--------|-----------|-------------|----------------------------|
-| 1 | `sender_id` | always | The trade server instance that wrote the row | export pipeline configuration |
+| 1 | `sender_id` | always | The trade server instance that wrote the row | — |
 | 2 | `group_name` | always | The account's trading group | `group.GetName()` |
 | 3 | `symbol_name` | always | The currency or asset the amount is in — the account currency, for example `USD`, unless it is a collateral transfer | the transfer currency |
 | 4 | `trade_id` | always | The record's identifier, unique per `sender_id` | next trade id |
@@ -133,8 +133,8 @@ column is the trade server code each value was traced to when the view was built
 
 > **Note:** Two values disagree with the *Export Setup* guide. The guide gives `entry_type` as always `0` In on a
 > non-trading record, where the source mapping above has `In` or `Out` by direction; and it gives `reason` as `1`
-> Admin **or `11` AgentCommission**, where the transfer pipeline writes `kAdmin` — so the AgentCommission records
-> are not the transfer pipeline's, and may populate columns this view does not expose. Confirm `entry_type` with the
+> Admin **or `11` AgentCommission**, where the source mapping above has `kAdmin` — so the AgentCommission records
+> may populate columns this view does not expose. Confirm `entry_type` with the
 > trade server team before relying on it; the sign of the amount always tells a deposit from a withdrawal.
 
 ---

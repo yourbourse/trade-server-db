@@ -222,7 +222,7 @@ Dry run: 5 script(s) would be applied for (root)
 
 ## Step 4: Apply the schema
 
-Drop `--dry-run`. The two accounts stay — they are the ones the export pipeline needs, and every later migration
+Drop `--dry-run`. The two accounts stay — they are the ones the export needs, and every later migration
 has to name them again so their grants keep up with the schema:
 
 ```bash
@@ -240,8 +240,8 @@ Now the same against ClickHouse:
 ./migrate.sh --provider clickhouse --connection-string "Host=localhost;Port=18223;Database=trade_demo;Username=default;Password=passw0rd" --users "Access=exporter;User=trade_exporter;Password=passw0rd"
 ```
 
-> **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ticks and
-> positions are the entities the trade server exports to ClickHouse, so the run creates the `ticks` and
+> **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ClickHouse holds
+> the ticks and positions, so the run creates the `ticks` and
 > `position_events` tables, the `positions_live` and `positions` views over positions, the journal, the users and their grants, and none
 > of the PostgreSQL tables or views. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview).

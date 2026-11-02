@@ -18,7 +18,7 @@ PostgreSQL · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | PostgreSQL |
 | Default name | `symbol_events` — renamed with `--variables symbol_events_table=…` |
-| Written by | The trade server's symbol export pipeline |
+| Written by | The trade server |
 | One row per | Event: a symbol's full configuration, a deletion, or a resync marker |
 | Order | `id` — never `time_inserted`, which a whole batch shares |
 | Deduplicated by | Nothing — there is no deduplication key |
