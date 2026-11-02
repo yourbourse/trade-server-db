@@ -39,7 +39,7 @@ FROM trading_accounts a
          LEFT JOIN groups g ON g.sender_id = a.sender_id AND g.group_id = a.group_id;
 ```
 
-`LEFT JOIN`, because the group and account exports are separate pipelines that a deployment enables independently;
+`LEFT JOIN`, because the group and account logs are separate and either can hold rows the other lacks;
 joining `trades`, also because a trade outlives its group.
 
 > **Important:** This is the group's **current** configuration, not the one in force when a trade executed or a
@@ -177,7 +177,7 @@ because it was absent when the end marker arrived — see
 
 The same answer as [`trading_accounts_resync`](trading_accounts.md#trading_accounts_resync), for the group export,
 aggregated from the resync markers in [`group_events`](group_events.md#event-types) — the same columns with the same
-meanings. It is a separate view because the two exports are separate pipelines: a sender can be mid-resync on
+meanings. It is a separate view because the two logs are separate: a sender can be mid-resync on
 groups while its trading account picture is settled, and vice versa.
 
 | | |

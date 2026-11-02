@@ -3,7 +3,7 @@
 Schema migrations for the databases the **trade server** exports trading data into.
 
 The trade server writes trades, daily statements, their order and position snapshots and an export cursor to
-PostgreSQL, and ticks and positions to ClickHouse — see the *Export Setup* guide for how the export pipelines are configured.
+PostgreSQL, and ticks and positions to ClickHouse — see the *Export Setup* guide for the server side of the export.
 This repository owns the other half: creating and evolving the tables, indexes, views and users that export
 needs.
 
@@ -54,7 +54,7 @@ Now migrate:
                      "Access=ro;User=trade_reader;Password=..."
 ```
 
-`--users` provisions the accounts the export pipeline needs — `exporter` for the trade server, `ro` for
+`--users` provisions the accounts the export needs — `exporter` for the trade server, `ro` for
 reporting. It takes a list, so several values follow one flag.
 
 **`--users` is required on every migration, not only the first.** The grants are re-applied per run, so a run
@@ -216,8 +216,8 @@ Anything else can be passed with `--variables key=value`.
 A script containing a `##name##` that is not in this list and was not passed with `--variables` is **rejected
 before it reaches the database**, naming the placeholder — otherwise the `##` travels through to the server and
 comes back as a syntax error pointing at a character offset. If you want a literal table name, just write it; the
-exported table variables are templated only because the trade server's export configuration makes those names
-configurable — a deployment that renamed one passes the name with `--variables`.
+exported table variables are templated only because a deployment may give those tables other names — it passes
+them with `--variables`.
 
 ### Statement separators
 
@@ -265,8 +265,8 @@ happens to contain a quote fails loudly or works correctly, rather than silently
 1. Create the file. Incremental: `psql/20260315_01_add_broker_id.sql`. Re-runnable: drop it in `views/`,
    `users/` or `post/`.
 2. Use the table variables — `##trades_table##`, `##cursor_table##`, the event log tables and the rest on
-   PostgreSQL, `##ticks_table##` and `##position_events_table##` on ClickHouse — rather than hard-coded table names. The exported ones are all
-   configurable in the trade server's export configuration.
+   PostgreSQL, `##ticks_table##` and `##position_events_table##` on ClickHouse — rather than hard-coded table names. A deployment may give
+   the exported tables other names.
 3. Check what it would do: `./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run`.
 4. Apply it, then run it a second time and confirm nothing is applied.
 5. Mirror the change in the other provider's folder if it applies to both — a `users/` or `post/` change
@@ -277,9 +277,8 @@ deployed database will silently differ from the file. Add a new one.
 
 ## Schema
 
-The two engines hold different tables, because the trade server exports each entity to exactly one of them:
-trades, daily statements, their snapshots, the trading account, client, symbol and group events and the export
-cursor go to PostgreSQL, ticks and positions go to ClickHouse. This repository is the source of truth for every definition, and the
+The two engines hold different tables: trades, daily statements, their snapshots, the trading account, client,
+symbol and group events and the export cursor are on PostgreSQL, ticks and positions on ClickHouse. This repository is the source of truth for every definition, and the
 migrator creates all of them — plus `trading_accounts`, `clients`, `symbols` and `groups`, which it derives from the
 event logs with triggers:
 
@@ -331,8 +330,8 @@ rejected whole, so the index guards against duplicates but does not repair them.
 no such key — none carries a per-event id — so an event that arrives twice lands as two rows and the derived table
 absorbs it.
 
-`export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, so all the PostgreSQL
-pipelines share it.
+`export_cursor` records how far the export has got, one row per `(sender_id, table_name)`, shared by every sender
+and every PostgreSQL table.
 
 ### ClickHouse
 

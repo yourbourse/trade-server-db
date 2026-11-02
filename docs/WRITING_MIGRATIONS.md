@@ -139,9 +139,8 @@ ENGINE = ##replacing_merge_tree_engine##;
 
 ## Using template variables
 
-Write `##trades_table##`, never `trades`, and `##ticks_table##`, never `ticks`. Every exported table name is
-configurable in the trade server's export configuration, so a deployment that renamed one passes the name with
-`--variables` and the scripts follow.
+Write `##trades_table##`, never `trades`, and `##ticks_table##`, never `ticks`. A deployment may give an
+exported table another name; it passes the name with `--variables` and the scripts follow.
 
 The variables that are always available:
 
@@ -175,9 +174,8 @@ verbatim without validation, so treat that flag as trusted operator input.
 
 ## Writing for both engines
 
-> **Important:** The two folders create **different tables**, because the trade server exports each entity to
-> exactly one engine: trades, daily statements, their snapshots and the export cursor go to PostgreSQL, ticks and
-> positions go to ClickHouse. A change to a table definition therefore lands in one folder only — `psql/` for the
+> **Important:** The two folders create **different tables**: trades, daily statements, their snapshots and the
+> export cursor are on PostgreSQL, ticks and positions on ClickHouse. A change to a table definition therefore lands in one folder only — `psql/` for the
 > five PostgreSQL tables and the views over them, `clickhouse/` for the ticks and position_events tables and the
 > `positions_live` and `positions` views — and has nothing to mirror.
 >

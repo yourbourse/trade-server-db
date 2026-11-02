@@ -18,7 +18,7 @@ PostgreSQL · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | PostgreSQL |
 | Default name | `group_events` — renamed with `--variables group_events_table=…` |
-| Written by | The trade server's group export pipeline |
+| Written by | The trade server |
 | One row per | Event: a group's full configuration, a deletion, or a resync marker |
 | Order | `id` — never `time_inserted`, which a whole batch shares |
 | Deduplicated by | Nothing — there is no deduplication key |

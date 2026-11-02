@@ -156,7 +156,7 @@ public abstract class PositionsTestBase(ConfigBuilder configBuilder, ITestOutput
     }
 
     /// <summary>
-    /// One statement, one batch, the shape the exporter sends.
+    /// One statement, one batch.
     /// </summary>
     protected static void Insert(string connectionString, params Row[] rows)
     {

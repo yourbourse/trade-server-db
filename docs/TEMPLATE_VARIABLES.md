@@ -58,9 +58,8 @@ The order in which values are decided:
 | `##positions_live_view##` | `positions_live`, unless overridden | `positions_live` |
 | `##assembly_version##` | Version of the migrator binary applying the script | `1.0.0.0` |
 
-The table names are templated because the trade server's export configuration makes them configurable — each
-export pipeline names its own target table, and a deployment that renamed one passes the name on the command
-line so the scripts follow. Use the variables instead of hard-coded names in any script that touches those
+The table names are templated because a deployment may give the exported tables other names; it passes them on
+the command line so the scripts follow. Use the variables instead of hard-coded names in any script that touches those
 tables. Nine of them name PostgreSQL tables and `##ticks_table##` and `##position_events_table##` name the ClickHouse
 ones; all eleven are defined for both providers, so a script does not have to care which engine it runs on.
 

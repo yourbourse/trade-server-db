@@ -53,7 +53,7 @@ public class EventLogExportIntegrationTests(ConfigBuilder configBuilder, ITestOu
     }
 
     /// <summary>
-    /// COPY writes an identity column as given, unlike INSERT, so only the exporter leaving id out keeps the log in order.
+    /// COPY writes an identity column as given, unlike INSERT, so only a writer that leaves id out keeps the log in order.
     /// </summary>
     [Theory(DisplayName = "Edge case Should take an id a COPY supplies, which an INSERT would refuse")]
     [EveryEventLog]

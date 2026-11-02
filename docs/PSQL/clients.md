@@ -226,7 +226,7 @@ because it was absent when the end marker arrived — see
 
 The same answer as [`trading_accounts_resync`](trading_accounts.md#trading_accounts_resync), for the client export,
 aggregated from the resync markers in [`client_events`](client_events.md#event-types) — the same columns with the
-same meanings. It is a separate view because the two exports are separate pipelines: a sender can be mid-resync on
+same meanings. It is a separate view because the two logs are separate: a sender can be mid-resync on
 clients while its trading account picture is settled, and vice versa.
 
 | | |
