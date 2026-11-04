@@ -239,7 +239,7 @@ public class MigrationHandlerTests
     /// this list, the integration fixture, and the documentation - has to gain the name at the same time. An
     /// exact assertion is what makes adding one here fail loudly instead of somewhere further away.
     ///
-    /// <c>ticks_table</c> and the position_events table and views are listed even though only the
+    /// <c>ticks_table</c>, the position_events and account_state_events tables and their views are listed even though only the
     /// ClickHouse scripts use them: they are defined for both providers so a script does not have to care which
     /// engine it runs on.
     /// </remarks>
@@ -268,6 +268,9 @@ public class MigrationHandlerTests
         "position_events_table",
         "positions_view",
         "positions_live_view",
+        "account_state_events_table",
+        "account_states_view",
+        "account_states_live_view",
         "trades_history_view",
         "cash_transfers_view"
     ];
@@ -536,11 +539,11 @@ public class MigrationHandlerTests
             "trades_table", "daily_statements_table", "order_snapshots_table", "position_snapshots_table",
             "trading_account_events_table", "trading_accounts_table", "client_events_table", "clients_table",
             "symbol_events_table", "symbols_table", "group_events_table", "groups_table",
-            "cursor_table", "ticks_table", "position_events_table"
+            "cursor_table", "ticks_table", "position_events_table", "account_state_events_table"
         ];
 
         // act, assert, a name one character too long for its prefix must be refused for every one that has a
-        // derived name; cursor_table, ticks_table and position_events_table have none, so they take the full 63
+        // derived name; cursor_table, ticks_table and the two change stream tables have none, so they take the full 63
         foreach (var variable in prefixed)
         {
             var options = new CommandLineOptions { Variables = [$"{variable}={new string('a', 63)}"] };
@@ -548,7 +551,7 @@ public class MigrationHandlerTests
             var exception = Record.Exception(
                 () => MigrationHandler.BuildVariables(DatabaseProvider.Postgres, "trading", null, options));
 
-            if (variable is "cursor_table" or "ticks_table" or "position_events_table")
+            if (variable is "cursor_table" or "ticks_table" or "position_events_table" or "account_state_events_table")
             {
                 Assert.Null(exception);
             }
@@ -567,6 +570,12 @@ public class MigrationHandlerTests
     [InlineData("positions_refresh_seconds", "300")]
     [InlineData("position_events_delete_ttl_days", "30")]
     [InlineData("position_events_min_age_to_force_merge_seconds", "600")]
+    [InlineData("account_state_events_table", "account_state_events")]
+    [InlineData("account_states_view", "account_states")]
+    [InlineData("account_states_live_view", "account_states_live")]
+    [InlineData("account_states_refresh_seconds", "300")]
+    [InlineData("account_state_events_delete_ttl_days", "30")]
+    [InlineData("account_state_events_min_age_to_force_merge_seconds", "600")]
     public void BuildVariables_Should_default_the_positions_objects_and_settings_to_their_documented_values(string variable, string expected)
     {
         // act
@@ -589,12 +598,18 @@ public class MigrationHandlerTests
         Assert.DoesNotContain("positions_refresh_seconds", variables.Keys);
         Assert.DoesNotContain("position_events_delete_ttl_days", variables.Keys);
         Assert.DoesNotContain("position_events_min_age_to_force_merge_seconds", variables.Keys);
+        Assert.DoesNotContain("account_states_refresh_seconds", variables.Keys);
+        Assert.DoesNotContain("account_state_events_delete_ttl_days", variables.Keys);
+        Assert.DoesNotContain("account_state_events_min_age_to_force_merge_seconds", variables.Keys);
     }
 
     [Theory(DisplayName = "BuildVariables Should let --variables change a positions setting")]
     [InlineData("positions_refresh_seconds")]
     [InlineData("position_events_delete_ttl_days")]
     [InlineData("position_events_min_age_to_force_merge_seconds")]
+    [InlineData("account_states_refresh_seconds")]
+    [InlineData("account_state_events_delete_ttl_days")]
+    [InlineData("account_state_events_min_age_to_force_merge_seconds")]
     public void BuildVariables_Should_let_variables_change_a_positions_setting(string variable)
     {
         // arrange
@@ -617,6 +632,9 @@ public class MigrationHandlerTests
     [InlineData("position_events_delete_ttl_days", "1.5")]
     [InlineData("position_events_min_age_to_force_merge_seconds", "0")]
     [InlineData("position_events_min_age_to_force_merge_seconds", "600; DROP TABLE position_events")]
+    [InlineData("account_states_refresh_seconds", "0")]
+    [InlineData("account_state_events_delete_ttl_days", "-1")]
+    [InlineData("account_state_events_min_age_to_force_merge_seconds", "600; DROP TABLE account_state_events")]
     public void BuildVariables_Should_refuse_a_positions_setting_that_is_not_a_positive_whole_number(string variable, string value)
     {
         // arrange
@@ -635,17 +653,22 @@ public class MigrationHandlerTests
     /// One day is 86,400 seconds, so 8,640 seconds is the longest merge age a one day retention allows.
     /// </summary>
     [Theory(DisplayName = "BuildVariables Should require the Delete retention to be at least ten times the forced merge age")]
-    [InlineData("1", "8640", true)]
-    [InlineData("1", "8641", false)]
-    [InlineData("30", "259200", true)]
-    [InlineData("30", "259201", false)]
-    [InlineData("1", "4294967295", false)]
-    public void BuildVariables_Should_require_the_Delete_retention_to_be_at_least_ten_times_the_forced_merge_age(string days, string seconds, bool accepted)
+    [InlineData("position_events", "1", "8640", true)]
+    [InlineData("position_events", "1", "8641", false)]
+    [InlineData("position_events", "30", "259200", true)]
+    [InlineData("position_events", "30", "259201", false)]
+    [InlineData("position_events", "1", "4294967295", false)]
+    [InlineData("account_state_events", "1", "8640", true)]
+    [InlineData("account_state_events", "1", "8641", false)]
+    [InlineData("account_state_events", "30", "259200", true)]
+    [InlineData("account_state_events", "30", "259201", false)]
+    [InlineData("account_state_events", "1", "4294967295", false)]
+    public void BuildVariables_Should_require_the_Delete_retention_to_be_at_least_ten_times_the_forced_merge_age(string table, string days, string seconds, bool accepted)
     {
         // arrange
         var options = new CommandLineOptions
         {
-            Variables = [$"position_events_delete_ttl_days={days}", $"position_events_min_age_to_force_merge_seconds={seconds}"]
+            Variables = [$"{table}_delete_ttl_days={days}", $"{table}_min_age_to_force_merge_seconds={seconds}"]
         };
 
         // act
@@ -659,8 +682,8 @@ public class MigrationHandlerTests
         else
         {
             var migrationException = Assert.IsType<SchemaMigrationException>(exception);
-            Assert.Contains("##position_events_delete_ttl_days##", migrationException.Message);
-            Assert.Contains("##position_events_min_age_to_force_merge_seconds##", migrationException.Message);
+            Assert.Contains($"##{table}_delete_ttl_days##", migrationException.Message);
+            Assert.Contains($"##{table}_min_age_to_force_merge_seconds##", migrationException.Message);
         }
     }
 

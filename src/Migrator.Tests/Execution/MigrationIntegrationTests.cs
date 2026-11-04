@@ -603,6 +603,9 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["position_events_table"] = "position_events",
                 ["positions_view"] = "positions",
                 ["positions_live_view"] = "positions_live",
+                ["account_state_events_table"] = "account_state_events",
+                ["account_states_view"] = "account_states",
+                ["account_states_live_view"] = "account_states_live",
                 ["trades_history_view"] = "trades_history",
                 ["cash_transfers_view"] = "cash_transfers",
                 ["cluster_name"] = "",
@@ -612,7 +615,10 @@ public class MigrationIntegrationTests : IClassFixture<ConfigBuilder>, IAsyncLif
                 ["ticks_ttl_days"] = "31",
                 ["positions_refresh_seconds"] = "300",
                 ["position_events_delete_ttl_days"] = "30",
-                ["position_events_min_age_to_force_merge_seconds"] = "600"
+                ["position_events_min_age_to_force_merge_seconds"] = "600",
+                ["account_states_refresh_seconds"] = "300",
+                ["account_state_events_delete_ttl_days"] = "30",
+                ["account_state_events_min_age_to_force_merge_seconds"] = "600"
             },
             false,
             false,

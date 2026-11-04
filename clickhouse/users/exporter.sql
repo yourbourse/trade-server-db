@@ -1,8 +1,9 @@
 -- The role and user the trade server authenticates as.
 --
--- The ClickHouse exporter does exactly one thing: INSERT INTO the ticks and position_events tables over the native
--- protocol. It never reads, and there is no cursor table on ClickHouse, so INSERT on those two tables is the
--- whole grant. The positions views are read and refreshed by others, so the exporter needs nothing on them.
+-- The ClickHouse exporter does exactly one thing: INSERT INTO the ticks, position_events and account_state_events
+-- tables over the native protocol. It never reads, and there is no cursor table on ClickHouse, so INSERT on those
+-- three tables is the whole grant. The positions and account states views are read and refreshed by others, so
+-- the exporter needs nothing on them.
 -- A right added here later is picked up on the next migration, because the changed content changes the MD5
 -- this script is journalled under.
 --
@@ -26,6 +27,13 @@ ON ##database_name##.##ticks_table## TO role_##database_name##_exporter;
 GRANT ##cluster_name_suffix##
 INSERT
 ON ##database_name##.##position_events_table## TO role_##database_name##_exporter;
+
+----break----
+
+-- account_state_events
+GRANT ##cluster_name_suffix##
+INSERT
+ON ##database_name##.##account_state_events_table## TO role_##database_name##_exporter;
 
 ----break----
 
