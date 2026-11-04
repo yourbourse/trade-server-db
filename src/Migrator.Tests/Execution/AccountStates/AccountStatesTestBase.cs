@@ -16,7 +16,6 @@
 //  * permission is obtained from Your Bourse Limited.
 //  */
 
-
 using Xunit.Abstractions;
 using YB.TradeServer.Db.Migrator.Execution;
 
@@ -36,29 +35,7 @@ public abstract class AccountStatesTestBase(ConfigBuilder configBuilder, ITestOu
     protected const string AccountStateColumns =
         "sender_id, sequence, batch_time, event_type, " +
         "trading_account_id, group_id, account_currency, account_currency_decimal_places, " +
-        "balance, credit, equity, margin, otc_floating_pl, otc_realized_pl, collateral, is_margin_call, " +
-        "prev_day_balance, prev_month_balance, prev_day_credit, prev_month_credit, prev_day_equity, " +
-        "prev_month_equity, prev_day_collateral, prev_month_collateral, current_day_otc_realized_pl, " +
-        "current_month_otc_realized_pl, current_day_commissions, current_month_commissions, " +
-        "current_day_agent_commissions, current_month_agent_commissions, current_day_fees, current_month_fees, " +
-        "accumulated_daily_commissions, accumulated_monthly_commissions, accumulated_daily_fees, " +
-        "accumulated_monthly_fees, current_day_closed_positions_swaps, current_month_closed_positions_swaps, " +
-        "current_day_interest, current_month_interest, current_day_deposits, current_month_deposits, " +
-        "current_day_withdrawals, current_month_withdrawals, current_day_credit_transactions, " +
-        "current_month_credit_transactions, current_day_adjustment_transactions, " +
-        "current_month_adjustment_transactions, current_day_balance_bonus_transactions, " +
-        "current_month_balance_bonus_transactions, current_day_credit_bonus_transactions, " +
-        "current_month_credit_bonus_transactions, current_day_dividends, current_month_dividends, " +
-        "current_day_tax, current_month_tax, current_day_stopout_compensations, " +
-        "current_month_stopout_compensations, current_day_stopout_credit_adjustments, " +
-        "current_month_stopout_credit_adjustments, current_day_volume_in_usd, current_month_volume_in_usd, " +
-        "current_day_volume_in_account_currency, current_month_volume_in_account_currency";
-
-    /// <summary>
-    /// The number of money columns after is_margin_call: the prev_day_*/prev_month_* values and the current_*,
-    /// accumulated_* accumulators. A row fills them all with zero.
-    /// </summary>
-    private const int TrailingMoneyColumns = 48;
+        "balance, credit, equity, margin, otc_floating_pl, otc_realized_pl, collateral, is_margin_call";
 
     /// <summary>
     /// The refresh period of a test that must not see a scheduled refresh: an hour, far longer than any test.
@@ -69,8 +46,6 @@ public abstract class AccountStatesTestBase(ConfigBuilder configBuilder, ITestOu
     /// The batch_time a row gets when the test does not care: an hour back, well inside the retention.
     /// </summary>
     private static readonly DateTime defaultBatchTime = DateTime.UnixEpoch.AddSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds()).AddHours(-1);
-
-    private static readonly string trailingZeros = string.Join(", ", Enumerable.Repeat("0", TrailingMoneyColumns));
 
     // ---------------------------------------------------------------------------------------------------
     // Migrating
@@ -123,8 +98,7 @@ public abstract class AccountStatesTestBase(ConfigBuilder configBuilder, ITestOu
 
             return $"({SenderId}, {Sequence}, {batchTime}, {Quote(EventType)}, " +
                    $"{TradingAccountId}, 10, 'USD', 2, " +
-                   $"{Balance}, 0, {Balance}, 0, 0, 0, 0, false, " +
-                   $"{trailingZeros})";
+                   $"{Balance}, 0, {Balance}, 0, 0, 0, 0, false)";
         }
     }
 
@@ -260,54 +234,6 @@ public abstract class AccountStatesTestBase(ConfigBuilder configBuilder, ITestOu
                     `otc_realized_pl` Decimal(38, 12),
                     `collateral` Decimal(38, 12),
                     `is_margin_call` Bool,
-                    `prev_day_balance` Decimal(38, 12),
-                    `prev_month_balance` Decimal(38, 12),
-                    `prev_day_credit` Decimal(38, 12),
-                    `prev_month_credit` Decimal(38, 12),
-                    `prev_day_equity` Decimal(38, 12),
-                    `prev_month_equity` Decimal(38, 12),
-                    `prev_day_collateral` Decimal(38, 12),
-                    `prev_month_collateral` Decimal(38, 12),
-                    `current_day_otc_realized_pl` Decimal(38, 12),
-                    `current_month_otc_realized_pl` Decimal(38, 12),
-                    `current_day_commissions` Decimal(38, 12),
-                    `current_month_commissions` Decimal(38, 12),
-                    `current_day_agent_commissions` Decimal(38, 12),
-                    `current_month_agent_commissions` Decimal(38, 12),
-                    `current_day_fees` Decimal(38, 12),
-                    `current_month_fees` Decimal(38, 12),
-                    `accumulated_daily_commissions` Decimal(38, 12),
-                    `accumulated_monthly_commissions` Decimal(38, 12),
-                    `accumulated_daily_fees` Decimal(38, 12),
-                    `accumulated_monthly_fees` Decimal(38, 12),
-                    `current_day_closed_positions_swaps` Decimal(38, 12),
-                    `current_month_closed_positions_swaps` Decimal(38, 12),
-                    `current_day_interest` Decimal(38, 12),
-                    `current_month_interest` Decimal(38, 12),
-                    `current_day_deposits` Decimal(38, 12),
-                    `current_month_deposits` Decimal(38, 12),
-                    `current_day_withdrawals` Decimal(38, 12),
-                    `current_month_withdrawals` Decimal(38, 12),
-                    `current_day_credit_transactions` Decimal(38, 12),
-                    `current_month_credit_transactions` Decimal(38, 12),
-                    `current_day_adjustment_transactions` Decimal(38, 12),
-                    `current_month_adjustment_transactions` Decimal(38, 12),
-                    `current_day_balance_bonus_transactions` Decimal(38, 12),
-                    `current_month_balance_bonus_transactions` Decimal(38, 12),
-                    `current_day_credit_bonus_transactions` Decimal(38, 12),
-                    `current_month_credit_bonus_transactions` Decimal(38, 12),
-                    `current_day_dividends` Decimal(38, 12),
-                    `current_month_dividends` Decimal(38, 12),
-                    `current_day_tax` Decimal(38, 12),
-                    `current_month_tax` Decimal(38, 12),
-                    `current_day_stopout_compensations` Decimal(38, 12),
-                    `current_month_stopout_compensations` Decimal(38, 12),
-                    `current_day_stopout_credit_adjustments` Decimal(38, 12),
-                    `current_month_stopout_credit_adjustments` Decimal(38, 12),
-                    `current_day_volume_in_usd` Decimal(38, 12),
-                    `current_month_volume_in_usd` Decimal(38, 12),
-                    `current_day_volume_in_account_currency` Decimal(38, 12),
-                    `current_month_volume_in_account_currency` Decimal(38, 12),
                     `marker_sequence` UInt64 MATERIALIZED if(trading_account_id = 0, sequence, 0)
                 )
                 ENGINE = ReplacingMergeTree(sequence)

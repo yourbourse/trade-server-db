@@ -80,56 +80,6 @@ CREATE TABLE account_state_events
     collateral                               Decimal(38, 12)                                                              NOT NULL,
     is_margin_call                           Bool                                                                         NOT NULL,
 
-    prev_day_balance                         Decimal(38, 12)                                                              NOT NULL,
-    prev_month_balance                       Decimal(38, 12)                                                              NOT NULL,
-    prev_day_credit                          Decimal(38, 12)                                                              NOT NULL,
-    prev_month_credit                        Decimal(38, 12)                                                              NOT NULL,
-    prev_day_equity                          Decimal(38, 12)                                                              NOT NULL,
-    prev_month_equity                        Decimal(38, 12)                                                              NOT NULL,
-    prev_day_collateral                      Decimal(38, 12)                                                              NOT NULL,
-    prev_month_collateral                    Decimal(38, 12)                                                              NOT NULL,
-
-    current_day_otc_realized_pl              Decimal(38, 12)                                                              NOT NULL,
-    current_month_otc_realized_pl            Decimal(38, 12)                                                              NOT NULL,
-    current_day_commissions                  Decimal(38, 12)                                                              NOT NULL,
-    current_month_commissions                Decimal(38, 12)                                                              NOT NULL,
-    current_day_agent_commissions            Decimal(38, 12)                                                              NOT NULL,
-    current_month_agent_commissions          Decimal(38, 12)                                                              NOT NULL,
-    current_day_fees                         Decimal(38, 12)                                                              NOT NULL,
-    current_month_fees                       Decimal(38, 12)                                                              NOT NULL,
-    accumulated_daily_commissions            Decimal(38, 12)                                                              NOT NULL,
-    accumulated_monthly_commissions          Decimal(38, 12)                                                              NOT NULL,
-    accumulated_daily_fees                   Decimal(38, 12)                                                              NOT NULL,
-    accumulated_monthly_fees                 Decimal(38, 12)                                                              NOT NULL,
-    current_day_closed_positions_swaps       Decimal(38, 12)                                                              NOT NULL,
-    current_month_closed_positions_swaps     Decimal(38, 12)                                                              NOT NULL,
-    current_day_interest                     Decimal(38, 12)                                                              NOT NULL,
-    current_month_interest                   Decimal(38, 12)                                                              NOT NULL,
-    current_day_deposits                     Decimal(38, 12)                                                              NOT NULL,
-    current_month_deposits                   Decimal(38, 12)                                                              NOT NULL,
-    current_day_withdrawals                  Decimal(38, 12)                                                              NOT NULL,
-    current_month_withdrawals                Decimal(38, 12)                                                              NOT NULL,
-    current_day_credit_transactions          Decimal(38, 12)                                                              NOT NULL,
-    current_month_credit_transactions        Decimal(38, 12)                                                              NOT NULL,
-    current_day_adjustment_transactions      Decimal(38, 12)                                                              NOT NULL,
-    current_month_adjustment_transactions    Decimal(38, 12)                                                              NOT NULL,
-    current_day_balance_bonus_transactions   Decimal(38, 12)                                                              NOT NULL,
-    current_month_balance_bonus_transactions Decimal(38, 12)                                                              NOT NULL,
-    current_day_credit_bonus_transactions    Decimal(38, 12)                                                              NOT NULL,
-    current_month_credit_bonus_transactions  Decimal(38, 12)                                                              NOT NULL,
-    current_day_dividends                    Decimal(38, 12)                                                              NOT NULL,
-    current_month_dividends                  Decimal(38, 12)                                                              NOT NULL,
-    current_day_tax                          Decimal(38, 12)                                                              NOT NULL,
-    current_month_tax                        Decimal(38, 12)                                                              NOT NULL,
-    current_day_stopout_compensations        Decimal(38, 12)                                                              NOT NULL,
-    current_month_stopout_compensations      Decimal(38, 12)                                                              NOT NULL,
-    current_day_stopout_credit_adjustments   Decimal(38, 12)                                                              NOT NULL,
-    current_month_stopout_credit_adjustments Decimal(38, 12)                                                              NOT NULL,
-    current_day_volume_in_usd                Decimal(38, 12)                                                              NOT NULL,
-    current_month_volume_in_usd              Decimal(38, 12)                                                              NOT NULL,
-    current_day_volume_in_account_currency   Decimal(38, 12)                                                              NOT NULL,
-    current_month_volume_in_account_currency Decimal(38, 12)                                                              NOT NULL,
-
     -- the sequence for a snapshot marker, 0 for an account; never written by the exporter
     marker_sequence                          UInt64 MATERIALIZED if(trading_account_id = 0, sequence, 0)
 )
@@ -166,15 +116,6 @@ With `--cluster my_cluster` the statements run `ON CLUSTER 'my_cluster'` and the
 | `otc_realized_pl` | `Decimal(38, 12)` | Realised profit or loss (`r` in the public API) |
 | `collateral` | `Decimal(38, 12)` | Market value of collateral adjusted by liquidity margin rate (`a` in the public API) |
 | `is_margin_call` | `Bool` | Margin call status |
-| `prev_day_balance`, `prev_month_balance`, `prev_day_credit`, `prev_month_credit`, `prev_day_equity`, `prev_month_equity`, `prev_day_collateral`, `prev_month_collateral` | `Decimal(38, 12)` | The value at the start of the current day / month |
-| `current_day_otc_realized_pl`, `current_month_otc_realized_pl`, `current_day_commissions`, `current_month_commissions`, `current_day_agent_commissions`, `current_month_agent_commissions`, `current_day_fees`, `current_month_fees` | `Decimal(38, 12)` | Accumulated since the start of the current day / month; reset by the end-of-day / end-of-month run |
-| `accumulated_daily_commissions`, `accumulated_monthly_commissions`, `accumulated_daily_fees`, `accumulated_monthly_fees` | `Decimal(38, 12)` | Commissions and fees charged under the daily / monthly commission mode: accrued per fill, not yet taken from the balance; the end-of-day / end-of-month run charges them as one trade and resets them |
-| `current_day_closed_positions_swaps`, `current_month_closed_positions_swaps`, `current_day_interest`, `current_month_interest` | `Decimal(38, 12)` | Accumulated since the start of the current day / month; reset by the end-of-day / end-of-month run |
-| `current_day_deposits`, `current_month_deposits`, `current_day_withdrawals`, `current_month_withdrawals` | `Decimal(38, 12)` | Accumulated since the start of the current day / month; reset by the end-of-day / end-of-month run |
-| `current_day_credit_transactions`, `current_month_credit_transactions`, `current_day_adjustment_transactions`, `current_month_adjustment_transactions`, `current_day_balance_bonus_transactions`, `current_month_balance_bonus_transactions`, `current_day_credit_bonus_transactions`, `current_month_credit_bonus_transactions` | `Decimal(38, 12)` | Accumulated since the start of the current day / month; reset by the end-of-day / end-of-month run |
-| `current_day_dividends`, `current_month_dividends`, `current_day_tax`, `current_month_tax`, `current_day_stopout_compensations`, `current_month_stopout_compensations`, `current_day_stopout_credit_adjustments`, `current_month_stopout_credit_adjustments` | `Decimal(38, 12)` | Accumulated since the start of the current day / month; reset by the end-of-day / end-of-month run |
-| `current_day_volume_in_usd`, `current_month_volume_in_usd` | `Decimal(38, 12)` | Traded notional in USD, 2 decimal places, accumulated since the start of the current day / month |
-| `current_day_volume_in_account_currency`, `current_month_volume_in_account_currency` | `Decimal(38, 12)` | Traded notional in the account currency, accumulated since the start of the current day / month |
 | `marker_sequence` | `UInt64 MATERIALIZED` | `sequence` on a snapshot marker, `0` on an account. Computed by ClickHouse, never written by the exporter — see [Engine and keys](#engine-and-keys) |
 
 Every column is `NOT NULL`. The four service columns come first. On a snapshot marker only the service columns and
