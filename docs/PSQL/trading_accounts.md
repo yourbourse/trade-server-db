@@ -122,14 +122,13 @@ Ordering is by arrival, never by `version`: trading account ids are reused after
 its version sequence, and deletions and markers carry `version 0` anyway.
 
 A resync sweeps at the **end** marker rather than the start, so the table stays complete and readable for the
-whole resync — which matters because a resync can follow every restart of the trade server.
+whole resync.
 
 The script is re-runnable and ends with a reconcile pass that replays the newest retained event per account, so
 `--force` repairs a dropped trigger and corrects rows an earlier, buggy version of the projection wrote. The pass also
 re-applies a resync sweep the trigger missed because it was absent when the end marker arrived. It cannot recover
-what the retention window has dropped; the authoritative repair for that is a resync from the trade server,
-which an administrator can request with the Admin API's `POST /admin/export/snapshot`,
-`"entityType": "TradingAccount"`. The shared mechanism is described once in
+what the retention window has dropped; only a new resync in the log replaces it — when the trade server sends one
+is described in the *Export Setup* guide. The shared mechanism is described once in
 [Event logs and their projections](../SCHEMA_REFERENCE.md#event-logs-and-their-projections).
 
 ---

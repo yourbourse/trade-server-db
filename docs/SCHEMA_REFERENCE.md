@@ -12,7 +12,7 @@
 
 ## Overview
 
-The trade server exports each entity to exactly one engine, so the two engines hold different tables. Every one of
+The two engines hold different tables. Every one of
 them is created by the migrator, in the database named by the connection string, and each has its own page — under
 `PSQL/` for [PostgreSQL](#postgresql) and `ClickHouse/` for [ClickHouse](#clickhouse) — named after its default table
 name.
@@ -36,11 +36,9 @@ what the exporter writes, and the trade server's Admin REST API, whose `TradingA
 `Symbol`, `Order`, `Position`, `Trade`, `Transfer` and `Statement` resources carry the same data. Where the two
 disagree, the page says so.
 
-> **Important:** **The engines are not mirrors of each other.** The *Export Setup* guide sends the trades, the daily
-> statements and their snapshots, the event logs and the cursor to PostgreSQL only, and the ticks to ClickHouse
-> only; a pipeline that pairs an entity with the other engine is rejected by the trade server. So `psql/` creates
-> the PostgreSQL tables, their projections and views, `clickhouse/` creates the ticks table and nothing else, and
-> both create the journal.
+> **Important:** **The engines are not mirrors of each other.** `psql/` creates the trades, the daily statements and
+> their snapshots, the event logs, the cursor, their projections and views; `clickhouse/` creates the ticks and
+> position_events tables and the two views over position_events; both create the journal.
 
 ---
 
@@ -48,26 +46,23 @@ disagree, the page says so.
 
 ### Exported by the trade server
 
-Each table is written by one pipeline of the trade server's `export_config.json`, identified by its `entity`. The
-pipeline's `table` field names the table; a deployment that changed it passes the same name to every migration, as
+A deployment that gives a table another name passes the same name to every migration, as
 `--variables <variable>=<name>` — see [Renamed tables](#renamed-tables).
 
-| Entity | Page | Pipeline `entity` | Default name | Variable | One row per |
-|--------|------|-------------------|--------------|----------|-------------|
-| Export cursor | [export_cursor](PSQL/export_cursor.md) | every pipeline's `cursor_table` | `export_cursor` | `cursor_table` | PostgreSQL pipeline and sender |
-| Trades | [trades](PSQL/trades.md) | `trade` | `trades` | `trades_table` | Trade or cash movement |
-| Daily statements | [daily_statements_export](PSQL/daily_statements_export.md) | `daily_statement` | `daily_statements_export` | `daily_statements_table` | Account per statement run |
-| Daily order snapshots | [daily_statements_order_snapshots](PSQL/daily_statements_order_snapshots.md) | `daily_statement_order_snapshot` | `daily_statements_order_snapshots` | `order_snapshots_table` | Working order per statement run |
-| Daily position snapshots | [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | `daily_statement_position_snapshot` | `daily_statements_position_snapshots` | `position_snapshots_table` | Open position per statement run |
-| Trading account events | [trading_account_events](PSQL/trading_account_events.md) | `trading_account` | `trading_account_events` | `trading_account_events_table` | Trading account change or resync marker |
-| Client events | [client_events](PSQL/client_events.md) | `client` | `client_events` | `client_events_table` | Client change or resync marker |
-| Symbol events | [symbol_events](PSQL/symbol_events.md) | — | `symbol_events` | `symbol_events_table` | Symbol configuration change or resync marker |
-| Group events | [group_events](PSQL/group_events.md) | — | `group_events` | `group_events_table` | Group configuration change or resync marker |
+| Entity | Page | Default name | Variable | One row per |
+|--------|------|--------------|----------|-------------|
+| Export cursor | [export_cursor](PSQL/export_cursor.md) | `export_cursor` | `cursor_table` | Sender and exported table |
+| Trades | [trades](PSQL/trades.md) | `trades` | `trades_table` | Trade or cash movement |
+| Daily statements | [daily_statements_export](PSQL/daily_statements_export.md) | `daily_statements_export` | `daily_statements_table` | Account per statement run |
+| Daily order snapshots | [daily_statements_order_snapshots](PSQL/daily_statements_order_snapshots.md) | `daily_statements_order_snapshots` | `order_snapshots_table` | Working order per statement run |
+| Daily position snapshots | [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | `daily_statements_position_snapshots` | `position_snapshots_table` | Open position per statement run |
+| Trading account events | [trading_account_events](PSQL/trading_account_events.md) | `trading_account_events` | `trading_account_events_table` | Trading account change or resync marker |
+| Client events | [client_events](PSQL/client_events.md) | `client_events` | `client_events_table` | Client change or resync marker |
+| Symbol events | [symbol_events](PSQL/symbol_events.md) | `symbol_events` | `symbol_events_table` | Symbol configuration change or resync marker |
+| Group events | [group_events](PSQL/group_events.md) | `group_events` | `group_events_table` | Group configuration change or resync marker |
 
-> **Important:** The *Export Setup* guide's example configuration names the trades table **`trades_export`**; the
-> migrator's default is `trades`. A deployment that follows the guide's example migrates with
-> `--variables trades_table=trades_export`. Every other default here matches the guide, which does not cover the
-> symbol and group pipelines.
+> **Important:** The migrator's default name for the trades table is `trades`. A deployment whose trades table is
+> called `trades_export` migrates with `--variables trades_table=trades_export`.
 
 ### Derived by the migrator
 
@@ -107,13 +102,23 @@ touches them, so that a database already owning an object under one of the names
 
 ## ClickHouse
 
-| Entity | Page | Pipeline `entity` | Default name | Variable | One row per |
-|--------|------|-------------------|--------------|----------|-------------|
-| Ticks | [ticks](ClickHouse/ticks.md) | `tick` | `ticks` | `ticks_table` | Change of a symbol's best bid or best ask |
-| Journal | [schema_versions](ClickHouse/schema_versions.md) | — | `schema_versions` | `--journal-table` | Applied script |
+| Entity | Page | Default name | Variable | One row per |
+|--------|------|--------------|----------|-------------|
+| Ticks | [ticks](ClickHouse/ticks.md) | `ticks` | `ticks_table` | Change of a symbol's best bid or best ask |
+| Positions | [position_events](ClickHouse/position_events.md) | `position_events` | `position_events_table` | Change of an open position, or a snapshot marker |
+| Journal | [schema_versions](ClickHouse/schema_versions.md) | `schema_versions` | `--journal-table` | Applied script |
 
-ClickHouse holds nothing else: no cursor table — a ClickHouse pipeline keeps its export position on disk — no views,
-and no event logs, since it has no trigger mechanism to maintain a current-state table with.
+| View | Documented on | Over | Answers |
+|------|---------------|------|---------|
+| `positions_live` | [positions_live](ClickHouse/positions_live.md) | `position_events` | The open positions of every sender, one row each, computed on every read — a plain view |
+| `positions` | [positions](ClickHouse/positions.md) | `positions_live` | The same rows, stored — a refreshable materialized view, recomputed every 5 minutes by default |
+
+ClickHouse holds nothing else: no cursor table, and no
+event logs with triggers. The current state of the positions is not maintained by a trigger, which ClickHouse does
+not have, but computed from the change stream by `positions_live` on every read, and stored by
+`positions` on a schedule; `positions` needs ClickHouse 24.10 or later. A reader of
+`positions_live` needs `SELECT` on `position_events` too, because the view runs as its invoker. The view names are
+templated, `##positions_live_view##` and `##positions_view##`.
 
 ---
 
@@ -148,19 +153,14 @@ on an exported id leads with it, so the correct query is also the one the keys s
 Every exported table is **append-only**: only `export_cursor` is ever rewritten, and only the derived tables are
 ever deleted from — by their trigger.
 
-On PostgreSQL the exporter writes each batch with `COPY ... FROM STDIN`, naming its columns, in one transaction with
-the batch's cursor update. So:
-
 - **Column order is free; names and types are not.** Every column the exporter writes must exist under its name,
-  with the type on the entity's page. A mismatch is not detected at start-up — it surfaces later, when a batch is
-  rejected and dropped and the trade server logs an `ERROR` (`failed to send batch ... dropping`). Money and price
-  columns in particular must be `NUMERIC`; `DOUBLE PRECISION` is rejected.
-- **In normal operation a record is written once.** The cursor commits with the data, and on every connection the
-  exporter skips past whatever the cursor says is committed. The unique keys are a guard for the case that bypasses
-  the cursor — see [Deduplication](#deduplication).
+  with the type on the entity's page. Money and price columns in particular must be `NUMERIC`; `DOUBLE PRECISION`
+  is rejected. What the trade server does with a batch the database rejects is described in the *Export Setup*
+  guide.
+- **A unique key guards against a record stored twice** on PostgreSQL — see [Deduplication](#deduplication).
 
-On ClickHouse there is no cursor table and no transaction: after a lost connection the server re-sends the batch it
-could not confirm, so delivery there is **at-least-once**, and the table's sorting key absorbs the copies.
+On ClickHouse there is no cursor table and no transaction, and a table can receive the same row more than once; the
+table's sorting key absorbs the copies.
 
 ### Types
 
@@ -195,7 +195,7 @@ members by name.
 ### Names
 
 Every table and view name is templated as a `##variable##` and can be renamed with `--variables` — see
-[Template Variables](TEMPLATE_VARIABLES.md). The names the trade server writes to mirror its export configuration;
+[Template Variables](TEMPLATE_VARIABLES.md). The exported table names can differ per deployment;
 the derived tables and the views are templated so that a database already owning an object under a default name
 can move ours aside.
 
@@ -214,7 +214,7 @@ Trading accounts, clients, symbols and groups are exported as an **event log** p
 derived from it. The mechanism is identical for all four.
 
 ```
-trade server ──COPY──► <entity>_events ──AFTER INSERT trigger──► <entity> table   (one row per live entity)
+trade server ───────► <entity>_events ──AFTER INSERT trigger──► <entity> table   (one row per live entity)
                              │
                              └──────────── <entity>_resync view                   (resync in progress?)
 ```
@@ -234,21 +234,16 @@ client logs:
   `time_inserted`; ids are reused after deletion, which restarts the version sequence; and deletions and markers
   carry `version 0`.
 - **A resync sweeps at the end marker**, not the start, so the current-state table stays complete and readable for
-  the whole resync — which matters because a resync can follow every restart of the trade server. Between the
-  markers the table is a mixture of re-announced and not-yet-reached rows; the entity's `_resync` view says whether
-  a sender is in that window.
-- **The trigger runs in the exporter's transaction**, so the table cannot lag behind the log, and a batch that fails
-  to commit leaves no trace in it. That is also why `exporter` holds `INSERT`, `UPDATE` and `DELETE` on the derived
+  the whole resync. Between the markers the table is a mixture of re-announced and not-yet-reached rows; the
+  entity's `_resync` view says whether a sender is in that window.
+- **The trigger runs in the transaction that inserts the event**, so the table cannot lag behind the log, and an
+  insert that fails to commit leaves no trace in it. That is also why `exporter` holds `INSERT`, `UPDATE` and `DELETE` on the derived
   tables.
 - **The projection script is re-runnable** and ends with a reconcile pass that replays the newest retained event per
   entity, so `--force` repairs a dropped trigger and corrects rows an earlier, buggy version of the projection wrote.
   The pass also re-applies a resync sweep the trigger missed because it was absent when the end marker arrived. No
-  reconcile can recover what the retention window has dropped — the authoritative repair for that is a resync from
-  the trade server.
-- **A resync can be requested on demand** with the Admin REST API: `POST /admin/export/snapshot` with
-  `"entityType"` `TradingAccount`, `Client`, `Group` or `Symbol` queues one, and the manager needs the matching
-  `initialize…Export` permission. The call returns `202 Accepted` as soon as the request is queued; the
-  `_resync` view shows when the resync has started and finished.
+  reconcile can recover what the retention window has dropped; only a new resync in the log replaces it. When the
+  trade server sends a resync is described in the *Export Setup* guide.
 - **There is no foreign key** from a derived row to its source event: events age out of retention long before the
   entity does, and a foreign key would make that purge fail or cascade.
 - **A column added later goes into both tables** in one incremental script, `NOT NULL` with a default on each.
@@ -292,20 +287,17 @@ enforces it in its own way:
 | [daily_statements_position_snapshots](PSQL/daily_statements_position_snapshots.md) | PostgreSQL | `(sender_id, time_statement, position_id)` |
 | The event logs | PostgreSQL | **none** — see below |
 | [ticks](ClickHouse/ticks.md) | ClickHouse | `(sender_id, short_symbol_name, created_time, sequence)` |
+| [position_events](ClickHouse/position_events.md) | ClickHouse | `(sender_id, position_id, marker_sequence)`, keeping the highest `sequence` |
 
 | | PostgreSQL | ClickHouse |
 |---|------------|------------|
-| Why a record would arrive twice | Only when the cursor is bypassed: a lost local state file makes the pipeline re-export from position `0` | After a lost connection the server re-sends the batch it could not confirm |
 | Mechanism | a `UNIQUE` index on the key | `ReplacingMergeTree` sorted by the key |
 | When it applies | immediately, on insert | when parts merge — eventually |
-| Effect of a duplicate | the **whole batch** is rejected, and the exporter drops it — the new rows in it included | both rows exist until the merge collapses them |
+| Effect of a duplicate | the statement or transaction carrying it is rejected whole — the new rows in it included | both rows exist until the merge collapses them |
 | Reading | always exact | add `FINAL` when duplicates must not be visible |
 
-On PostgreSQL the key is a **guard, not a repair mechanism**. The exporter writes a batch in one transaction, so a
-single duplicate fails all of it; the exporter treats that as permanent, logs `failed to send batch ... dropping`
-and moves on. A duplicate cannot corrupt the table, but the batch carrying it is lost. In normal operation it never
-happens — the cursor keeps the exporter from re-sending what is committed — and the case that reaches the key is
-logged as an `ERROR` first. See [`export_cursor`](PSQL/export_cursor.md#what-the-exporter-does-on-connect).
+On PostgreSQL the key is a **guard, not a repair mechanism**: a single duplicate fails the whole statement or
+transaction that carries it. A duplicate cannot corrupt the table.
 
 ```sql
 -- ClickHouse: exact counts before a merge has happened
@@ -374,18 +366,19 @@ the guide's by hand after migrating: the migrator's names are the ones these pag
 
 ### Renamed tables
 
-If the trade server's export configuration uses non-default table names, every run must pass the same
+If a deployment uses non-default table names, every run must pass the same
 `--variables trades_table=… daily_statements_table=… order_snapshots_table=… position_snapshots_table=…
 trading_account_events_table=… client_events_table=… symbol_events_table=… group_events_table=… cursor_table=…` on
-PostgreSQL, or `--variables ticks_table=…` on ClickHouse. Nothing records the names on the database side, so a run
-without them falls back to the default names. It does not create a second set of tables — the create scripts are
-journalled by file name and never run again. Instead the first re-runnable script that names a default table fails,
-and the run with it:
+PostgreSQL, or `--variables ticks_table=… position_events_table=… positions_live_view=… positions_view=…` on
+ClickHouse. Nothing records the names on the database side, so a run without them falls back to the default names.
+It does not create a second set of tables — the create scripts are journalled by file name and never run again.
+Instead the first re-runnable script that names a default table fails, and the run with it:
 
 | Engine | Fails in | Left behind |
 |--------|----------|-------------|
 | PostgreSQL | the first view or users script that names a default table — `views/cash_transfers.sql` for a forgotten `trades_table`, with `relation "trades" does not exist` | nothing: the failing script rolls back in its own transaction, and the run stops there |
-| ClickHouse | `post/ticks_ttl.sql`, `UNKNOWN_TABLE` | grants on a `ticks` table that does not exist, `INSERT` for the exporter role and `SELECT` for the read-only one, because the users phase runs first |
+| ClickHouse | the first re-runnable script that names a default table, `UNKNOWN_TABLE` — `views/positions_live.sql` for a forgotten `position_events_table`, `post/ticks_ttl.sql` for `ticks_table` | for `ticks_table`, grants on a `ticks` table that does not exist, `INSERT` for the exporter role and `SELECT` for the read-only one, because the users phase runs before `post/`; for `position_events_table`, nothing, because the views phase runs before the users phase |
+| ClickHouse, a view name | nothing fails: `views/positions_live.sql` and `post/positions.sql` re-run under the default names and create a second `positions_live` or `positions` beside the renamed one | the extra view, and the `ro` grants on it |
 
 Run again with the variables to recover. On ClickHouse that run does not take the stray grants back, so revoke them
 by hand:
@@ -394,6 +387,8 @@ by hand:
 REVOKE INSERT ON trading.ticks FROM role_trading_exporter;
 REVOKE SELECT ON trading.ticks FROM role_trading_ro;
 ```
+
+Drop a view a run created under a default name with `DROP VIEW`, and revoke `ro`'s `SELECT` on it the same way.
 
 ---
 

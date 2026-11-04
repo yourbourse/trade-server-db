@@ -18,7 +18,7 @@ PostgreSQL · written by the trade server · [Schema Reference](../SCHEMA_REFERE
 |---|---|
 | Engine | PostgreSQL |
 | Default name | `trading_account_events` — renamed with `--variables trading_account_events_table=…` |
-| Written by | The trade server's `trading_account` pipeline — `"entity": "trading_account"`, `"target": "postgresql"` |
+| Written by | The trade server |
 | One row per | Event: an account's full state, a deletion, or a resync marker — in order |
 | Order | `id` — never `time_inserted`, which a whole batch shares |
 | Deduplicated by | Nothing — there is no deduplication key, see [Columns](#columns) |
@@ -95,7 +95,7 @@ Three service columns and 14 data columns, every one `NOT NULL`.
 |--------|------|-------------|
 | `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key, and the write order: ordering by `id` reconstructs the history. The only column that orders events |
 | `time_inserted` | `TIMESTAMP WITH TIME ZONE` | When the row reached PostgreSQL; defaults to `now()`. Transaction start time, so a whole batch shares one — it cannot order events. The column to purge the log by |
-| `sender_id` | `BIGINT` | The trade server instance that produced the event, from the pipeline's `sender_id` |
+| `sender_id` | `BIGINT` | The trade server instance that produced the event |
 | `event_type` | `SMALLINT` | See [Event types](#event-types) |
 | **Identifiers** | | |
 | `trading_account_id` | `BIGINT` | API `id`. The account. `0` on both markers |
@@ -142,12 +142,9 @@ For "which accounts are live and how is each configured", read [`trading_account
 this log already reduced. Read the log itself for an account's history, or to build a projection of your own.
 
 A **resync** is a bracketed range: a SnapshotStart, then an Upsert for every live account, then a SnapshotEnd. It is
-a full re-export of the accounts' state at that moment — the *Export Setup* guide names a server restart or an
-interrupted connection as occasions for one, and an administrator can request one at any time with the Admin API's
-`POST /admin/export/snapshot`, `"entityType": "TradingAccount"`, which needs the manager permission
-`initializeTradingAccountExport`. A consumer starting fresh treats the Upserts between a SnapshotStart and its
-SnapshotEnd as a consistent snapshot, and ignores what came before the SnapshotStart in its favour. An account the
-resync did not re-announce no longer exists.
+the accounts' full state at that moment; when the trade server sends one is described in the *Export Setup* guide. A
+consumer starting fresh treats the Upserts between a SnapshotStart and its SnapshotEnd as a consistent snapshot, and
+ignores what came before the SnapshotStart in its favour. An account the resync did not re-announce no longer exists.
 
 ```sql
 -- one account's history, in the order it was recorded

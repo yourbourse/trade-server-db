@@ -1,4 +1,4 @@
--- A read-only role for reporting and support access to the exported ticks.
+-- A read-only role for reporting and support access to the exported ticks and positions.
 --
 -- Applied once per --users entry with Access=ro, for example:
 --   --users "Access=ro;User=trade_reader;Password=passw0rd"
@@ -20,6 +20,27 @@ CREATE ROLE IF NOT EXISTS role_##database_name##_exporter ##cluster_name_suffix#
 GRANT ##cluster_name_suffix##
 SELECT
 ON ##database_name##.##ticks_table## TO role_##database_name##_ro;
+
+----break----
+
+-- position_events, the change stream
+GRANT ##cluster_name_suffix##
+SELECT
+ON ##database_name##.##position_events_table## TO role_##database_name##_ro;
+
+----break----
+
+-- positions, the current state as of the last refresh
+GRANT ##cluster_name_suffix##
+SELECT
+ON ##database_name##.##positions_view## TO role_##database_name##_ro;
+
+----break----
+
+-- positions_live, the current state computed on every read; it runs as the reader, who reads positions above
+GRANT ##cluster_name_suffix##
+SELECT
+ON ##database_name##.##positions_live_view## TO role_##database_name##_ro;
 
 ----break----
 

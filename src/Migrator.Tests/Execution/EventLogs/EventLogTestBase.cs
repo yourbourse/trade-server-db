@@ -158,7 +158,7 @@ public abstract class EventLogTestBase(ConfigBuilder configBuilder, ITestOutputH
     }
 
     // ---------------------------------------------------------------------------------------------------
-    // Writing the log, as the trade server does
+    // Writing the log
     // ---------------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -193,7 +193,7 @@ public abstract class EventLogTestBase(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// Sends one batch as the trade server does: a COPY as the exporter, committed on its own.
+    /// Sends one batch: a COPY as the exporter, committed on its own.
     /// </summary>
     /// <returns>The ids the log gave the events, in the order they were sent.</returns>
     protected List<long> Export(params LogEvent[] batch)
@@ -219,7 +219,7 @@ public abstract class EventLogTestBase(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// Sends one batch whose COPY leaves a column out, as an exporter built before the column existed would.
+    /// Sends one batch whose COPY leaves a column out.
     /// </summary>
     protected void ExportLeavingOut(string column, params LogEvent[] batch)
     {
@@ -236,7 +236,7 @@ public abstract class EventLogTestBase(ConfigBuilder configBuilder, ITestOutputH
     }
 
     /// <summary>
-    /// The column list the exporter's COPY names.
+    /// The column list the COPY names.
     /// </summary>
     protected string CopyColumns()
     {

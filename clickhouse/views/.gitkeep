@@ -1,2 +1,0 @@
-Re-runnable scripts live here: a view is dropped and recreated whenever its file changes.
-Everything in this folder is applied after the incremental scripts and before the users folder.

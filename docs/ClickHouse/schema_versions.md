@@ -62,7 +62,7 @@ ORDER BY (script_name, applied_at);
 | Kind | Journal entry | Re-runs when |
 |------|---------------|--------------|
 | Incremental | `[clickhouse] 20260922_01_create_ticks.sql` | never |
-| Re-runnable (`pre/`, `views/`, `post/`) | `[clickhouse/post] ticks_ttl.sql::a1b2…` | its processed content changes — a new `ticks_ttl_days` included |
+| Re-runnable (`pre/`, `views/`, `post/`) | `[clickhouse/post] ticks_ttl.sql::a1b2…` | its processed content changes — a new `ticks_ttl_days`, `position_events_delete_ttl_days`, `position_events_min_age_to_force_merge_seconds` or `positions_refresh_seconds` included |
 | Users | `[clickhouse/users] exporter.sql for trade_exporter::7f3c…` | its content, name or password changes |
 
 The `::` suffix is the MD5 of the processed script. Before writing a new entry the migrator deletes every previous

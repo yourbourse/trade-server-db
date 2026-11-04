@@ -96,7 +96,7 @@ public class EventLogProjectionIntegrationTests(ConfigBuilder configBuilder, ITe
     }
 
     /// <summary>
-    /// Raising on a type a later trade server adds would abort the exporting COPY and stall the export.
+    /// Raising on an unknown type would abort the COPY that carries it.
     /// </summary>
     [Theory(DisplayName = "Edge case Should store an event type the projection does not know, without projecting it")]
     [EveryEventLog]
@@ -115,7 +115,7 @@ public class EventLogProjectionIntegrationTests(ConfigBuilder configBuilder, ITe
     }
 
     /// <summary>
-    /// The log has no deduplication key, so the derived table has to absorb an at-least-once delivery.
+    /// The log has no deduplication key, so the derived table has to absorb an event that arrives twice.
     /// </summary>
     [Theory(DisplayName = "Edge case Should leave the same state when an event is redelivered")]
     [EveryEventLog]
