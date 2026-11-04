@@ -48,6 +48,7 @@ The order in which values are decided:
 | `##groups_table##` | `groups`, unless overridden | `groups` |
 | `##ticks_table##` | `ticks`, unless `--variables ticks_table=…` overrides it | `ticks` |
 | `##position_events_table##` | `position_events`, unless `--variables position_events_table=…` overrides it | `position_events` |
+| `##account_state_events_table##` | `account_state_events`, unless `--variables account_state_events_table=…` overrides it | `account_state_events` |
 | `##trades_history_view##` | `trades_history`, unless overridden | `trades_history` |
 | `##cash_transfers_view##` | `cash_transfers`, unless overridden | `cash_transfers` |
 | `##trading_accounts_resync_view##` | `trading_accounts_resync`, unless overridden | `trading_accounts_resync` |
@@ -56,12 +57,15 @@ The order in which values are decided:
 | `##groups_resync_view##` | `groups_resync`, unless overridden | `groups_resync` |
 | `##positions_view##` | `positions`, unless overridden | `positions` |
 | `##positions_live_view##` | `positions_live`, unless overridden | `positions_live` |
+| `##account_states_view##` | `account_states`, unless overridden | `account_states` |
+| `##account_states_live_view##` | `account_states_live`, unless overridden | `account_states_live` |
 | `##assembly_version##` | Version of the migrator binary applying the script | `1.0.0.0` |
 
 The table names are templated because a deployment may give the exported tables other names; it passes them on
 the command line so the scripts follow. Use the variables instead of hard-coded names in any script that touches those
-tables. Nine of them name PostgreSQL tables and `##ticks_table##` and `##position_events_table##` name the ClickHouse
-ones; all eleven are defined for both providers, so a script does not have to care which engine it runs on.
+tables. Nine of them name PostgreSQL tables and `##ticks_table##`, `##position_events_table##` and
+`##account_state_events_table##` name the ClickHouse ones; all twelve are defined for both providers, so a script does
+not have to care which engine it runs on.
 
 ```bash
 ./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --variables trades_table=trades_export cursor_table=trades_export_cursor
@@ -71,9 +75,9 @@ The view names and the derived table names — `##trading_accounts_table##`, `##
 `##symbols_table##` and `##groups_table##` — are templated for a different reason: the trade server never writes
 to any of them and so has no say in their names, but a database that already owns an object called
 `trades_history`, `cash_transfers`, `trading_accounts`, `clients`, `symbols`, `groups`, `positions`,
-`positions_live` or one of the `_resync` views needs a way to move ours aside. Like the table variables, the
-view variables are defined for both providers, though `##positions_view##` and
-`##positions_live_view##` are only used on ClickHouse. The four derived ones are real tables rather than
+`positions_live`, `account_states`, `account_states_live` or one of the `_resync` views needs a way to move ours
+aside. Like the table variables, the view variables are defined for both providers, though `##positions_view##`,
+`##positions_live_view##`, `##account_states_view##` and `##account_states_live_view##` are only used on ClickHouse. The four derived ones are real tables rather than
 views — each is derived from its event log by a trigger, not written by the export.
 
 > **Note:** Changing a table name changes the processed content of every re-runnable script that mentions it, so
@@ -83,7 +87,7 @@ views — each is derived from its event log by a trigger, not written by the ex
 
 ## ClickHouse only
 
-These eight are defined only when the provider is ClickHouse. Using them in a PostgreSQL script fails the run as
+These eleven are defined only when the provider is ClickHouse. Using them in a PostgreSQL script fails the run as
 an unresolved placeholder.
 
 | Variable | Without `--cluster` | With `--cluster my_cluster` |
@@ -96,6 +100,9 @@ an unresolved placeholder.
 | `##position_events_delete_ttl_days##` | `30` | `30` |
 | `##position_events_min_age_to_force_merge_seconds##` | `600` | `600` |
 | `##positions_refresh_seconds##` | `300` | `300` |
+| `##account_state_events_delete_ttl_days##` | `30` | `30` |
+| `##account_state_events_min_age_to_force_merge_seconds##` | `600` | `600` |
+| `##account_states_refresh_seconds##` | `300` | `300` |
 
 `##ticks_ttl_days##` is the retention of the ticks table, in days, written into its `TTL` by
 `clickhouse/post/ticks_ttl.sql`. A deployment sets its own with `--variables ticks_ttl_days=N`; the changed value
@@ -118,6 +125,13 @@ migrator refuses a run in which `##position_events_delete_ttl_days##`, in second
 `##positions_refresh_seconds##` is the refresh period of the `positions` view, in seconds.
 `clickhouse/post/positions.sql` creates the view with it and applies it with `MODIFY REFRESH`, and re-runs
 when the value changes. See [positions → Refresh](ClickHouse/positions.md#refresh).
+
+`##account_state_events_delete_ttl_days##`, `##account_state_events_min_age_to_force_merge_seconds##` and
+`##account_states_refresh_seconds##` are the same three for the account_state_events table and the `account_states`
+view, applied by `clickhouse/post/account_state_events_ttl.sql` and `clickhouse/post/account_states.sql`, with the
+same ten-times rule between the first two; each pair is checked on its own. See
+[account_state_events → Retention](ClickHouse/account_state_events.md#retention) and
+[account_states → Refresh](ClickHouse/account_states.md#refresh).
 
 `##cluster_name_suffix##` is the one to put in DDL — it carries its own surrounding spaces and the quotes around
 the cluster name, and collapses to nothing on a single instance:
@@ -191,6 +205,7 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##cursor_table##` | same |
 | `##ticks_table##` | same |
 | `##position_events_table##` | same |
+| `##account_state_events_table##` | same |
 | `##trading_account_events_table##` | same |
 | `##trading_accounts_table##` | same |
 | `##client_events_table##` | same |
@@ -207,11 +222,14 @@ Some variables name a database object and therefore end up in DDL as text. They 
 | `##groups_resync_view##` | same |
 | `##positions_view##` | same |
 | `##positions_live_view##` | same |
+| `##account_states_view##` | same |
+| `##account_states_live_view##` | same |
 | `##cluster_name##` | same, when not empty |
 | `##user_name##` | same |
-| `##ticks_ttl_days##`, `##position_events_delete_ttl_days##` | a positive integer — it is written into `MODIFY TTL` as text |
-| `##positions_refresh_seconds##` | a positive integer — it is written into `REFRESH EVERY` and `MODIFY REFRESH` as text |
+| `##ticks_ttl_days##`, `##position_events_delete_ttl_days##`, `##account_state_events_delete_ttl_days##` | a positive integer — it is written into `MODIFY TTL` as text |
+| `##positions_refresh_seconds##`, `##account_states_refresh_seconds##` | a positive integer — it is written into `REFRESH EVERY` and `MODIFY REFRESH` as text |
 | `##position_events_min_age_to_force_merge_seconds##` | a positive integer — it is written into `MODIFY SETTING` as text — and `##position_events_delete_ttl_days##` × 86,400 must be at least ten times it |
+| `##account_state_events_min_age_to_force_merge_seconds##` | a positive integer — it is written into `MODIFY SETTING` as text — and `##account_state_events_delete_ttl_days##` × 86,400 must be at least ten times it |
 
 An empty value passes — that is how `##cluster_name##` collapses on a single instance.
 
@@ -236,7 +254,7 @@ A run is refused before any DDL is built when a name leaves no room:
 | `##client_events_table##`, `##symbol_events_table##` | `idx_client_row_`, `idx_symbol_row_` (15) | 48 |
 | `##group_events_table##` | `idx_group_row_` (14) | 49 |
 | `##trading_accounts_table##`, `##clients_table##`, `##symbols_table##`, `##groups_table##` | `trg_project_` (12) | 51 |
-| `##cursor_table##`, `##ticks_table##`, `##position_events_table##` | none | 63 |
+| `##cursor_table##`, `##ticks_table##`, `##position_events_table##`, `##account_state_events_table##` | none | 63 |
 
 Everything else, including every custom `--variables` value and `##assembly_version##`, is substituted as-is.
 
@@ -248,8 +266,9 @@ A script containing a `##placeholder##` that is not defined is **rejected before
 
 ```
 20260315_01_add_index.sql uses ##index_name##, which the migrator does not know about.
-Known variables: assembly_version, cursor_table, daily_statements_table, database_name, order_snapshots_table,
-position_snapshots_table, positions_live_view, positions_view, position_events_table, ticks_table, trades_table.
+Known variables: account_state_events_table, account_states_live_view, account_states_view, assembly_version,
+cursor_table, daily_statements_table, database_name, order_snapshots_table, position_events_table,
+position_snapshots_table, positions_live_view, positions_view, ticks_table, trades_table.
 Pass any other value with --variables name=value.
 ```
 

@@ -139,6 +139,15 @@ and [`positions`](ClickHouse/positions.md) views have theirs in `Execution/Posit
 | `PositionsMigrationIntegrationTests.cs` | The table and both views as ClickHouse prints them, re-runs, the live view replaced on a forced re-run with `positions` following it, renaming, retention, the refresh period and grants |
 | `PositionsDataIntegrationTests.cs` | What ClickHouse 26.7 does with positions under that DDL: versioning, the snapshot markers, and what the views show through each step of the snapshot protocol — every state asserted on both, `positions` refreshed first by `AssertState`, and a change visible in the live view at once and in `positions` after the next refresh |
 
+The [`account_state_events`](ClickHouse/account_state_events.md) table and its
+[`account_states_live`](ClickHouse/account_states_live.md) and [`account_states`](ClickHouse/account_states.md) views
+have theirs in `Execution/AccountStates/`, on the helpers in `AccountStatesTestBase.cs`, mirroring the positions suites:
+
+| Test file | Covers |
+|-----------|--------|
+| `AccountStatesMigrationIntegrationTests.cs` | The table and both views as ClickHouse prints them, re-runs, the live view replaced on a forced re-run with `account_states` following it, renaming, retention, the refresh period and grants |
+| `AccountStatesDataIntegrationTests.cs` | What ClickHouse 26.7 does with account states under that DDL: versioning, the snapshot markers, value limits, and what the views show through each step of the snapshot protocol — every state asserted on both, `account_states` refreshed first by `AssertState`, and a change visible in the live view at once and in `account_states` after the next refresh |
+
 Connection strings come from [`appsettings.integration.json`](../src/Migrator.Tests/appsettings.integration.json),
 overridable with `ClickHouse__ConnectionString` and `Postgres__ConnectionString`. That file is loaded whatever
 `ASPNETCORE_ENVIRONMENT` says, so a run from an IDE needs no setup.
@@ -152,7 +161,11 @@ trade-server-db/
 ├── clickhouse/                         ClickHouse scripts
 │   ├── 20260922_01_create_ticks.sql        incremental (folder root)
 │   ├── 20261023_01_create_position_events.sql    incremental
+│   ├── 20261104_01_create_account_state_events.sql    incremental
+│   ├── views/account_states_live.sql re-runnable, the state of the trading accounts computed on every read
 │   ├── views/positions_live.sql      re-runnable, the state of the positions computed on every read
+│   ├── post/account_state_events_ttl.sql         the forced merge age and the Delete rows' retention, re-runs when either changes
+│   ├── post/account_states.sql       the refreshable view over account_states_live, re-runs when account_states_refresh_seconds changes
 │   ├── post/positions.sql            the refreshable view over it, re-runs when positions_refresh_seconds changes
 │   ├── post/position_events_ttl.sql              the forced merge age and the Delete rows' retention, re-runs when either changes
 │   ├── post/run_on_every_build.sql         re-runnable

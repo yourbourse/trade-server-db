@@ -241,9 +241,9 @@ Now the same against ClickHouse:
 ```
 
 > **Important:** The ClickHouse run creates a different schema, not a copy of the PostgreSQL one: ClickHouse holds
-> the ticks and positions, so the run creates the `ticks` and
-> `position_events` tables, the `positions_live` and `positions` views over positions, the journal, the users and their grants, and none
-> of the PostgreSQL tables or views. See
+> the ticks, positions and account states, so the run creates the `ticks`, `position_events` and
+> `account_state_events` tables, the `positions_live`, `positions`, `account_states_live` and `account_states` views,
+> the journal, the users and their grants, and none of the PostgreSQL tables or views. See
 > [Schema Reference](SCHEMA_REFERENCE.md#overview).
 
 ---
@@ -260,8 +260,9 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 ```
 
 ```sql
--- ClickHouse: expects positions, positions, positions_live, schema_versions and ticks;
--- the filter hides the internal target table of positions
+-- ClickHouse: expects account_state_events, account_states, account_states_live, position_events, positions,
+-- positions_live, schema_versions and ticks;
+-- the filter hides the internal target tables of positions and account_states
 SELECT name FROM system.tables WHERE database = 'trade_demo' AND NOT startsWith(name, '.') ORDER BY name;
 ```
 

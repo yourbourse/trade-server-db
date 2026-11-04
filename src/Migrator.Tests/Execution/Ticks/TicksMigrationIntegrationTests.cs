@@ -42,16 +42,16 @@ public class TicksMigrationIntegrationTests(ConfigBuilder configBuilder, ITestOu
 
     /// <summary>
     /// No cursor table on ClickHouse. The views are the
-    /// positions state, stored and live.
+    /// positions and account states, stored and live.
     /// </summary>
-    [Fact(DisplayName = "Schema Should create the exported tables, the positions state views and the journal and nothing else")]
+    [Fact(DisplayName = "Schema Should create the exported tables, the positions and account states views and the journal and nothing else")]
     public void Schema_Should_create_the_exported_tables_the_positions_views_and_the_journal_and_nothing_else()
     {
         // arrange, act
         var connectionString = Migrate();
 
         // assert
-        Assert.Equal(["position_events", "positions", "positions_live", "schema_versions", "ticks"], Tables(connectionString));
+        Assert.Equal(["account_state_events", "account_states", "account_states_live", "position_events", "positions", "positions_live", "schema_versions", "ticks"], Tables(connectionString));
     }
 
     /// <summary>
@@ -122,7 +122,7 @@ public class TicksMigrationIntegrationTests(ConfigBuilder configBuilder, ITestOu
         AssertSuccessful(CreateRunner().Run(request));
 
         // assert
-        Assert.Equal(["position_events", "positions", "positions_live", "schema_versions", "tick_history"], Tables(request.ConnectionString));
+        Assert.Equal(["account_state_events", "account_states", "account_states_live", "position_events", "positions", "positions_live", "schema_versions", "tick_history"], Tables(request.ConnectionString));
         Assert.Equal(AgreedTable("tick_history"), ShowCreate(request.ConnectionString, "tick_history"));
 
         Execute(ExporterConnectionString(request), InsertInto("tick_history", new Tick(1, At(0))));
@@ -154,15 +154,15 @@ public class TicksMigrationIntegrationTests(ConfigBuilder configBuilder, ITestOu
         Assert.StartsWith("[clickhouse/post] ticks_ttl.sql::", failed.ErrorScript?.Name);
         Assert.Equal(UnknownTable, Assert.IsType<ClickHouseServerException>(failed.Error).ErrorCode);
 
-        Assert.Equal(["position_events", "positions", "positions_live", "schema_versions", "tick_history"], Tables(request.ConnectionString));
+        Assert.Equal(["account_state_events", "account_states", "account_states_live", "position_events", "positions", "positions_live", "schema_versions", "tick_history"], Tables(request.ConnectionString));
         Assert.Equal(1, Count(request.ConnectionString, "tick_history"));
 
         // and the corrected run succeeds, but the users phase had already granted on the default name
         AssertSuccessful(CreateRunner().Run(request));
 
-        Assert.Equal(["INSERT ON position_events", "INSERT ON tick_history", "INSERT ON ticks"],
+        Assert.Equal(["INSERT ON account_state_events", "INSERT ON position_events", "INSERT ON tick_history", "INSERT ON ticks"],
             RoleGrants(request.ConnectionString, $"role_{request.DatabaseName}_exporter"));
-        Assert.Equal(["SELECT ON position_events", "SELECT ON positions", "SELECT ON positions_live", "SELECT ON tick_history", "SELECT ON ticks"],
+        Assert.Equal(["SELECT ON account_state_events", "SELECT ON account_states", "SELECT ON account_states_live", "SELECT ON position_events", "SELECT ON positions", "SELECT ON positions_live", "SELECT ON tick_history", "SELECT ON ticks"],
             RoleGrants(request.ConnectionString, $"role_{request.DatabaseName}_ro"));
     }
 
@@ -186,9 +186,13 @@ public class TicksMigrationIntegrationTests(ConfigBuilder configBuilder, ITestOu
         [
             "[clickhouse] 20260922_01_create_ticks.sql",
             "[clickhouse] 20261023_01_create_position_events.sql",
+            "[clickhouse] 20261104_01_create_account_state_events.sql",
+            "[clickhouse/views] account_states_live.sql",
             "[clickhouse/views] positions_live.sql",
             $"[clickhouse/users] exporter.sql for {request.DatabaseName}_exporter",
             $"[clickhouse/users] ro.sql for {request.DatabaseName}_reader",
+            "[clickhouse/post] account_state_events_ttl.sql",
+            "[clickhouse/post] account_states.sql",
             "[clickhouse/post] position_events_ttl.sql",
             "[clickhouse/post] positions.sql",
             "[clickhouse/post] run_on_every_build.sql",

@@ -65,6 +65,12 @@ public class MigrationHandler : IMigrationHandler
     private const string DefaultPositionsRefreshSeconds = "300";
     private const string DefaultPositionEventsDeleteTtlDays = "30";
     private const string DefaultPositionEventsMinAgeToForceMergeSeconds = "600";
+    private const string DefaultAccountStateEventsTable = "account_state_events";
+    private const string DefaultAccountStatesView = "account_states";
+    private const string DefaultAccountStatesLiveView = "account_states_live";
+    private const string DefaultAccountStatesRefreshSeconds = "300";
+    private const string DefaultAccountStateEventsDeleteTtlDays = "30";
+    private const string DefaultAccountStateEventsMinAgeToForceMergeSeconds = "600";
     private const string DefaultTradesHistoryView = "trades_history";
     private const string DefaultCashTransfersView = "cash_transfers";
 
@@ -89,7 +95,8 @@ public class MigrationHandler : IMigrationHandler
         "group_events_table",
         "cursor_table",
         "ticks_table",
-        "position_events_table"
+        "position_events_table",
+        "account_state_events_table"
     ];
 
     /// <summary>
@@ -109,7 +116,9 @@ public class MigrationHandler : IMigrationHandler
         "symbols_resync_view",
         "groups_resync_view",
         "positions_view",
-        "positions_live_view"
+        "positions_live_view",
+        "account_states_view",
+        "account_states_live_view"
     ];
 
     /// <summary>
@@ -146,7 +155,10 @@ public class MigrationHandler : IMigrationHandler
         "ticks_ttl_days",
         "positions_refresh_seconds",
         "position_events_delete_ttl_days",
-        "position_events_min_age_to_force_merge_seconds"
+        "position_events_min_age_to_force_merge_seconds",
+        "account_states_refresh_seconds",
+        "account_state_events_delete_ttl_days",
+        "account_state_events_min_age_to_force_merge_seconds"
     ];
 
     /// <summary>
@@ -181,7 +193,8 @@ public class MigrationHandler : IMigrationHandler
         ["groups_table"] = (12, "trg_project_"),
         ["cursor_table"] = (0, ""),
         ["ticks_table"] = (0, ""),
-        ["position_events_table"] = (0, "")
+        ["position_events_table"] = (0, ""),
+        ["account_state_events_table"] = (0, "")
     };
 
     /// <summary>
@@ -348,6 +361,9 @@ public class MigrationHandler : IMigrationHandler
             ["position_events_table"] = DefaultPositionEventsTable,
             ["positions_view"] = DefaultPositionsView,
             ["positions_live_view"] = DefaultPositionsLiveView,
+            ["account_state_events_table"] = DefaultAccountStateEventsTable,
+            ["account_states_view"] = DefaultAccountStatesView,
+            ["account_states_live_view"] = DefaultAccountStatesLiveView,
             ["trades_history_view"] = DefaultTradesHistoryView,
             ["cash_transfers_view"] = DefaultCashTransfersView
         };
@@ -368,6 +384,9 @@ public class MigrationHandler : IMigrationHandler
             variables["positions_refresh_seconds"] = DefaultPositionsRefreshSeconds;
             variables["position_events_delete_ttl_days"] = DefaultPositionEventsDeleteTtlDays;
             variables["position_events_min_age_to_force_merge_seconds"] = DefaultPositionEventsMinAgeToForceMergeSeconds;
+            variables["account_states_refresh_seconds"] = DefaultAccountStatesRefreshSeconds;
+            variables["account_state_events_delete_ttl_days"] = DefaultAccountStateEventsDeleteTtlDays;
+            variables["account_state_events_min_age_to_force_merge_seconds"] = DefaultAccountStateEventsMinAgeToForceMergeSeconds;
         }
 
         // command line variables are applied last so they can override any of the derived values
@@ -411,24 +430,29 @@ public class MigrationHandler : IMigrationHandler
             }
         }
 
-        ValidateDeleteTtlAgainstForceMerge(variables);
+        ValidateDeleteTtlAgainstForceMerge(variables, "position_events", "position", "the closed position");
+        ValidateDeleteTtlAgainstForceMerge(variables, "account_state_events", "account", "the deleted account");
 
         return variables;
     }
 
     /// <summary>
-    /// Refuses a Delete retention that is not far above the forced merge age of the position_events table.
+    /// Refuses a Delete retention that is not far above the forced merge age of a change stream table: position_events
+    /// or account_state_events, named by <paramref name="table"/>, the prefix of its two variables.
     /// </summary>
     /// <remarks>
     /// A Delete row may only expire once the forced merges have collapsed it with the earlier versions of its
-    /// position, otherwise the closed position comes back. The retention is the margin over those merges, so it
+    /// entity, otherwise the deleted entity comes back. The retention is the margin over those merges, so it
     /// has to be at least <see cref="MinDeleteTtlToForceMergeRatio"/> times the merge age. Both values have
     /// already passed <see cref="SqlSafety.ValidatePositiveInteger"/>.
     /// </remarks>
-    private static void ValidateDeleteTtlAgainstForceMerge(IReadOnlyDictionary<string, string> variables)
+    private static void ValidateDeleteTtlAgainstForceMerge(IReadOnlyDictionary<string, string> variables, string table, string entity, string deletedEntity)
     {
-        if (!variables.TryGetValue("position_events_delete_ttl_days", out var days) ||
-            !variables.TryGetValue("position_events_min_age_to_force_merge_seconds", out var seconds))
+        var daysVariable = $"{table}_delete_ttl_days";
+        var secondsVariable = $"{table}_min_age_to_force_merge_seconds";
+
+        if (!variables.TryGetValue(daysVariable, out var days) ||
+            !variables.TryGetValue(secondsVariable, out var seconds))
         {
             return;
         }
@@ -439,10 +463,10 @@ public class MigrationHandler : IMigrationHandler
         if (ttlSeconds < forceMergeSeconds * MinDeleteTtlToForceMergeRatio)
         {
             throw new SchemaMigrationException(
-                $"##position_events_delete_ttl_days## {days} ({ttlSeconds} seconds) must be at least " +
-                $"{MinDeleteTtlToForceMergeRatio} times ##position_events_min_age_to_force_merge_seconds## {seconds}. " +
-                "A Delete row may only expire long after the forced merges have collapsed it with its position, " +
-                "otherwise the closed position comes back. Raise the retention or lower the merge age.");
+                $"##{daysVariable}## {days} ({ttlSeconds} seconds) must be at least " +
+                $"{MinDeleteTtlToForceMergeRatio} times ##{secondsVariable}## {seconds}. " +
+                $"A Delete row may only expire long after the forced merges have collapsed it with its {entity}, " +
+                $"otherwise {deletedEntity} comes back. Raise the retention or lower the merge age.");
         }
     }
 

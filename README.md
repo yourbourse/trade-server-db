@@ -3,9 +3,9 @@
 Schema migrations for the databases the **trade server** exports trading data into.
 
 The trade server writes trades, daily statements, their order and position snapshots and an export cursor to
-PostgreSQL, and ticks and positions to ClickHouse — see the *Export Setup* guide for the server side of the export.
-This repository owns the other half: creating and evolving the tables, indexes, views and users that export
-needs.
+PostgreSQL, and ticks, positions and account states to ClickHouse — see the *Export Setup* guide for the server side
+of the export. This repository owns the other half: creating and evolving the tables, indexes, views and users that
+export needs.
 
 Two providers are supported:
 
@@ -206,6 +206,9 @@ Every script is preprocessed, replacing `##name##` with a value:
 | `##position_events_table##` | `position_events`, unless `--variables position_events_table=...` says otherwise |
 | `##positions_view##` | `positions`, unless `--variables positions_view=...` says otherwise |
 | `##positions_live_view##` | `positions_live`, unless `--variables positions_live_view=...` says otherwise |
+| `##account_state_events_table##` | `account_state_events`, unless `--variables account_state_events_table=...` says otherwise |
+| `##account_states_view##` | `account_states`, unless `--variables account_states_view=...` says otherwise |
+| `##account_states_live_view##` | `account_states_live`, unless `--variables account_states_live_view=...` says otherwise |
 | `##assembly_version##` | The version of the migrator that applied the script |
 | `##user_name##`, `##user_password##` | The `users/` phase only, one pass per `--users` entry |
 | `##cluster_name##`, `##cluster_name_suffix##` | ClickHouse only. Empty unless `--cluster` is given |
@@ -265,7 +268,7 @@ happens to contain a quote fails loudly or works correctly, rather than silently
 1. Create the file. Incremental: `psql/20260315_01_add_broker_id.sql`. Re-runnable: drop it in `views/`,
    `users/` or `post/`.
 2. Use the table variables — `##trades_table##`, `##cursor_table##`, the event log tables and the rest on
-   PostgreSQL, `##ticks_table##` and `##position_events_table##` on ClickHouse — rather than hard-coded table names. A deployment may give
+   PostgreSQL, `##ticks_table##`, `##position_events_table##` and `##account_state_events_table##` on ClickHouse — rather than hard-coded table names. A deployment may give
    the exported tables other names.
 3. Check what it would do: `./migrate.sh --provider postgres --connection-string "..." --users "Access=exporter;User=trade_exporter;Password=..." --dry-run`.
 4. Apply it, then run it a second time and confirm nothing is applied.
@@ -278,7 +281,7 @@ deployed database will silently differ from the file. Add a new one.
 ## Schema
 
 The two engines hold different tables: trades, daily statements, their snapshots, the trading account, client,
-symbol and group events and the export cursor are on PostgreSQL, ticks and positions on ClickHouse. This repository is the source of truth for every definition, and the
+symbol and group events and the export cursor are on PostgreSQL, ticks, positions and account states on ClickHouse. This repository is the source of truth for every definition, and the
 migrator creates all of them — plus `trading_accounts`, `clients`, `symbols` and `groups`, which it derives from the
 event logs with triggers:
 
@@ -299,6 +302,7 @@ event logs with triggers:
 | Export cursor | [`export_cursor`](docs/PSQL/export_cursor.md) | PostgreSQL |
 | Ticks | [`ticks`](docs/ClickHouse/ticks.md) | ClickHouse |
 | Positions | [`position_events`](docs/ClickHouse/position_events.md) | ClickHouse |
+| Account states | [`account_state_events`](docs/ClickHouse/account_state_events.md) | ClickHouse |
 | Journal | `schema_versions` — [PostgreSQL](docs/PSQL/schema_versions.md), [ClickHouse](docs/ClickHouse/schema_versions.md) | both |
 
 Every table has its own page with its final SQL — the definition as it stands once every script has run — its
@@ -353,7 +357,16 @@ that return the same rows — one per open position, as of the latest complete s
 | Positions state, live | [`positions_live`](docs/ClickHouse/positions_live.md) | a plain view: computed on every read, always current, a `FINAL` read of `position_events` per query |
 | Positions state | [`positions`](docs/ClickHouse/positions.md) | a refreshable materialized view over the live one: a plain table, recomputed every 5 minutes by default |
 
-`positions` needs ClickHouse 24.10 or newer.
+`account_state_events` does the same for the trading accounts: an `Upsert` per change of an account's state — balance,
+credit, equity, margin, the day and month figures — a `Delete` when the account is deleted, and the same snapshot
+markers, with `trading_account_id` in the role of `position_id`. Over it sit the same two views, one row per account:
+
+| View | Default name | Kind |
+|---|---|---|
+| Account states, live | [`account_states_live`](docs/ClickHouse/account_states_live.md) | a plain view: computed on every read, always current, a `FINAL` read of `account_state_events` per query |
+| Account states | [`account_states`](docs/ClickHouse/account_states.md) | a refreshable materialized view over the live one: a plain table, recomputed every 5 minutes by default |
+
+`positions` and `account_states` need ClickHouse 24.10 or newer.
 
 There is no cursor table on ClickHouse, and the exporter does nothing but insert.
 
@@ -361,7 +374,7 @@ There is no cursor table on ClickHouse, and the exporter does nothing but insert
 
 The `users/` scripts provision the two roles the guide describes on both engines: `exporter` — on PostgreSQL
 INSERT and SELECT on the exported tables, INSERT, SELECT and UPDATE on the cursor, and INSERT, SELECT, UPDATE and
-DELETE on the tables the triggers derive; on ClickHouse INSERT on `ticks` and `position_events` — and `ro`, with SELECT on everything.
+DELETE on the tables the triggers derive; on ClickHouse INSERT on `ticks`, `position_events` and `account_state_events` — and `ro`, with SELECT on everything.
 
 ## Building and testing
 
@@ -382,13 +395,13 @@ second run applies nothing. Connection strings come from
 `ClickHouse__ConnectionString` and `Postgres__ConnectionString` environment variables.
 
 `ClickHouse.Driver` 1.3.0 sends settings that older servers reject, so ClickHouse **24.x or newer** is required —
-**24.10 or newer** for the refreshable `positions` view.
+**24.10 or newer** for the refreshable `positions` and `account_states` views.
 
 ## Layout
 
 ```
 psql/                  PostgreSQL scripts: root = incremental, views/ users/ post/ = re-runnable
-clickhouse/            ClickHouse scripts: root = incremental (ticks, position_events), views/ users/ post/ = re-runnable
+clickhouse/            ClickHouse scripts: root = incremental (ticks, position_events, account_state_events), views/ users/ post/ = re-runnable
 src/DbUp.ClickHouse/   DbUp provider for ClickHouse (connection manager, journal, executor)
 src/DbUp.PSQL/         DbUp provider for PostgreSQL
 src/Migrator/          The CLI

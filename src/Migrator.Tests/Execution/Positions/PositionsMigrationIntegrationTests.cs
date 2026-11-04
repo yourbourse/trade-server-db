@@ -189,7 +189,7 @@ public class PositionsMigrationIntegrationTests(ConfigBuilder configBuilder, ITe
         AssertSuccessful(CreateRunner().Run(request));
 
         // assert
-        Assert.Equal(["open_positions", "open_positions_live", "position_changes", "schema_versions", "ticks"], Tables(request.ConnectionString));
+        Assert.Equal(["account_state_events", "account_states", "account_states_live", "open_positions", "open_positions_live", "position_changes", "schema_versions", "ticks"], Tables(request.ConnectionString));
         Assert.Equal(AgreedTable("position_changes"), ShowCreate(request.ConnectionString, "position_changes"));
         Assert.Contains("FROM open_positions_live", ShowCreate(request.ConnectionString, "open_positions"));
         Assert.Contains("FROM position_changes AS position_events\nFINAL", ShowCreate(request.ConnectionString, "open_positions_live"));
